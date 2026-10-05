@@ -1,0 +1,36 @@
+# Inactive examples: copy only the required block into a real config.
+# Authenticate through Codex or an environment variable; never inline secrets.
+
+[mcp_servers.openaiDeveloperDocs]
+url = "https://developers.openai.com/mcp"
+enabled = false
+required = false
+startup_timeout_sec = 10
+tool_timeout_sec = 45
+
+[mcp_servers.context7]
+url = "https://mcp.context7.com/mcp"
+enabled = false
+required = false
+startup_timeout_sec = 10
+tool_timeout_sec = 45
+# Follow the current provider instructions for authentication.
+
+[mcp_servers.github]
+url = "https://api.githubcopilot.com/mcp/readonly"
+bearer_token_env_var = "GITHUB_TOKEN"
+enabled = false
+required = false
+startup_timeout_sec = 10
+tool_timeout_sec = 45
+
+
+# Optional browser automation: install @playwright/mcp once on the Codex host.
+# Use the executable's absolute path if it is not on the client's PATH.
+[mcp_servers.playwright]
+command = "playwright-mcp"
+args = ["--headless", "--isolated"]
+enabled = false
+required = false
+startup_timeout_sec = 15
+tool_timeout_sec = 60

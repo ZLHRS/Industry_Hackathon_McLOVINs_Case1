@@ -1,0 +1,13 @@
+#!/bin/sh
+# POSIX entrypoint: no Bash, PowerShell or package-manager dependency.
+set -eu
+tooling_dir=$(CDPATH= cd -P "$(dirname "$0")" && pwd)
+python_bin=${CODEX_TOOLBELT_PYTHON:-python3}
+if ! command -v "$python_bin" >/dev/null 2>&1; then
+    printf '%s\n' 'Python 3.11+ is required; install python3 or set CODEX_TOOLBELT_PYTHON to its executable.' >&2
+    exit 2
+fi
+if [ "$#" -eq 0 ]; then
+    set -- doctor
+fi
+exec "$python_bin" "$tooling_dir/toolbelt.py" "$@"

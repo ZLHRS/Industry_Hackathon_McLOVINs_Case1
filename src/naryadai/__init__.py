@@ -1,0 +1,1 @@
+"""NaryadAI maintenance management prototype."""

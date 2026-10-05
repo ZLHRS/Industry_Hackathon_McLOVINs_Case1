@@ -1,0 +1,31 @@
+# Codex Professional Multi-Agent — portable project or user configuration
+#
+# Works in a trusted project .codex/ or a user Codex home.
+# If you already have ~/.codex/config.toml, MERGE the [agents] section below
+# instead of overwriting your existing configuration.
+
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 3
+default_subagent_model = "gpt-5.6-terra"
+default_subagent_reasoning_effort = "high"
+
+[agents.backend_engineer]
+config_file = "agents/backend_engineer.toml"
+description = "Backend software engineering: Python, FastAPI, APIs, databases, async systems, integrations, reliability, and backend tests."
+
+[agents.frontend_engineer]
+config_file = "agents/frontend_engineer.toml"
+description = "Frontend design and engineering: distinctive UI, reference matching, typography, responsive layouts, accessible interactions, React/TypeScript and visual browser verification."
+
+[agents.ml_engineer]
+config_file = "agents/ml_engineer.toml"
+description = "Machine-learning engineering: datasets, feature pipelines, classical ML, deep learning, evaluation, inference, and ML service integration."
+
+[agents.researcher]
+config_file = "agents/researcher.toml"
+description = "Read-only research: current documentation, unfamiliar APIs, standards, external integrations, codebase exploration, and evidence-backed technical investigation."
+
+[agents.verifier]
+config_file = "agents/verifier.toml"
+description = "Independent verification: correctness, regression detection, tests, contracts, security/data risks, and evidence-based code review."

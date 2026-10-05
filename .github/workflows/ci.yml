@@ -1,0 +1,30 @@
+name: Quality
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.19"
+          enable-cache: true
+      - name: Install locked environment
+        run: uv sync --locked
+      - name: Lint
+        run: uv run --locked ruff check .
+      - name: Formatting
+        run: uv run --locked ruff format --check .
+      - name: Types
+        run: uv run --locked mypy
+      - name: Tests and coverage
+        run: uv run --locked pytest --cov=naryadai --cov-report=term-missing --cov-report=xml
+      - name: Build package
+        run: uv build
+      - name: Check patch whitespace
+        run: git diff --check
