@@ -1,6 +1,7 @@
 """Validated runtime settings, read when the application factory is called."""
 
 from enum import StrEnum
+from pathlib import Path
 from typing import Self
 from urllib.parse import urlsplit
 
@@ -33,6 +34,12 @@ class Settings(BaseSettings):
     login_window_seconds: int = Field(default=900, ge=60, le=3600)
     login_account_limit: int = Field(default=5, ge=1, le=20)
     login_peer_limit: int = Field(default=50, ge=1, le=200)
+
+    photo_root: Path = Path("var/photos")
+    photo_max_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, le=20 * 1024 * 1024)
+    photo_max_pixels: int = Field(default=24_000_000, ge=100_000, le=40_000_000)
+    photo_max_dimension: int = Field(default=2048, ge=320, le=4096)
+    photo_output_max_bytes: int = Field(default=2 * 1024 * 1024, ge=1024, le=5 * 1024 * 1024)
 
     @field_validator("database_url")
     @classmethod

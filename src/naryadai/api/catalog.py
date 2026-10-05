@@ -22,6 +22,7 @@ from naryadai.infrastructure.models import (
     FaultCode,
     Material,
     TimeNorm,
+    WorkOrder,
 )
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
@@ -114,6 +115,7 @@ class EmployeeView(View):
 
 
 class AccessUpdate(Input):
+    is_on_shift: bool | None = None
     is_active: bool | None = None
     role: Literal["master", "executor", "manager", "admin"] | None = None
     area_ids: list[UUID] | None = Field(default=None, max_length=100)
@@ -238,6 +240,12 @@ async def change_access(
             )
             if employee is None:
                 raise HTTPException(status_code=404, detail="not_found")
+            if body.is_on_shift is False and await session.scalar(
+                select(WorkOrder.id)
+                .where(WorkOrder.executor_id == employee_id, WorkOrder.status == "in_progress")
+                .limit(1)
+            ):
+                raise HTTPException(status_code=409, detail="worker_has_active_order")
             for key, value in changes.items():
                 setattr(employee, key, value)
             if hashed:

@@ -23,9 +23,11 @@ from naryadai.infrastructure.models import (
     EmployeeRole,
     Equipment,
     FaultCode,
+    IdempotencyRecord,
     LoginThrottle,
     Material,
     MaterialUsage,
+    OutboxEvent,
     Photo,
     Priority,
     SeedRun,
@@ -121,7 +123,11 @@ async def _occupied_table_names(session: AsyncSession) -> tuple[str, ...]:
         Photo,
         AuthSession,
         LoginThrottle,
+        IdempotencyRecord,
+        OutboxEvent,
         SeedRun,
+        IdempotencyRecord,
+        OutboxEvent,
     )
     names: list[str] = []
     for model in models:
@@ -162,6 +168,7 @@ async def _add_dataset(session: AsyncSession, dataset: DemoDataset, secret: str)
                     "work_type": WorkType(row["work_type"]),
                     "priority": Priority(row["priority"]),
                     "status": WorkOrderStatus(row["status"]),
+                    "last_submission_version": row["version"] if row["completed_at"] else None,
                 }
             )
         )

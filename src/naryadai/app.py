@@ -14,8 +14,12 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from naryadai.api.auth import router as auth_router
 from naryadai.api.catalog import router as catalog_router
 from naryadai.api.health import router as health_router
+from naryadai.api.orders import router as orders_router
+from naryadai.api.photos import router as photos_router
+from naryadai.application.common import OperationError
 from naryadai.config import Environment, Settings
 from naryadai.infrastructure.database import Database
+from naryadai.infrastructure.photo_store import PhotoStore
 from naryadai.observability import RequestContextMiddleware, configure_access_logger
 
 
@@ -30,6 +34,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         application.state.database = database
         application.state.auth_limiter = CapacityLimiter(4)
+        application.state.photo_limiter = CapacityLimiter(2)
+        application.state.photo_store = PhotoStore(
+            settings.photo_root,
+            max_bytes=settings.photo_max_bytes,
+            max_pixels=settings.photo_max_pixels,
+            max_dimension=settings.photo_max_dimension,
+            output_max_bytes=settings.photo_output_max_bytes,
+        )
         try:
             yield
         finally:
@@ -50,6 +62,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health_router, prefix="/api/v1")
     app.include_router(auth_router, prefix="/api/v1")
     app.include_router(catalog_router, prefix="/api/v1")
+    app.include_router(orders_router, prefix="/api/v1")
+    app.include_router(photos_router, prefix="/api/v1")
+
+    @app.exception_handler(OperationError)
+    async def operation_error(_request: Request, error: OperationError) -> JSONResponse:
+        return JSONResponse(status_code=error.status_code, content={"detail": error.detail})
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(_request: Request, error: RequestValidationError) -> JSONResponse:

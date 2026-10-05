@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -22,10 +23,12 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy import (
     Enum as SqlEnum,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from naryadai.domain.lifecycle import ActorRole, AiAssessment, WorkOrderStatus
@@ -251,6 +254,17 @@ class WorkOrder(UUIDPrimaryKey, Base):
         Index("ix_work_orders_executor_status", "executor_id", "status"),
         Index("ix_work_orders_master_id", "master_id"),
         Index("ix_work_orders_deadline", "deadline"),
+        Index(
+            "uq_work_orders_executor_running",
+            "executor_id",
+            unique=True,
+            postgresql_where=text("status = 'in_progress'"),
+        ),
+        CheckConstraint("attempt > 0", name="ck_work_order_attempt_positive"),
+        CheckConstraint(
+            "last_submission_version IS NULL OR last_submission_version > 0",
+            name="ck_work_order_submission_positive",
+        ),
     )
 
     number: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
@@ -273,6 +287,9 @@ class WorkOrder(UUIDPrimaryKey, Base):
     work_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    last_submission_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    no_materials_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_synthetic: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
@@ -289,10 +306,18 @@ class WorkOrderEvent(UUIDPrimaryKey, Base):
             name="ck_work_order_event_system_actor",
         ),
         Index("ix_work_order_events_work_order", "work_order_id"),
+        CheckConstraint(
+            "order_version IS NULL OR order_version > 0",
+            name="ck_work_order_event_version_positive",
+        ),
     )
 
     work_order_id: Mapped[UUID] = mapped_column(ForeignKey("work_orders.id"), nullable=False)
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    order_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    details: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
     actor_id: Mapped[UUID | None] = mapped_column(ForeignKey("employees.id"), nullable=True)
     actor_role: Mapped[ActorRole] = mapped_column(actor_role_enum, nullable=False)
     action: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -310,11 +335,13 @@ class Photo(UUIDPrimaryKey, Base):
     __tablename__ = "photos"
     __table_args__ = (
         CheckConstraint("size_bytes > 0", name="ck_photo_size_positive"),
+        CheckConstraint("attempt > 0", name="ck_photo_attempt_positive"),
         Index("ix_photos_work_order", "work_order_id"),
     )
 
     work_order_id: Mapped[UUID] = mapped_column(ForeignKey("work_orders.id"), nullable=False)
     kind: Mapped[PhotoKind] = mapped_column(photo_kind_enum, nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     storage_key: Mapped[str] = mapped_column(String(512), unique=True, nullable=False)
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, server_default=func.now()
@@ -329,6 +356,10 @@ class MaterialUsage(UUIDPrimaryKey, Base):
     __tablename__ = "material_usages"
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_material_usage_quantity_positive"),
+        CheckConstraint(
+            "submission_version IS NULL OR submission_version > 0",
+            name="ck_material_usage_submission_positive",
+        ),
         Index("ix_material_usages_work_order", "work_order_id"),
         Index("ix_material_usages_material", "material_id"),
     )
@@ -336,6 +367,7 @@ class MaterialUsage(UUIDPrimaryKey, Base):
     work_order_id: Mapped[UUID] = mapped_column(ForeignKey("work_orders.id"), nullable=False)
     material_id: Mapped[UUID] = mapped_column(ForeignKey("materials.id"), nullable=False)
     quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    submission_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class AIReview(UUIDPrimaryKey, Base):
@@ -348,6 +380,7 @@ class AIReview(UUIDPrimaryKey, Base):
             name="ck_ai_review_master_score_range",
         ),
         Index("ix_ai_reviews_work_order", "work_order_id"),
+        UniqueConstraint("work_order_id", "order_version", name="uq_ai_review_submission"),
     )
 
     work_order_id: Mapped[UUID] = mapped_column(ForeignKey("work_orders.id"), nullable=False)
@@ -403,3 +436,34 @@ class SeedRun(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, server_default=func.now()
     )
+
+
+class IdempotencyRecord(Base):
+    __tablename__ = "idempotency_records"
+    actor_id: Mapped[UUID] = mapped_column(ForeignKey("employees.id"), primary_key=True)
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    order_id: Mapped[UUID] = mapped_column(ForeignKey("work_orders.id"), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    response: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, server_default=func.now()
+    )
+
+
+class OutboxEvent(UUIDPrimaryKey, Base):
+    __tablename__ = "outbox_events"
+    __table_args__ = (
+        Index("ix_outbox_pending", "created_at", postgresql_where=text("processed_at IS NULL")),
+        CheckConstraint("attempts >= 0", name="ck_outbox_attempts_nonnegative"),
+    )
+    work_order_id: Mapped[UUID] = mapped_column(ForeignKey("work_orders.id"), nullable=False)
+    event_id: Mapped[UUID] = mapped_column(
+        ForeignKey("work_order_events.id"), nullable=False, unique=True
+    )
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, server_default=func.now()
+    )
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")

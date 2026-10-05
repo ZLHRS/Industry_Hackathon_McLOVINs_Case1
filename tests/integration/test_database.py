@@ -13,6 +13,7 @@ pytestmark = pytest.mark.asyncio
 async def test_database_connection_preserves_isolated_schema_and_server_timeouts(database) -> None:
     async with database.engine.connect() as connection:
         search_path = await connection.scalar(text("SHOW search_path"))
+        assert await connection.scalar(text("SHOW timezone")) == "UTC"
         statement_timeout = await connection.scalar(text("SHOW statement_timeout"))
         lock_timeout = await connection.scalar(text("SHOW lock_timeout"))
 

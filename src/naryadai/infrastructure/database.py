@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 
 _POSTGRESQL_PREFIX: Final = "postgresql+psycopg://"
-SCHEMA_REVISION: Final = "0001_initial_schema"
+SCHEMA_REVISION: Final = "0002_order_workflow"
 
 
 class Database:
@@ -68,6 +68,7 @@ def _install_server_timeouts(engine: AsyncEngine) -> None:
     def set_timeouts(dbapi_connection: Any, _connection_record: Any) -> None:
         cursor = dbapi_connection.cursor()
         try:
+            cursor.execute("SET TIME ZONE 'UTC'")
             cursor.execute("SET statement_timeout = '30000'")
             cursor.execute("SET lock_timeout = '5000'")
             cursor.execute("SET idle_in_transaction_session_timeout = '60000'")
