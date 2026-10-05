@@ -174,3 +174,52 @@ it("sends only endpoint and keys from a browser subscription JSON", async () => 
     keys: { p256dh: "receiver", auth: "auth-secret" },
   });
 });
+
+describe("analytics requests preserve privacy boundaries", () => {
+  const query = {
+    period: "shift" as const,
+    shift: "night" as const,
+    date: "2026-10-06",
+    timezone: "Asia/Qostanay",
+    area_id: ["area-id"],
+    equipment_id: [],
+    executor_id: ["executor-id"],
+    brigade_id: [],
+  };
+
+  it("uses authenticated query parameters for reports, summaries, and XLSX without token URLs", async () => {
+    const calls: Array<[string, RequestInit]> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        calls.push([url, init]);
+        if (url.includes("/export")) {
+          return new Response(new Blob(["xlsx"]), {
+            status: 200,
+            headers: { "Content-Disposition": 'attachment; filename="report.xlsx"' },
+          });
+        }
+        return new Response(
+          JSON.stringify(
+            url.includes("/summary")
+              ? { source: "rules", model: null, text: "factual", limitations: [], evidence_ids: [] }
+              : {},
+          ),
+          { status: 200 },
+        );
+      }),
+    );
+    const api = new Api(() => "private-token");
+    await api.analyticsReport(query);
+    await api.analyticsSummary(query);
+    const file = await api.analyticsExport(query);
+    expect(file.filename).toBe("report.xlsx");
+    expect(calls).toHaveLength(3);
+    for (const [url, init] of calls) {
+      expect(url).toContain("period=shift");
+      expect(url).toContain("executor_id=executor-id");
+      expect(url).not.toContain("private-token");
+      expect(new Headers(init.headers).get("Authorization")).toBe("Bearer private-token");
+    }
+  });
+});

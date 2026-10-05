@@ -14,6 +14,7 @@ import type {
   NotificationItem,
   PushConfig,
 } from "./types";
+import type { AnalyticsOptions, AnalyticsQuery, AnalyticsReport, AnalyticsSummary } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -231,6 +232,75 @@ export class Api {
   }
   removePushSubscription(id: string) {
     return this.request<void>(`/notifications/subscriptions/${id}`, { method: "DELETE" });
+  }
+  private analyticsPath(path: string, query: AnalyticsQuery) {
+    const params = new URLSearchParams();
+    params.set("period", query.period);
+    params.set("timezone", query.timezone);
+    if (query.shift) params.set("shift", query.shift);
+    if (query.date) params.set("date", query.date);
+    if (query.from) params.set("from", query.from);
+    if (query.to) params.set("to", query.to);
+    (["area_id", "equipment_id", "executor_id", "brigade_id"] as const).forEach((key) =>
+      query[key].forEach((value) => params.append(key, value)),
+    );
+    return `${path}?${params}`;
+  }
+  analyticsOptions() {
+    return this.request<AnalyticsOptions>("/analytics/options");
+  }
+  analyticsReport(query: AnalyticsQuery) {
+    return this.request<AnalyticsReport>(this.analyticsPath("/analytics/report", query));
+  }
+  analyticsSummary(query: AnalyticsQuery) {
+    return this.request<AnalyticsSummary>(this.analyticsPath("/analytics/summary", query), {
+      method: "POST",
+    });
+  }
+  async analyticsExport(query: AnalyticsQuery) {
+    const response = await this.response(this.analyticsPath("/analytics/export", query));
+    const disposition = response.headers.get("Content-Disposition") ?? "";
+    const name = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? "naryadai-report.xlsx";
+    return { blob: await response.blob(), filename: name.replace(/[^a-zA-Zа-яА-Я0-9._-]/g, "_") };
+  }
+  downtime(
+    id: string,
+    payload: {
+      expected_version: number;
+      started_at?: string | null;
+      ended_at?: string | null;
+      reason: string;
+      void?: boolean;
+    },
+    key?: string,
+  ) {
+    const body = canonical(payload);
+    return this.mutate(
+      `/work-orders/${id}/downtime`,
+      { headers: { "Content-Type": "application/json" }, body },
+      body,
+      key,
+    );
+  }
+  assessRefusal(
+    id: string,
+    rejectionEventId: string,
+    payload: { expected_version: number; justified: boolean; reason: string },
+    key?: string,
+  ) {
+    const body = canonical(payload);
+    return this.mutate(
+      `/work-orders/${id}/refusals/${rejectionEventId}/assessment`,
+      { headers: { "Content-Type": "application/json" }, body },
+      body,
+      key,
+    );
+  }
+  async orderReport(id: string) {
+    const response = await this.response(`/work-orders/${id}/report.xlsx`);
+    const disposition = response.headers.get("Content-Disposition") ?? "";
+    const filename = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? `order-${id}.xlsx`;
+    return { blob: await response.blob(), filename: filename.replace(/[^a-zA-Zа-яА-Я0-9._-]/g, "_") };
   }
   async photoBlob(path: string): Promise<string> {
     if (!/^\/api\/v1\/work-orders\/[0-9a-f-]{36}\/photos\/[0-9a-f-]{36}$/.test(path)) {

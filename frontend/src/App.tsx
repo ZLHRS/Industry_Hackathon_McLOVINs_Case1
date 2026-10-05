@@ -5,6 +5,7 @@ import { OrderDetailDialog } from "./features/OrderDetail";
 import { NotificationButton, NotificationsDialog } from "./features/Notifications";
 import { RealtimeConnection } from "./lib/realtime";
 import { OrdersView, ReferenceView, WorkloadView } from "./features/Workspace";
+import { AnalyticsView } from "./features/Analytics";
 import {
   clearActor,
   enqueue,
@@ -15,10 +16,10 @@ import {
   syncPending,
   retryPending,
 } from "./lib/offline";
-import type { ActionRequest, Catalog, Employee, OrderPage, Role, User, Workload } from "./types";
+import type { ActionRequest, Catalog, Employee, EventItem, OrderPage, Role, User, Workload } from "./types";
 import "./styles.css";
 
-type View = "orders" | "workload" | "reference";
+type View = "orders" | "workload" | "reference" | "analytics";
 type Dashboard = { catalog: Catalog; orders: OrderPage; workload: Workload[]; employees: Employee[] };
 const tokenKey = "naryadai.session.token";
 const expiryKey = "naryadai.session.expires";
@@ -37,16 +38,19 @@ const nav: Record<Role, Array<[View, string]>> = {
     ["orders", "Наряды"],
     ["workload", "Загрузка"],
     ["reference", "Контекст"],
+    ["analytics", "Отчёт"],
   ],
   executor: [
     ["orders", "Моя работа"],
     ["workload", "Смена"],
     ["reference", "Контекст"],
+    ["analytics", "Отчёт"],
   ],
   manager: [
     ["orders", "Наряды"],
     ["workload", "Загрузка"],
     ["reference", "Контекст"],
+    ["analytics", "Отчёт"],
   ],
   admin: [["reference", "Справочники"]],
 };
@@ -115,7 +119,18 @@ export default function App() {
   const authGeneration = useRef(0);
   const refreshGeneration = useRef(0);
   const loadOrderDetail = useCallback(
-    async (id: string) => ({ detail: await api.order(id), events: (await api.events(id)).items }),
+    async (id: string) => {
+      const detail = await api.order(id);
+      const events: EventItem[] = [];
+      let after = 0;
+      for (let pageNumber = 0; pageNumber < 20; pageNumber++) {
+        const page = await api.events(id, after);
+        events.push(...page.items);
+        if (page.next_after === null) return { detail, events };
+        after = page.next_after;
+      }
+      throw new ApiError(413, "history_limit_exceeded");
+    },
     [api],
   );
   const sender = useCallback(
@@ -256,7 +271,7 @@ export default function App() {
         actorIdRef.current = next.id;
         sessionStorage.setItem(userKey, JSON.stringify(next));
         setUser(next);
-        setView(next.role === "admin" ? "reference" : "orders");
+        setView((current) => (next.role === "admin" ? "reference" : current));
         await refreshRef.current(next);
         if (!live || sessionStorage.getItem(tokenKey) !== token) return;
         const report = await syncRef.current(next.id);
@@ -366,6 +381,7 @@ export default function App() {
     authGeneration.current += 1;
     sessionStorage.setItem(tokenKey, response.access_token);
     sessionStorage.setItem(expiryKey, response.expires_at);
+    setView("orders");
     setToken(response.access_token);
   }
   async function directAction(id: string, request: ActionRequest, canQueue = false) {
@@ -553,11 +569,16 @@ export default function App() {
           />
         )}{" "}
         {view === "workload" && <WorkloadView workers={data?.workload ?? []} />}{" "}
+        {view === "analytics" && <AnalyticsView api={api} role={user.role} revision={liveRevision} />}{" "}
         {view === "reference" && (
           <ReferenceView role={user.role} catalog={data?.catalog ?? null} employees={data?.employees ?? []} />
         )}
       </main>
-      <nav className="bottom-nav" aria-label="Мобильная навигация">
+      <nav
+        className="bottom-nav"
+        aria-label="Мобильная навигация"
+        style={{ gridTemplateColumns: "repeat(" + currentNav.length + ", 1fr)" }}
+      >
         {currentNav.map(([key, label]) => (
           <button key={key} className={view === key ? "active" : ""} onClick={() => setView(key)}>
             {label}
@@ -590,6 +611,9 @@ export default function App() {
           revision={liveRevision}
           onAction={directAction}
           photoUrl={(path) => api.photoBlob(path)}
+          onReport={(id) => api.orderReport(id)}
+          onDowntime={(id, input) => api.downtime(id, input)}
+          onAssessRefusal={(id, eventId, input) => api.assessRefusal(id, eventId, input)}
           onPhoto={async (id, kind, version, file) => {
             await api.photo(id, kind, version, file);
             await refresh();

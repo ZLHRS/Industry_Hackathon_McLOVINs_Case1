@@ -241,3 +241,142 @@ export interface PushConfig {
   enabled: boolean;
   public_key: string | null;
 }
+
+export interface AnalyticsQuery {
+  period: "shift" | "day" | "week" | "month" | "custom";
+  shift?: "day" | "night";
+  date?: string;
+  from?: string;
+  to?: string;
+  timezone: string;
+  area_id: string[];
+  equipment_id: string[];
+  executor_id: string[];
+  brigade_id: string[];
+}
+export interface AnalyticsOption {
+  id: string;
+  name: string;
+  code?: string | null;
+}
+export interface AnalyticsOptions {
+  areas: AnalyticsOption[];
+  equipment: AnalyticsOption[];
+  executors: AnalyticsOption[];
+  brigades: AnalyticsOption[];
+}
+export interface AnalyticsRatingComponent {
+  value: number | null;
+  numerator: number | null;
+  denominator: number | null;
+  detail: string;
+}
+export interface AnalyticsRating {
+  subject_id: string;
+  subject_name: string;
+  score: number | null;
+  sample_size: number;
+  components: Record<string, AnalyticsRatingComponent>;
+  unavailable_components: string[];
+}
+export interface AnalyticsReport {
+  period: {
+    kind: AnalyticsQuery["period"];
+    shift: "day" | "night" | null;
+    timezone: string;
+    from: string;
+    to: string;
+    label: string;
+  };
+  filters: Record<string, string[]>;
+  scope: { role: Role; area_ids: string[] };
+  orders: {
+    issued: number;
+    completed: number;
+    closed: number;
+    overdue: number;
+    rejected: number;
+    backlog: number;
+  };
+  durations: {
+    response_seconds: number | null;
+    work_seconds: number | null;
+    pause_seconds: number | null;
+    sample_sizes: Record<string, number>;
+  };
+  activity: {
+    active_order_count: number;
+    active_seconds: number;
+    by_employee: Array<{
+      employee_id: string;
+      employee_name: string;
+      active_seconds: number;
+      paused_seconds: number;
+      order_count: number;
+    }>;
+  };
+  downtime: {
+    known_seconds: number;
+    planned_seconds: number;
+    unplanned_seconds: number;
+    by_fault: Record<string, number>;
+    unknown_order_count: number;
+    by_equipment: Array<{
+      equipment_id: string;
+      equipment_name: string;
+      known_seconds: number;
+      order_ids: string[];
+      unknown_order_count: number;
+    }>;
+  };
+  ratings: { employees: AnalyticsRating[]; brigades: AnalyticsRating[]; limitations: string[] };
+  materials: {
+    usage: Array<{
+      material_id: string;
+      material_name: string;
+      unit: string;
+      quantity: number;
+      order_count: number;
+    }>;
+    by_area: unknown[];
+    by_equipment: unknown[];
+    by_executor: unknown[];
+  };
+  leaders: {
+    machines: Array<{
+      id: string;
+      name: string;
+      order_count: number;
+      overdue_count: number;
+      downtime_seconds: number;
+    }>;
+    areas: Array<{
+      id: string;
+      name: string;
+      order_count: number;
+      overdue_count: number;
+      downtime_seconds: number;
+    }>;
+  };
+  anomalies: Array<{
+    family: string;
+    severity: "low" | "medium" | "high";
+    title: string;
+    evidence: Record<string, unknown>;
+    formula: string;
+  }>;
+  meta: {
+    as_of: string;
+    row_count: number;
+    synthetic_count: number;
+    formula_descriptions: Record<string, string>;
+    warnings: string[];
+  };
+}
+export interface AnalyticsSummary {
+  source: "openai" | "rules";
+  model: string | null;
+  text: string;
+  limitations: string[];
+  evidence_ids: string[];
+}

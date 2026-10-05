@@ -188,6 +188,8 @@ def _configure_application(database_url: str, photo_root: Path) -> None:
             "NARYADAI_LOGIN_ACCOUNT_LIMIT": "20",
             "NARYADAI_LOGIN_PEER_LIMIT": "200",
             "NARYADAI_PHOTO_ROOT": str(photo_root),
+            "NARYADAI_AI_API_KEY": "",
+            "NARYADAI_AI_VISION_ENABLED": "false",
         }
     )
 

@@ -44,6 +44,22 @@ type Props = {
   onAction: (id: string, request: ActionRequest, queue?: boolean) => Promise<void>;
   onPhoto: (id: string, kind: "before" | "after", version: number, file: File) => Promise<void>;
   photoUrl: (path: string) => Promise<string>;
+  onReport: (id: string) => Promise<{ blob: Blob; filename: string }>;
+  onDowntime: (
+    id: string,
+    input: {
+      expected_version: number;
+      started_at?: string | null;
+      ended_at?: string | null;
+      reason: string;
+      void?: boolean;
+    },
+  ) => Promise<unknown>;
+  onAssessRefusal: (
+    id: string,
+    rejectionEventId: string,
+    input: { expected_version: number; justified: boolean; reason: string },
+  ) => Promise<unknown>;
   revision: number;
   onClose: () => void;
 };
@@ -57,6 +73,9 @@ export function OrderDetailDialog({
   onAction,
   onPhoto,
   photoUrl,
+  onReport,
+  onDowntime,
+  onAssessRefusal,
   revision,
   onClose,
 }: Props) {
@@ -64,6 +83,9 @@ export function OrderDetailDialog({
   const [events, setEvents] = useState<EventItem[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [reportExporting, setReportExporting] = useState(false);
+  const [downtime, setDowntime] = useState({ started_at: "", ended_at: "", reason: "" });
+  const [refusal, setRefusal] = useState({ event_id: "", justified: "true", reason: "" });
   const [reason, setReason] = useState("");
   const [comment, setComment] = useState("");
   const [priority, setPriority] = useState("");
@@ -93,7 +115,13 @@ export function OrderDetailDialog({
           setDetail(undefined);
           setEvents([]);
         }
-        setError(caught.status === 404 ? "Наряд больше недоступен." : "Не удалось загрузить карточку.");
+        setError(
+          caught.status === 404
+            ? "Наряд больше недоступен."
+            : caught.detail === "history_limit_exceeded"
+              ? "Журнал превышает предел 2 000 событий. Сузьте период в отчёте или обратитесь к администратору."
+              : "Не удалось загрузить карточку.",
+        );
       });
   }, [id, load]);
   useEffect(() => {
@@ -166,6 +194,60 @@ export function OrderDetailDialog({
         };
     await act("complete", { completion: completionData }, true);
   }
+  async function downloadReport() {
+    setReportExporting(true);
+    try {
+      const file = await onReport(id);
+      const href = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = file.filename;
+      link.click();
+      URL.revokeObjectURL(href);
+    } catch {
+      setError("Не удалось скачать отчёт Excel.");
+    } finally {
+      setReportExporting(false);
+    }
+  }
+  async function saveDowntime(voidRecord = false) {
+    if (!detail || (!voidRecord && (!downtime.started_at || downtime.reason.trim().length < 3))) return;
+    setBusy(true);
+    setError("");
+    try {
+      await onDowntime(id, {
+        expected_version: detail.version,
+        reason: downtime.reason,
+        void: voidRecord,
+        started_at: voidRecord ? null : downtime.started_at + ":00+05:00",
+        ended_at: voidRecord || !downtime.ended_at ? null : downtime.ended_at + ":00+05:00",
+      });
+      setDowntime({ started_at: "", ended_at: "", reason: "" });
+      await refresh();
+    } catch {
+      setError("Простой не сохранён. Проверьте время и причину.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function assessRefusal() {
+    if (!detail || !refusal.event_id || refusal.reason.trim().length < 3) return;
+    setBusy(true);
+    setError("");
+    try {
+      await onAssessRefusal(id, refusal.event_id, {
+        expected_version: detail.version,
+        justified: refusal.justified === "true",
+        reason: refusal.reason,
+      });
+      setRefusal({ event_id: "", justified: "true", reason: "" });
+      await refresh();
+    } catch {
+      setError("Оценка отказа не сохранена.");
+    } finally {
+      setBusy(false);
+    }
+  }
   async function upload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file || !detail) return;
@@ -189,6 +271,8 @@ export function OrderDetailDialog({
   const machine = catalog.equipment.find((item) => item.id === detail.equipment_id);
   const canExecutor = role === "executor";
   const masterOwns = role === "master" && detail.master_id === currentUserId;
+  const rejections = events.filter((item) => item.action === "reject");
+  const latestDowntime = [...events].reverse().find((item) => item.action === "record_downtime");
   const currentReview = detail.reviews.find((review) => review.is_current);
   const currentMaterials = detail.materials.filter(
     (item) => item.submission_version === detail.last_submission_version,
@@ -214,7 +298,17 @@ export function OrderDetailDialog({
   return (
     <Dialog title={`${detail.number} · ${ruStatus[detail.status]}`} onClose={onClose}>
       <div className="order-detail">
-        <p className="order-description">{detail.description}</p>
+        <div className="order-tools">
+          <p className="order-description">{detail.description}</p>
+          <button
+            className="secondary"
+            type="button"
+            onClick={() => void downloadReport()}
+            disabled={reportExporting}
+          >
+            {reportExporting ? "Готовим…" : "Отчёт Excel"}
+          </button>
+        </div>
         <dl className="facts">
           <div>
             <dt>Оборудование</dt>
@@ -459,6 +553,128 @@ export function OrderDetailDialog({
           </form>
         )}
         {masterOwns && (
+          <section className="action-block audit-controls">
+            <h3>Учёт простоя</h3>
+            <p className="muted">
+              {latestDowntime
+                ? latestDowntime.details.void === true
+                  ? "Последняя запись простоя аннулирована."
+                  : `Последняя запись: ${local(String(latestDowntime.details.started_at ?? latestDowntime.occurred_at))}`
+                : "Интервал вносится мастером и не выводится из статуса наряда."}
+            </p>
+            <div className="action-row">
+              <label>
+                Начало простоя
+                <input
+                  type="datetime-local"
+                  value={downtime.started_at}
+                  disabled={busy}
+                  onChange={(event) => setDowntime((value) => ({ ...value, started_at: event.target.value }))}
+                />
+              </label>
+              <label>
+                Окончание (можно оставить открытым)
+                <input
+                  type="datetime-local"
+                  value={downtime.ended_at}
+                  disabled={busy}
+                  onChange={(event) => setDowntime((value) => ({ ...value, ended_at: event.target.value }))}
+                />
+              </label>
+            </div>
+            <label>
+              Причина записи или исправления
+              <textarea
+                value={downtime.reason}
+                disabled={busy}
+                minLength={3}
+                onChange={(event) => setDowntime((value) => ({ ...value, reason: event.target.value }))}
+              />
+            </label>
+            <div className="action-row">
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !downtime.started_at || downtime.reason.trim().length < 3}
+                onClick={() => void saveDowntime()}
+              >
+                Зафиксировать простой
+              </button>
+              {latestDowntime && (
+                <button
+                  type="button"
+                  className="text-button"
+                  disabled={busy || downtime.reason.trim().length < 3}
+                  onClick={() => void saveDowntime(true)}
+                >
+                  Аннулировать последнюю запись
+                </button>
+              )}
+            </div>
+          </section>
+        )}
+        {masterOwns && rejections.length > 0 && (
+          <section className="action-block audit-controls">
+            <h3>Оценка отказа</h3>
+            <p className="muted">Решение добавляется к исходному отказу и не меняет статус наряда.</p>
+            <label>
+              Отказ
+              <select
+                value={refusal.event_id}
+                disabled={busy}
+                onChange={(event) => setRefusal((value) => ({ ...value, event_id: event.target.value }))}
+              >
+                <option value="">Выберите отказ…</option>
+                {rejections.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {local(item.occurred_at)} · {item.reason ?? "без причины"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <fieldset className="assessment-choice">
+              <legend>Оценка</legend>
+              <label>
+                <input
+                  type="radio"
+                  name="assessment"
+                  value="true"
+                  checked={refusal.justified === "true"}
+                  onChange={(event) => setRefusal((value) => ({ ...value, justified: event.target.value }))}
+                />{" "}
+                Обоснован
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="assessment"
+                  value="false"
+                  checked={refusal.justified === "false"}
+                  onChange={(event) => setRefusal((value) => ({ ...value, justified: event.target.value }))}
+                />{" "}
+                Необоснован
+              </label>
+            </fieldset>
+            <label>
+              Основание решения
+              <textarea
+                value={refusal.reason}
+                disabled={busy}
+                minLength={3}
+                onChange={(event) => setRefusal((value) => ({ ...value, reason: event.target.value }))}
+              />
+            </label>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !refusal.event_id || refusal.reason.trim().length < 3}
+              onClick={() => void assessRefusal()}
+            >
+              Сохранить оценку
+            </button>
+          </section>
+        )}
+        {masterOwns && (
           <section className="action-block">
             <h3>Управление мастера</h3>
             <label>
@@ -625,6 +841,20 @@ export function OrderDetailDialog({
                   {local(item.occurred_at)} · {item.actor_role}
                 </span>
                 {item.reason && <small>{item.reason}</small>}
+                {item.action === "record_downtime" && (
+                  <small>
+                    <strong>
+                      {item.details.void === true ? "Простой аннулирован" : "Простой зафиксирован"}
+                    </strong>
+                    {item.details.started_at ? `: с ${local(String(item.details.started_at))}` : ""}
+                    {item.details.ended_at ? ` по ${local(String(item.details.ended_at))}` : ""}
+                  </small>
+                )}
+                {item.action === "adjudicate_refusal" && (
+                  <small>
+                    <strong>Отказ: {item.details.justified === true ? "обоснован" : "необоснован"}</strong>
+                  </small>
+                )}
               </li>
             ))}
           </ol>
