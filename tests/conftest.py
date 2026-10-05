@@ -12,3 +12,9 @@ def isolate_settings_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
         if key.startswith("NARYADAI_"):
             monkeypatch.delenv(key)
     monkeypatch.chdir(tmp_path)
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--require-db", action="store_true", help="Fail if PostgreSQL tests cannot run"
+    )

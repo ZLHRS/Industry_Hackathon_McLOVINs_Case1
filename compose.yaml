@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: postgres:16.15
+    environment:
+      POSTGRES_DB: naryadai
+      POSTGRES_USER: naryadai
+      POSTGRES_PASSWORD: ${NARYADAI_POSTGRES_PASSWORD:?Set NARYADAI_POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U naryadai -d naryadai"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  postgres_data:

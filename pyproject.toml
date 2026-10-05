@@ -5,8 +5,12 @@ description = "NaryadAI: industrial maintenance work orders and decision support
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
+    "alembic>=1.15,<2",
+    "argon2-cffi>=25,<26",
     "fastapi>=0.115,<1",
+    "psycopg[binary]>=3.2,<4",
     "pydantic-settings>=2.8,<3",
+    "sqlalchemy[asyncio]>=2.0,<2.1",
     "uvicorn>=0.34,<1",
 ]
 
@@ -15,6 +19,7 @@ dev = [
     "httpx2>=2.13.1",
     "mypy>=1.15,<2",
     "pytest>=8.3,<10",
+    "pytest-asyncio>=1,<2",
     "pytest-cov>=6,<8",
     "ruff>=0.11,<1",
 ]
@@ -31,6 +36,10 @@ include = [
     "/src",
     "/tests",
     "/docs",
+    "/migrations",
+    "/alembic.ini",
+    "/scripts",
+    "/compose.yaml",
     "/README.md",
     "/pyproject.toml",
     "/uv.lock",
@@ -59,6 +68,8 @@ addopts = "--strict-config --strict-markers -ra"
 filterwarnings = ["error"]
 
 [tool.coverage.run]
+# SQLAlchemy async bridges use greenlet; Argon2 verification uses worker threads.
+concurrency = ["thread", "greenlet"]
 branch = true
 source = ["naryadai"]
 

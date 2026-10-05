@@ -20,8 +20,8 @@ def test_liveness_and_development_schema():
         assert schema["info"]["version"] == "0.1.0"
         assert "/api/v1/health/live" in schema["paths"]
         assert client.get("/docs").status_code == 200
-        # No readiness endpoint until actual infrastructure probes exist.
-        assert client.get("/api/v1/health/ready").status_code == 404
+        # Readiness now reports unavailable until PostgreSQL is configured.
+        assert client.get("/api/v1/health/ready").status_code == 503
 
 
 def test_factory_reads_environment_at_call_time(monkeypatch):

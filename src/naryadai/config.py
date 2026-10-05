@@ -4,8 +4,9 @@ from enum import StrEnum
 from typing import Self
 from urllib.parse import urlsplit
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 
 class Environment(StrEnum):
@@ -27,6 +28,24 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1", "[::1]")
     cors_origins: tuple[str, ...] = ()
+    database_url: SecretStr | None = None
+    session_ttl_seconds: int = Field(default=28800, ge=60, le=86400)
+    login_window_seconds: int = Field(default=900, ge=60, le=3600)
+    login_account_limit: int = Field(default=5, ge=1, le=20)
+    login_peer_limit: int = Field(default=50, ge=1, le=200)
+
+    @field_validator("database_url")
+    @classmethod
+    def validate_database_url(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is None:
+            return None
+        try:
+            parsed = make_url(value.get_secret_value())
+        except Exception:
+            raise ValueError("Invalid PostgreSQL URL") from None
+        if parsed.drivername != "postgresql+psycopg" or not parsed.database:
+            raise ValueError("Use postgresql+psycopg with an explicit database")
+        return value
 
     @field_validator("log_level")
     @classmethod

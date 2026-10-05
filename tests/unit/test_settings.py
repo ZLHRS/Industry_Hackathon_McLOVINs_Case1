@@ -55,3 +55,37 @@ def test_production_accepts_explicit_secure_origin():
 def test_dotenv_is_utf8_and_optional(tmp_path):
     (tmp_path / ".env").write_text("NARYADAI_LOG_LEVEL=error\n", encoding="utf-8")
     assert Settings().log_level == "ERROR"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "sqlite:///local.db",
+        "postgresql://user:secret@localhost/db",
+        "postgresql+psycopg://localhost",
+        "not-a-url",
+    ],
+)
+def test_only_explicit_psycopg_database_urls_are_accepted(value):
+    with pytest.raises(ValidationError):
+        Settings(database_url=value)
+
+
+def test_database_url_is_redacted():
+    settings = Settings(database_url="postgresql+psycopg://user:sensitive-secret@localhost/db")
+    assert "sensitive-secret" not in repr(settings)
+    assert "sensitive-secret" not in settings.model_dump_json()
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"session_ttl_seconds": 0},
+        {"login_account_limit": 0},
+        {"login_peer_limit": 0},
+        {"login_window_seconds": 1},
+    ],
+)
+def test_session_and_login_limits_are_bounded(values):
+    with pytest.raises(ValidationError):
+        Settings(**values)

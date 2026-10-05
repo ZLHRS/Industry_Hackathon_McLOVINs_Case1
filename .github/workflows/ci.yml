@@ -7,7 +7,21 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16.15
+        env:
+          POSTGRES_DB: naryadai_test
+          POSTGRES_USER: test_runner
+          POSTGRES_PASSWORD: ephemeral-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test_runner -d naryadai_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      NARYADAI_TEST_DATABASE_URL: postgresql+psycopg://test_runner:ephemeral-ci-only@127.0.0.1:5432/naryadai_test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -22,8 +36,8 @@ jobs:
         run: uv run --locked ruff format --check .
       - name: Types
         run: uv run --locked mypy
-      - name: Tests and coverage
-        run: uv run --locked pytest --cov=naryadai --cov-report=term-missing --cov-report=xml
+      - name: Tests including required PostgreSQL
+        run: uv run --locked pytest --require-db --cov=naryadai --cov-report=term-missing --cov-report=xml
       - name: Build package
         run: uv build
       - name: Check patch whitespace
