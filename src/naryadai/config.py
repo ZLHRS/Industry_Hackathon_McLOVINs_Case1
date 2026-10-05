@@ -23,6 +23,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         frozen=True,
+        hide_input_in_errors=True,
     )
 
     environment: Environment = Environment.DEVELOPMENT
@@ -47,6 +48,35 @@ class Settings(BaseSettings):
     push_max_attempts: int = Field(default=5, ge=1, le=10)
     push_lease_seconds: int = Field(default=60, ge=30, le=300)
     realtime_poll_seconds: float = Field(default=1.0, ge=0.1, le=2)
+
+    # A missing key yields an explicit manual review; it never invents an AI verdict.
+    ai_api_key: SecretStr | None = None
+    ai_model: str = Field(
+        default="gpt-4.1-mini-2025-04-14",
+        min_length=1,
+        max_length=120,
+        pattern=r"^[a-zA-Z0-9._:-]+$",
+    )
+    ai_vision_enabled: bool = False
+    ai_timeout_seconds: float = Field(default=30, ge=1, le=40)
+    ai_total_timeout_seconds: float = Field(default=45, ge=5, le=45)
+    ai_max_attempts: int = Field(default=3, ge=1, le=5)
+    ai_lease_seconds: int = Field(default=120, ge=35, le=300)
+
+    @field_validator("ai_api_key")
+    @classmethod
+    def validate_ai_key(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is None or not value.get_secret_value().strip():
+            return None
+        return SecretStr(value.get_secret_value().strip())
+
+    @model_validator(mode="after")
+    def validate_ai_timeouts(self) -> Self:
+        if self.ai_total_timeout_seconds < self.ai_timeout_seconds:
+            raise ValueError("AI total timeout must cover the request timeout")
+        if self.ai_lease_seconds < self.ai_total_timeout_seconds + 30:
+            raise ValueError("AI lease must exceed the total timeout by at least 30 seconds")
+        return self
 
     @field_validator("web_push_subject")
     @classmethod

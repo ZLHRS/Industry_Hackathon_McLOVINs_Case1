@@ -217,6 +217,26 @@ async def _event_recipients(
             order.priority.value == "emergency",
             True,
         )
+    if event.action in {"record_ai_assessment", "mark_rework"}:
+        return (
+            list(dict.fromkeys([order.master_id, order.executor_id])),
+            "review_ready",
+            f"Готова проверка ремонта: {order.number}",
+            False,
+            True,
+        )
+    if event.action in {"close", "override_close", "request_rework"}:
+        rework = event.action == "request_rework"
+        return (
+            [order.executor_id],
+            "master_decision",
+            f"Наряд {order.number}: " + ("требуется доработка" if rework else "принят мастером"),
+            False,
+            rework,
+        )
+    if event.action == "start_ai_review":
+        # The final review event provides one notification with useful evidence.
+        return ([], "workflow", "", False, False)
     if event.from_status == event.to_status:
         return ([], "workflow", "", False, False)
     status = "изменён" if event.to_status is None else _STATUS_LABELS[event.to_status]
@@ -230,7 +250,7 @@ async def _event_recipients(
 
 
 async def _bump_current_viewers(
-    session: AsyncSession, order: WorkOrder, event: WorkOrderEvent, now: datetime
+    session: AsyncSession, order: WorkOrder, event: WorkOrderEvent | None, now: datetime
 ) -> None:
     """Bump every current order viewer even when an old event has no inbox alert."""
 
@@ -252,12 +272,17 @@ async def _bump_current_viewers(
             )
         ).all()
     )
-    previous = event.details.get("previous_executor_id")
+    previous = event.details.get("previous_executor_id") if event is not None else None
     if isinstance(previous, str):
         with suppress(ValueError):
             viewers.add(UUID(previous))
     for employee_id in viewers:
         await _bump_revision(session, employee_id, now)
+
+
+async def invalidate_order_views(session: AsyncSession, order: WorkOrder, now: datetime) -> None:
+    """Publish job progress to current viewers without inventing a lifecycle event."""
+    await _bump_current_viewers(session, order, None, now)
 
 
 async def process_outbox(database: Database, *, now: datetime, limit: int = 100) -> int:

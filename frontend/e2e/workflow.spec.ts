@@ -137,7 +137,9 @@ test("master issue, mobile photo/material completion", async ({ page, browser, r
     await noOverflow(worker);
     await detail.getByRole("button", { name: "Сдать наряд", exact: true }).click();
     const master = await token(request, state.master_login);
-    await expect.poll(async () => (await readOrder(request, master, id)).status).toBe("completed");
+    await expect
+      .poll(async () => (await readOrder(request, master, id)).status)
+      .toMatch(/^(completed|ai_review)$/);
     const saved = await readOrder(request, master, id);
     expect(saved.materials).toHaveLength(2);
     expect(

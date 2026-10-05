@@ -373,3 +373,56 @@ async def test_stale_issue_does_not_notify_completed_order_but_bumps_viewers(dat
             )
             == 3
         )
+
+
+@pytest.mark.parametrize(
+    ("action", "target", "kind", "both_recipients", "action_required"),
+    [
+        ("record_ai_assessment", WorkOrderStatus.AI_REVIEW, "review_ready", True, True),
+        ("mark_rework", WorkOrderStatus.REWORK, "review_ready", True, True),
+        ("close", WorkOrderStatus.CLOSED, "master_decision", False, False),
+        ("override_close", WorkOrderStatus.CLOSED, "master_decision", False, False),
+        ("request_rework", WorkOrderStatus.REWORK, "master_decision", False, True),
+    ],
+)
+async def test_review_and_master_decision_notify_interested_people_once(
+    database, action, target, kind, both_recipients, action_required
+):
+    now = datetime.now(UTC)
+    order_id, executor_id, master_id, _ = await _order(
+        database, status=WorkOrderStatus.COMPLETED, deadline=now + timedelta(hours=1)
+    )
+    async with database.sessions.begin() as session:
+        order = await session.get(WorkOrder, order_id)
+        order.status = target
+        if target is WorkOrderStatus.CLOSED:
+            order.closed_at = now
+        event = WorkOrderEvent(
+            work_order_id=order_id,
+            sequence=1,
+            actor_id=None,
+            actor_role=ActorRole.SYSTEM,
+            action=action,
+            from_status=WorkOrderStatus.AI_REVIEW,
+            to_status=target,
+            details={"attempt": 1},
+            occurred_at=now,
+        )
+        session.add(event)
+        await session.flush()
+        session.add(
+            OutboxEvent(event_id=event.id, work_order_id=order_id, event_type=action, payload={})
+        )
+    assert await process_outbox(database, now=now) == (2 if both_recipients else 1)
+    assert await process_outbox(database, now=now) == 0
+    async with database.sessions() as session:
+        messages = list(
+            (
+                await session.scalars(
+                    select(Notification).where(Notification.work_order_id == order_id)
+                )
+            ).all()
+        )
+        expected = {master_id, executor_id} if both_recipients else {executor_id}
+        assert {row.employee_id for row in messages} == expected
+        assert all(row.kind == kind and row.action_required == action_required for row in messages)

@@ -118,6 +118,33 @@ export interface Photo {
   size_bytes: number;
   content_url: string;
 }
+export type ReviewCheckStatus = "pass" | "warning" | "fail" | "unknown";
+export interface ReviewCheck {
+  code: string;
+  title: string;
+  status: ReviewCheckStatus;
+  detail: string;
+}
+export interface ReviewReport {
+  schema_version?: number;
+  source?: "openai" | "rules" | "unavailable";
+  confidence?: number | null;
+  checks?: ReviewCheck[];
+  timing?: {
+    active_minutes?: number;
+    paused_minutes?: number;
+    elapsed_minutes?: number;
+    norm_minutes?: number | null;
+  };
+  limitations?: string[];
+  model_assessment?: string | null;
+}
+export interface AiJob {
+  status: string;
+  attempts: number;
+  next_attempt_at: string | null;
+  last_error_code: string | null;
+}
 export interface Review {
   id: string;
   order_version: number;
@@ -129,6 +156,7 @@ export interface Review {
   created_at: string;
   master_score: number | null;
   is_current: boolean;
+  report?: ReviewReport;
 }
 export interface OrderDetail extends Order {
   work_description: string | null;
@@ -137,6 +165,7 @@ export interface OrderDetail extends Order {
   materials: MaterialUsage[];
   photos: Photo[];
   reviews: Review[];
+  ai_job?: AiJob | null;
 }
 export interface EventItem {
   id: string;

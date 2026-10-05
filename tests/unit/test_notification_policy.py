@@ -45,7 +45,9 @@ async def test_worker_policy_loop_runs_while_push_is_slow(monkeypatch) -> None:
 
     monkeypatch.setattr(worker, "process_outbox", outbox)
     monkeypatch.setattr(worker, "scan_deadlines", deadlines)
-    task = asyncio.create_task(worker.run_worker(object(), _settings(), deliver=slow_push))
+    task = asyncio.create_task(
+        worker.run_worker(object(), _settings(), deliver=slow_push, review=slow_push)
+    )
     try:
         await asyncio.wait_for(database_passed.wait(), timeout=0.2)
     finally:
@@ -78,12 +80,48 @@ async def test_worker_retries_transient_database_error(monkeypatch) -> None:
 
     monkeypatch.setattr(worker, "process_outbox", flaky_outbox)
     monkeypatch.setattr(worker, "scan_deadlines", deadlines)
-    task = asyncio.create_task(worker.run_worker(object(), _settings(), deliver=push))
+    task = asyncio.create_task(worker.run_worker(object(), _settings(), deliver=push, review=push))
     try:
         await asyncio.wait_for(recovered.wait(), timeout=0.2)
         assert attempts >= 2
     finally:
         release_push.set()
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
+async def test_outbox_keeps_polling_while_deadline_scan_is_slow(monkeypatch) -> None:
+    second_pass = asyncio.Event()
+    deadlines_started = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    async def outbox(*_args, **_kwargs) -> int:
+        nonlocal calls
+        calls += 1
+        if calls >= 2:
+            second_pass.set()
+        return 0
+
+    async def slow_deadlines(*_args, **_kwargs) -> int:
+        deadlines_started.set()
+        await release.wait()
+        return 0
+
+    async def idle(*_args, **_kwargs) -> int:
+        await release.wait()
+        return 0
+
+    monkeypatch.setattr(worker, "process_outbox", outbox)
+    monkeypatch.setattr(worker, "scan_deadlines", slow_deadlines)
+    task = asyncio.create_task(worker.run_worker(object(), _settings(), deliver=idle, review=idle))
+    try:
+        await asyncio.wait_for(deadlines_started.wait(), timeout=0.2)
+        await asyncio.wait_for(second_pass.wait(), timeout=0.2)
+        assert not release.is_set()
+    finally:
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task

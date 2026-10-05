@@ -338,6 +338,7 @@ class Photo(UUIDPrimaryKey, Base):
         CheckConstraint("size_bytes > 0", name="ck_photo_size_positive"),
         CheckConstraint("attempt > 0", name="ck_photo_attempt_positive"),
         Index("ix_photos_work_order", "work_order_id"),
+        Index("ix_photos_sha256", "sha256"),
     )
 
     work_order_id: Mapped[UUID] = mapped_column(ForeignKey("work_orders.id"), nullable=False)
@@ -397,6 +398,54 @@ class AIReview(UUIDPrimaryKey, Base):
         DateTime(timezone=True), nullable=False, default=utc_now, server_default=func.now()
     )
     master_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    report: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+
+
+class AIReviewJob(UUIDPrimaryKey, Base):
+    __tablename__ = "ai_review_jobs"
+    __table_args__ = (
+        UniqueConstraint("work_order_id", "submission_version", name="uq_ai_review_job_submission"),
+        CheckConstraint("attempts >= 0", name="ck_ai_review_job_attempts_nonnegative"),
+        CheckConstraint("submission_version > 0", name="ck_ai_review_job_submission_positive"),
+        CheckConstraint(
+            "(status = 'running' AND lease_token IS NOT NULL AND lease_until IS NOT NULL) OR "
+            "(status <> 'running' AND lease_token IS NULL AND lease_until IS NULL)",
+            name="ck_ai_review_job_lease",
+        ),
+        Index(
+            "ix_ai_review_jobs_expired", "lease_until", postgresql_where=text("status = 'running'")
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'running', 'retry', 'completed', 'stale', 'failed')",
+            name="ck_ai_review_job_status",
+        ),
+        Index(
+            "ix_ai_review_jobs_due",
+            "next_attempt_at",
+            postgresql_where=text("status IN ('pending', 'retry')"),
+        ),
+    )
+
+    work_order_id: Mapped[UUID] = mapped_column(ForeignKey("work_orders.id"), nullable=False)
+    submission_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending", server_default="pending"
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, server_default=func.now()
+    )
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_token: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, server_default=func.now()
+    )
 
 
 class AuthSession(UUIDPrimaryKey, Base):

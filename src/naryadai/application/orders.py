@@ -36,6 +36,7 @@ from naryadai.domain.lifecycle import (
 from naryadai.infrastructure.database import Database
 from naryadai.infrastructure.models import (
     AIReview,
+    AIReviewJob,
     Employee,
     EmployeeArea,
     EmployeeRole,
@@ -314,6 +315,15 @@ async def _apply_completion(
     if completion.comment is not None:
         order.comment = completion.comment
     order.last_submission_version = next_version
+    session.add(
+        AIReviewJob(
+            work_order_id=order.id,
+            submission_version=next_version,
+            status="pending",
+            attempts=0,
+            next_attempt_at=_now(),
+        )
+    )
     for line in completion.materials:
         session.add(
             MaterialUsage(
@@ -448,8 +458,24 @@ async def execute_action(
                     "no_materials_reason": body.completion.no_materials_reason,
                     "comment": body.completion.comment,
                 }
-            elif action in {Action.CLOSE, Action.OVERRIDE_CLOSE}:
-                order.closed_at = at
+            elif action in {Action.CLOSE, Action.OVERRIDE_CLOSE, Action.REQUEST_REWORK}:
+                if action in {Action.CLOSE, Action.OVERRIDE_CLOSE}:
+                    order.closed_at = at
+                review = await _current_review(session, order)
+                if review is not None:
+                    event_details = {
+                        "review_id": str(review.id),
+                        "submission_version": review.order_version,
+                        "ai_verdict": review.verdict.value if review.verdict else None,
+                        "ai_score": review.score,
+                        "needs_master_review": review.needs_master_review,
+                        "previous_master_score": review.master_score,
+                        "master_score": body.master_score,
+                    }
+                    if body.master_score is not None:
+                        review.master_score = body.master_score
+                elif body.master_score is not None:
+                    raise OperationError(409, "master_score_requires_current_review")
             order.version += 1
             await record_event(
                 session,
@@ -478,6 +504,36 @@ async def apply_review(
     score: int | None,
     explanation: str,
     model_name: str,
+    report: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Apply an internal assessment in its own transaction (tests and trusted callers)."""
+    async with database.sessions.begin() as session:
+        return await apply_review_in_session(
+            session,
+            order_id,
+            expected_order_version=expected_order_version,
+            submission_version=submission_version,
+            verdict=verdict,
+            needs_master_review=needs_master_review,
+            score=score,
+            explanation=explanation,
+            model_name=model_name,
+            report=report,
+        )
+
+
+async def apply_review_in_session(
+    session: AsyncSession,
+    order_id: UUID,
+    *,
+    expected_order_version: int,
+    submission_version: int,
+    verdict: AiAssessment | None,
+    needs_master_review: bool,
+    score: int | None,
+    explanation: str,
+    model_name: str,
+    report: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Persist a system assessment for the current completed submission.
 
@@ -495,78 +551,81 @@ async def apply_review(
     if verdict is AiAssessment.REWORK_REQUIRED and needs_master_review:
         raise OperationError(422, "rework_verdict_cannot_need_master_review")
 
-    async with database.sessions.begin() as session:
-        order = await session.scalar(
-            select(WorkOrder).where(WorkOrder.id == order_id).with_for_update()
-        )
-        if order is None:
-            raise OperationError(404, "order_not_found")
-        check_version(order, expected_order_version)
-        if order.status is not WorkOrderStatus.COMPLETED:
-            raise OperationError(409, "review_requires_completed_order")
-        if order.last_submission_version != submission_version:
-            raise OperationError(409, "stale_submission_review")
+    order = await session.scalar(
+        select(WorkOrder).where(WorkOrder.id == order_id).with_for_update()
+    )
+    if order is None:
+        raise OperationError(404, "order_not_found")
+    if expected_order_version > order.version:
+        raise OperationError(409, "stale_order_version")
+    # Submission identity, rather than mutable order version, guards late results:
+    # a comment may increment version while the same completed submission remains valid.
+    if order.status is not WorkOrderStatus.COMPLETED:
+        raise OperationError(409, "review_requires_completed_order")
+    if order.last_submission_version != submission_version:
+        raise OperationError(409, "stale_submission_review")
 
-        at = _now()
-        before = order.status
-        start = _apply_transition(
-            await _lifecycle_state(session, order),
-            Action.START_AI_REVIEW,
-            ActorRole.SYSTEM,
-            at=at,
-        )
-        order.status = start.after.status
-        order.version += 1
-        await record_event(
-            session,
-            order,
-            _SYSTEM_PRINCIPAL,
-            Action.START_AI_REVIEW.value,
-            before,
-            at=at,
-            system=True,
-        )
+    at = _now()
+    before = order.status
+    start = _apply_transition(
+        await _lifecycle_state(session, order),
+        Action.START_AI_REVIEW,
+        ActorRole.SYSTEM,
+        at=at,
+    )
+    order.status = start.after.status
+    order.version += 1
+    await record_event(
+        session,
+        order,
+        _SYSTEM_PRINCIPAL,
+        Action.START_AI_REVIEW.value,
+        before,
+        at=at,
+        system=True,
+    )
 
-        session.add(
-            AIReview(
-                work_order_id=order.id,
-                order_version=submission_version,
-                verdict=verdict,
-                score=score,
-                needs_master_review=needs_master_review,
-                explanation=explanation.strip(),
-                model_name=model_name.strip(),
-                created_at=at,
-            )
+    session.add(
+        AIReview(
+            work_order_id=order.id,
+            order_version=submission_version,
+            verdict=verdict,
+            score=score,
+            needs_master_review=needs_master_review,
+            explanation=explanation.strip(),
+            model_name=model_name.strip(),
+            report=report or {},
+            created_at=at,
         )
-        await session.flush()
+    )
+    await session.flush()
 
-        review_action = (
-            Action.MARK_REWORK
-            if verdict is AiAssessment.REWORK_REQUIRED
-            else Action.RECORD_AI_ASSESSMENT
-        )
-        reviewed = _apply_transition(
-            await _lifecycle_state(session, order),
-            review_action,
-            ActorRole.SYSTEM,
-            at=at,
-            assessment=verdict,
-            needs_master_review=needs_master_review
-            if review_action is Action.RECORD_AI_ASSESSMENT
-            else None,
-        )
-        before_review: WorkOrderStatus = order.status
-        order.status = reviewed.after.status
-        order.version += 1
-        await record_event(
-            session,
-            order,
-            _SYSTEM_PRINCIPAL,
-            review_action.value,
-            before_review,
-            details={"submission_version": submission_version, "model_name": model_name.strip()},
-            at=at,
-            system=True,
-        )
-        return mutation_result(order)
+    review_action = (
+        Action.MARK_REWORK
+        if verdict is AiAssessment.REWORK_REQUIRED
+        else Action.RECORD_AI_ASSESSMENT
+    )
+    reviewed = _apply_transition(
+        await _lifecycle_state(session, order),
+        review_action,
+        ActorRole.SYSTEM,
+        at=at,
+        assessment=verdict,
+        needs_master_review=needs_master_review
+        if review_action is Action.RECORD_AI_ASSESSMENT
+        else None,
+    )
+    before_review: WorkOrderStatus = order.status
+    order.status = reviewed.after.status
+    order.version += 1
+    await record_event(
+        session,
+        order,
+        _SYSTEM_PRINCIPAL,
+        review_action.value,
+        before_review,
+        details={"submission_version": submission_version, "model_name": model_name.strip()},
+        at=at,
+        system=True,
+    )
+    return mutation_result(order)

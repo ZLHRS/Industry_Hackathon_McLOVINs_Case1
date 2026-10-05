@@ -1,6 +1,8 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../api";
 import { Dialog } from "../components/Dialog";
+import { AIReviewReport, ReviewHistory } from "./AIReviewReport";
+import { masterDecisionPayload, validateMasterDecision, type MasterDecision } from "./aiReview";
 import type { ActionRequest, Catalog, EventItem, OrderDetail, Role, Workload } from "../types";
 
 const ruStatus: Record<string, string> = {
@@ -65,6 +67,7 @@ export function OrderDetailDialog({
   const [reason, setReason] = useState("");
   const [comment, setComment] = useState("");
   const [priority, setPriority] = useState("");
+  const [masterScore, setMasterScore] = useState("");
   const [photo, setPhoto] = useState<File>();
   const [materials, setMaterials] = useState<{ material_id: string; quantity: string }[]>([
     { material_id: "", quantity: "" },
@@ -120,6 +123,14 @@ export function OrderDetailDialog({
     } finally {
       setBusy(false);
     }
+  }
+  async function decideMaster(action: MasterDecision) {
+    const validation = validateMasterDecision({ action, reason, score: masterScore });
+    if (validation) {
+      setError(validation);
+      return;
+    }
+    await act(action, masterDecisionPayload(action, reason, masterScore));
   }
   async function submitCompletion(event: FormEvent) {
     event.preventDefault();
@@ -179,6 +190,9 @@ export function OrderDetailDialog({
   const canExecutor = role === "executor";
   const masterOwns = role === "master" && detail.master_id === currentUserId;
   const currentReview = detail.reviews.find((review) => review.is_current);
+  const currentMaterials = detail.materials.filter(
+    (item) => item.submission_version === detail.last_submission_version,
+  );
   const canClose =
     detail.status === "ai_review" &&
     currentReview &&
@@ -187,6 +201,7 @@ export function OrderDetailDialog({
   const canOverride =
     (detail.status === "ai_review" && currentReview?.needs_master_review) ||
     (detail.status === "rework" && currentReview?.verdict === "rework_required");
+  const masterScoreRequiresReason = masterScore.trim().length > 0 && reason.trim().length < 3;
   const canReassign = [
     "issued",
     "accepted",
@@ -218,6 +233,20 @@ export function OrderDetailDialog({
             <dd>{detail.attempt}</dd>
           </div>
         </dl>
+        {detail.last_submission_version !== null && detail.work_description && (
+          <section className="repair-submission">
+            <h3>Отчёт исполнителя</h3>
+            <p className="review-explanation">{detail.work_description}</p>
+            <p className="muted">
+              Неисправность:{" "}
+              {catalog.fault_codes.find((item) => item.id === detail.fault_code_id)?.name ?? "Не указана"}
+            </p>
+            {detail.no_materials_reason && <p>Без расхода материалов: {detail.no_materials_reason}</p>}
+          </section>
+        )}
+        {(currentReview || detail.ai_job || detail.reviews.length > 0 || detail.status === "completed") && (
+          <AIReviewReport review={currentReview} aiJob={detail.ai_job} attempt={detail.attempt} />
+        )}
         {error && (
           <p className="error" role="alert">
             {error}
@@ -441,6 +470,24 @@ export function OrderDetailDialog({
                 minLength={3}
               />
             </label>
+            {["ai_review", "rework"].includes(detail.status) && (
+              <label>
+                Оценка мастера (необязательно)
+                <input
+                  type="number"
+                  min="1"
+                  max="5"
+                  step="1"
+                  inputMode="numeric"
+                  disabled={busy}
+                  value={masterScore}
+                  placeholder={
+                    typeof currentReview?.score === "number" ? `AI: ${currentReview.score}` : "1–5"
+                  }
+                  onChange={(event) => setMasterScore(event.target.value)}
+                />
+              </label>
+            )}
             {!["closed", "cancelled"].includes(detail.status) && (
               <div className="action-row">
                 <label>
@@ -490,12 +537,16 @@ export function OrderDetailDialog({
                   <button
                     className="secondary"
                     disabled={busy || reason.length < 3}
-                    onClick={() => void act("request_rework", { reason })}
+                    onClick={() => void decideMaster("request_rework")}
                   >
                     Вернуть
                   </button>
                   {canClose && (
-                    <button className="primary" disabled={busy} onClick={() => void act("close")}>
+                    <button
+                      className="primary"
+                      disabled={busy || masterScoreRequiresReason}
+                      onClick={() => void decideMaster("close")}
+                    >
                       Закрыть
                     </button>
                   )}
@@ -505,7 +556,7 @@ export function OrderDetailDialog({
                 <button
                   className="secondary"
                   disabled={busy || reason.trim().length < 3}
-                  onClick={() => void act("override_close", { reason })}
+                  onClick={() => void decideMaster("override_close")}
                 >
                   Закрыть вручную
                 </button>
@@ -549,10 +600,10 @@ export function OrderDetailDialog({
           </section>
         )}
         <section>
-          <h3>Материалы, фото и проверка</h3>
-          {detail.materials.length ? (
+          <h3>Материалы текущей сдачи и фотографии</h3>
+          {currentMaterials.length ? (
             <ul className="plain-list">
-              {detail.materials.map((item) => (
+              {currentMaterials.map((item) => (
                 <li key={item.id}>
                   {item.name} — {item.quantity} {item.unit}
                 </li>
@@ -561,13 +612,8 @@ export function OrderDetailDialog({
           ) : (
             <p className="muted">Материалы не зафиксированы.</p>
           )}
-          <PhotoGallery photos={detail.photos} getUrl={photoUrl} />
-          {detail.reviews.map((review) => (
-            <p className="review" key={review.id}>
-              Проверка {review.is_current ? "текущая" : "прошлая"}: {review.verdict || "ожидается"}.{" "}
-              {review.explanation}
-            </p>
-          ))}
+          <PhotoGallery photos={detail.photos} getUrl={photoUrl} attempt={detail.attempt} />
+          <ReviewHistory reviews={detail.reviews} />
         </section>
         <section>
           <h3>Журнал</h3>
@@ -588,12 +634,48 @@ export function OrderDetailDialog({
   );
 }
 
+function PhotoEvidenceGroup({
+  title,
+  photos,
+  urls,
+}: {
+  title: string;
+  photos: OrderDetail["photos"];
+  urls: Record<string, string>;
+}) {
+  if (!photos.length) return null;
+  return (
+    <section className="photo-evidence">
+      <h4>{title}</h4>
+      <div className="photo-grid">
+        {photos.map((photo) => (
+          <figure key={photo.id}>
+            {urls[photo.id] ? (
+              <img
+                src={urls[photo.id]}
+                alt={`${photo.kind === "before" ? "До ремонта" : "После ремонта"}, ${local(photo.uploaded_at)}`}
+              />
+            ) : (
+              <div className="photo-placeholder" role="status">
+                Загружаем фото…
+              </div>
+            )}
+            <figcaption>{local(photo.uploaded_at)}</figcaption>
+          </figure>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function PhotoGallery({
   photos,
   getUrl,
+  attempt,
 }: {
   photos: OrderDetail["photos"];
   getUrl: (path: string) => Promise<string>;
+  attempt: number;
 }) {
   const [urls, setUrls] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -623,17 +705,23 @@ function PhotoGallery({
     };
   }, [photos, getUrl]);
   if (!photos.length) return <p className="muted">Фото не загружены.</p>;
+  const originals = photos.filter((photo) => photo.kind === "before");
+  const currentAfter = photos.filter((photo) => photo.kind === "after" && photo.attempt === attempt);
+  const priorAfter = photos.filter((photo) => photo.kind === "after" && photo.attempt !== attempt);
   return (
-    <div className="photo-grid">
-      {photos.map((photo) => (
-        <figure key={photo.id}>
-          <img
-            src={urls[photo.id]}
-            alt={`${photo.kind === "before" ? "До ремонта" : "После ремонта"}, ${local(photo.uploaded_at)}`}
-          />
-          <figcaption>{photo.kind === "before" ? "До ремонта" : "После ремонта"}</figcaption>
-        </figure>
-      ))}
+    <div className="photo-evidence-list">
+      <PhotoEvidenceGroup title="Исходные фото до ремонта" photos={originals} urls={urls} />
+      <PhotoEvidenceGroup
+        title={`Фото после: текущая попытка ${attempt}`}
+        photos={currentAfter}
+        urls={urls}
+      />
+      {priorAfter.length > 0 && (
+        <details className="photo-history">
+          <summary>Фото предыдущих попыток ({priorAfter.length})</summary>
+          <PhotoEvidenceGroup title="Предыдущие доказательства" photos={priorAfter} urls={urls} />
+        </details>
+      )}
     </div>
   );
 }

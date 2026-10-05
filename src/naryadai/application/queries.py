@@ -13,6 +13,7 @@ from naryadai.domain.lifecycle import LifecycleState, WorkOrderStatus, is_overdu
 from naryadai.infrastructure.database import Database
 from naryadai.infrastructure.models import (
     AIReview,
+    AIReviewJob,
     Employee,
     EmployeeArea,
     Equipment,
@@ -86,7 +87,16 @@ class ReviewView(BaseModel):
     model_name: str
     created_at: datetime
     master_score: int | None
+    report: dict[str, Any]
     is_current: bool = False
+
+
+class AiJobView(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    status: str
+    attempts: int
+    next_attempt_at: datetime
+    last_error_code: str | None
 
 
 class OrderDetail(OrderView):
@@ -96,6 +106,7 @@ class OrderDetail(OrderView):
     materials: list[MaterialView]
     photos: list[PhotoView]
     reviews: list[ReviewView]
+    ai_job: AiJobView | None
 
 
 class EventView(BaseModel):
@@ -242,6 +253,14 @@ async def order_detail(database: Database, principal: Principal, order_id: UUID)
                 .order_by(AIReview.created_at, AIReview.id)
             )
         ).all()
+        job = None
+        if order.last_submission_version is not None:
+            job = await session.scalar(
+                select(AIReviewJob).where(
+                    AIReviewJob.work_order_id == order_id,
+                    AIReviewJob.submission_version == order.last_submission_version,
+                )
+            )
         return OrderDetail(
             **order_view(order, datetime.now(UTC)).model_dump(),
             work_description=order.work_description,
@@ -280,6 +299,7 @@ async def order_detail(database: Database, principal: Principal, order_id: UUID)
                 )
                 for r in reviews
             ],
+            ai_job=None if job is None else AiJobView.model_validate(job),
         )
 
 

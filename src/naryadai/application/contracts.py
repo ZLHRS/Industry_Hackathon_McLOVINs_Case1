@@ -87,6 +87,7 @@ class OrderAction(BaseModel):
     priority: Priority | None = None
     comment: str | None = Field(default=None, min_length=1, max_length=5_000)
     completion: Completion | None = None
+    master_score: int | None = Field(default=None, ge=1, le=5, strict=True)
 
     @model_validator(mode="after")
     def validate_action_payload(self) -> OrderAction:
@@ -99,6 +100,8 @@ class OrderAction(BaseModel):
             "request_rework",
             "change_priority",
         }
+        if self.master_score is not None and self.action == "close":
+            required_reason.add("close")
         if self.action in required_reason and self.reason is None:
             raise ValueError(f"reason is required for {self.action}")
         if self.action not in required_reason and self.reason is not None:
@@ -111,4 +114,8 @@ class OrderAction(BaseModel):
             raise ValueError("comment is required only for comment")
         if (self.action == "complete") != (self.completion is not None):
             raise ValueError("completion is required only for complete")
+        if self.master_score is not None and self.action not in {"close", "override_close"}:
+            raise ValueError("master_score is allowed only for close or override_close")
+        if self.master_score is not None and self.reason is None:
+            raise ValueError("reason is required when master_score is supplied")
         return self

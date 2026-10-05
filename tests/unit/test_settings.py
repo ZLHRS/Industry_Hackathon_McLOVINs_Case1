@@ -131,3 +131,34 @@ def test_invalid_web_push_contact_uri(contact):
 def test_notification_intervals_are_positive(setting):
     with pytest.raises(ValueError):
         Settings(**{setting: 0})
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"ai_timeout_seconds": 0},
+        {"ai_total_timeout_seconds": 4},
+        {"ai_max_attempts": 6},
+        {"ai_lease_seconds": 35},
+        {"ai_timeout_seconds": 60, "ai_total_timeout_seconds": 45},
+        {"ai_model": "model\nAuthorization: leak"},
+        {"ai_model": ""},
+    ],
+)
+def test_ai_bounds_reject_unsafe_runtime_configuration(overrides):
+    with pytest.raises(ValidationError):
+        Settings(**overrides)
+
+
+def test_ai_secret_is_private_and_missing_key_disables_external_service(monkeypatch):
+    assert Settings().ai_api_key is None
+    assert not Settings().ai_vision_enabled
+    assert Settings(ai_api_key=" ").ai_api_key is None
+    monkeypatch.setenv("NARYADAI_AI_API_KEY", "private-api-credential")
+    settings = Settings()
+    assert settings.ai_api_key.get_secret_value() == "private-api-credential"
+    assert "private-api-credential" not in repr(settings)
+    assert "private-api-credential" not in settings.model_dump_json()
+    with pytest.raises(ValidationError) as error:
+        Settings(ai_api_key="private-api-credential", ai_lease_seconds=35)
+    assert "private-api-credential" not in str(error.value)

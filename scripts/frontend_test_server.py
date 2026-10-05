@@ -217,7 +217,12 @@ async def run_server(*, port: int, metadata_path: Path, secret: str) -> None:
             environment="test",
         )
         _configure_application(isolated_url, photo_root)
-        worker_settings = Settings(web_push_private_key_file=None, web_push_subject=None)
+        worker_settings = Settings(
+            web_push_private_key_file=None,
+            web_push_subject=None,
+            ai_api_key=None,
+            ai_vision_enabled=False,
+        )
         worker_task = asyncio.create_task(
             run_worker(database, worker_settings, deliver=deliver_push)
         )
