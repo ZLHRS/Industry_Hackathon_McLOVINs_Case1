@@ -70,8 +70,8 @@ PDF пользователя автоматически не копируютс�
 - Новые уведомления формируются детерминированными правилами, не выдаются за результат LLM.
 ## Добавлено на этапе 6
 
-- OpenAI Responses API; по умолчанию gpt-4.1-mini-2025-04-14, модель настраивается.
-  [Возможности модели](https://developers.openai.com/api/docs/models/gpt-4.1-mini),
+- OpenAI Responses API; по умолчанию gpt-6.1-sol, модель настраивается.
+  [Возможности модели](https://developers.openai.com/api/docs/models/gpt-6.1-sol),
   [структурированные ответы](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses),
   [обработка изображений](https://developers.openai.com/api/docs/guides/images-vision).
 - HTTPX2 используется в runtime для ограниченного асинхронного вызова провайдера.

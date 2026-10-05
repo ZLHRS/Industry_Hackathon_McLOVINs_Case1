@@ -129,8 +129,8 @@ def test_payload_is_allowlisted_redacted_and_labels_balanced_images() -> None:
         if item.get("type") == "input_text" and isinstance(item.get("text"), str)
     ]
     assert len(images) == 3
-    assert any("before" in label for label in labels)
-    assert any("after" in label for label in labels)
+    assert any("до ремонта" in label for label in labels)
+    assert any("после ремонта" in label for label in labels)
 
 
 def test_payload_treats_prompt_injection_as_data_and_keeps_system_context_static() -> None:
@@ -333,3 +333,67 @@ async def test_client_reported_capture_time_cannot_prove_fresh_visual_success(
     assert result.verdict is None
     assert result.score is None
     assert result.needs_master_review is True
+
+
+@pytest.mark.parametrize("model", ["gpt-6.1-sol", "gpt-6-astra"])
+def test_reasoning_models_receive_effort_and_room_for_structured_answer(model: str) -> None:
+    payload = repair_review._payload(_review(), _config(model=model))
+    assert payload["reasoning"] == {"effort": "medium"}
+    assert payload["max_output_tokens"] == 8192
+
+
+def test_legacy_non_reasoning_baseline_omits_unsupported_parameter() -> None:
+    payload = repair_review._payload(_review(), _config(model="gpt-4.1-mini-2025-04-14"))
+    assert "reasoning" not in payload
+
+
+@pytest.mark.parametrize("overrides", [{"reasoning_effort": "max"}, {"max_output_tokens": 8193}])
+def test_review_config_rejects_unbounded_reasoning_options(overrides) -> None:
+    with pytest.raises(ValueError):
+        _config(**overrides)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [
+        {"code": "credit_balance_exhausted"},
+        {"type": "insufficient_quota", "code": None},
+        {"code": "project_spend_limit_exceeded"},
+        {"code": "organization_usage_limit_exceeded"},
+    ],
+)
+async def test_quota_errors_require_account_action_not_retry(monkeypatch, error) -> None:
+    async def handler(_request):
+        return httpx2.Response(429, json={"error": {**error, "message": _UNIT_KEY}})
+
+    _mock_client(monkeypatch, handler)
+    with pytest.raises(ProviderError) as raised:
+        await repair_review._request({"store": False}, _config())
+    assert raised.value.code == "quota_exhausted"
+    assert not raised.value.retryable
+    assert _UNIT_KEY not in str(raised.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"x" * 8193,
+        b"[]",
+        b'{"error": []}',
+        b'{"error": {"type": ["insufficient_quota"]}}',
+        b'{"error": {"code": "rate_limit_exceeded"}}',
+    ],
+)
+async def test_quota_error_parser_is_bounded_and_rejects_untrusted_shapes(
+    monkeypatch, body
+) -> None:
+    async def handler(_request):
+        return httpx2.Response(429, content=body)
+
+    _mock_client(monkeypatch, handler)
+    with pytest.raises(ProviderError) as raised:
+        await repair_review._request({"store": False}, _config())
+    assert raised.value.code == "http_429"
+    assert raised.value.retryable

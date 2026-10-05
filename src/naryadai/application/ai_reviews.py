@@ -378,7 +378,11 @@ async def process_ai_review_jobs(
                 result = manual_review_result(
                     evidence,
                     source="unavailable",
-                    limitation="Внешняя модель недоступна; требуется решение мастера.",
+                    limitation=(
+                        "Исчерпана API-квота провайдера; проверьте баланс и лимиты проекта."
+                        if error.code == "quota_exhausted"
+                        else "Внешняя модель недоступна; требуется решение мастера."
+                    ),
                 )
         completed += int(await _finish(database, claim, result, instant(), error_code))
     return completed

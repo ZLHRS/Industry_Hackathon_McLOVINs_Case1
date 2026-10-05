@@ -98,7 +98,7 @@ async def test_structured_model_result_is_bounded_and_never_closes(
     assert result.score is None
     assert result.needs_master_review is True
     assert "Принято" in result.explanation
-    assert result.model_name == "gpt-4.1-mini-2025-04-14"
+    assert result.model_name == "gpt-6.1-sol"
     assert result.report["source"] == "openai"
 
 

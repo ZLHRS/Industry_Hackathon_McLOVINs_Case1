@@ -2,7 +2,7 @@
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -52,11 +52,13 @@ class Settings(BaseSettings):
     # A missing key yields an explicit manual review; it never invents an AI verdict.
     ai_api_key: SecretStr | None = None
     ai_model: str = Field(
-        default="gpt-4.1-mini-2025-04-14",
+        default="gpt-6.1-sol",
         min_length=1,
         max_length=120,
         pattern=r"^[a-zA-Z0-9._:-]+$",
     )
+    ai_reasoning_effort: Literal["low", "medium", "high"] = "medium"
+    ai_max_output_tokens: int = Field(default=8192, ge=2048, le=8192)
     ai_vision_enabled: bool = False
     ai_timeout_seconds: float = Field(default=30, ge=1, le=40)
     ai_total_timeout_seconds: float = Field(default=45, ge=5, le=45)

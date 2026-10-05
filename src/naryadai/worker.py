@@ -40,6 +40,8 @@ async def _review_once(database: Database, *, settings: Settings, now: datetime)
     config = OpenAIReviewConfig(
         api_key=settings.ai_api_key,
         model=settings.ai_model,
+        reasoning_effort=settings.ai_reasoning_effort,
+        max_output_tokens=settings.ai_max_output_tokens,
         vision_enabled=settings.ai_vision_enabled,
         request_timeout_seconds=settings.ai_timeout_seconds,
         total_timeout_seconds=settings.ai_total_timeout_seconds,

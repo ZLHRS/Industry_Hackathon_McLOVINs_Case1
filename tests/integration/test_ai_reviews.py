@@ -661,3 +661,45 @@ async def test_scored_close_requires_reason_and_preserves_ai_score(database):
     async with database.sessions() as session:
         review = await session.scalar(select(AIReview).where(AIReview.work_order_id == order_id))
         assert review is not None and review.score == ai_score and review.master_score == 5
+
+
+async def test_quota_exhaustion_finishes_once_with_manual_review_and_no_retry(database):
+    from naryadai.application.ai_reviews import process_ai_review_jobs
+
+    _data, order_id, _submission = await _completed(database)
+    now = datetime.now(UTC) + timedelta(minutes=1)
+    calls = 0
+
+    async def quota_error(_evidence, _config):
+        nonlocal calls
+        calls += 1
+        raise ProviderError("quota_exhausted", retryable=False)
+
+    assert (
+        await process_ai_review_jobs(
+            database, config=OpenAIReviewConfig(api_key=None), now=now, analyzer=quota_error
+        )
+        == 1
+    )
+    assert (
+        await process_ai_review_jobs(
+            database,
+            config=OpenAIReviewConfig(api_key=None),
+            now=now + timedelta(minutes=2),
+            analyzer=quota_error,
+        )
+        == 0
+    )
+    assert calls == 1
+    async with database.sessions() as session:
+        job = await session.scalar(select(AIReviewJob).where(AIReviewJob.work_order_id == order_id))
+        review = await session.scalar(select(AIReview).where(AIReview.work_order_id == order_id))
+        order = await session.get(WorkOrder, order_id)
+        assert job.status == "completed"
+        assert job.attempts == 1
+        assert job.last_error_code == "quota_exhausted"
+        assert review.needs_master_review
+        assert review.verdict is None and review.score is None
+        assert review.report["source"] == "unavailable"
+        assert any("API-квота" in line for line in review.report["limitations"])
+        assert order.status == WorkOrderStatus.AI_REVIEW

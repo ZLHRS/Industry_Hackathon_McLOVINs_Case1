@@ -27,6 +27,7 @@ _ERROR_CODES = frozenset(
         "http_403",
         "http_422",
         "http_429",
+        "quota_exhausted",
         "http_5xx",
         "invalid_provider_response",
         "missing_output_text",
@@ -140,11 +141,12 @@ class ReviewInput:
 @dataclass(frozen=True, slots=True)
 class OpenAIReviewConfig:
     api_key: SecretStr | None
-    model: str = "gpt-4.1-mini-2025-04-14"
+    model: str = "gpt-6.1-sol"
+    reasoning_effort: Literal["low", "medium", "high"] = "medium"
     vision_enabled: bool = False
     request_timeout_seconds: float = 30.0
     total_timeout_seconds: float = 45.0
-    max_output_tokens: int = 2_048
+    max_output_tokens: int = 8_192
     confidence_threshold: float = 0.78
     max_images: int = 3
     max_image_bytes: int = 1_500_000
@@ -157,8 +159,10 @@ class OpenAIReviewConfig:
             raise ValueError("request_timeout_seconds must be from 1 to 40")
         if not self.request_timeout_seconds <= self.total_timeout_seconds <= 45:
             raise ValueError("total_timeout_seconds must be from request timeout to 45")
-        if not 128 <= self.max_output_tokens <= 2_048:
-            raise ValueError("max_output_tokens must be from 128 to 2048")
+        if self.reasoning_effort not in {"low", "medium", "high"}:
+            raise ValueError("reasoning_effort must be low, medium or high")
+        if not 128 <= self.max_output_tokens <= 8_192:
+            raise ValueError("max_output_tokens must be from 128 to 8192")
         if not 0.5 <= self.confidence_threshold <= 0.99:
             raise ValueError("confidence_threshold must be from 0.5 to 0.99")
         if not 1 <= self.max_images <= 3:

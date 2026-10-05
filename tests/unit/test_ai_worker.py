@@ -76,6 +76,9 @@ async def test_ai_database_error_is_retried_without_logging_payload(caplog):
 async def test_review_pass_builds_bounded_configuration(monkeypatch, tmp_path, vision):
     async def process(database, **kwargs):
         assert kwargs["limit"] == 1
+        assert kwargs["config"].model == "gpt-6.1-sol"
+        assert kwargs["config"].reasoning_effort == "medium"
+        assert kwargs["config"].max_output_tokens == 8192
         assert kwargs["lease_seconds"] > kwargs["config"].total_timeout_seconds
         assert kwargs["max_attempts"] == 3
         assert (kwargs["photo_store"] is not None) == vision

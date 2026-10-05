@@ -44,13 +44,27 @@ async def check() -> int:
             OpenAIReviewConfig(
                 api_key=settings.ai_api_key,
                 model=settings.ai_model,
+                reasoning_effort=settings.ai_reasoning_effort,
+                max_output_tokens=settings.ai_max_output_tokens,
                 vision_enabled=False,
                 request_timeout_seconds=settings.ai_timeout_seconds,
                 total_timeout_seconds=settings.ai_total_timeout_seconds,
             ),
         )
     except ProviderError as error:
-        print(json.dumps({"status": "failed", "error_code": error.code}))
+        print(
+            json.dumps(
+                {
+                    "status": "failed",
+                    "model": settings.ai_model,
+                    "error_code": error.code,
+                    "retryable": error.retryable,
+                    "hint": "Check OpenAI API credits and project spending limits."
+                    if error.code == "quota_exhausted"
+                    else "Check provider access and configuration.",
+                }
+            )
+        )
         return 1
     print(
         json.dumps(

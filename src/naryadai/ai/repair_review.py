@@ -175,6 +175,8 @@ async def _request(payload: dict[str, object], config: OpenAIReviewConfig) -> Ma
             ):
                 if not 200 <= response.status_code < 300:
                     status = response.status_code
+                    if status == 429 and await _quota_exhausted(response):
+                        raise ProviderError("quota_exhausted", retryable=False)
                     code = (
                         f"http_{status}"
                         if status in {400, 401, 403, 422, 429}
@@ -196,6 +198,31 @@ async def _request(payload: dict[str, object], config: OpenAIReviewConfig) -> Ma
     if not isinstance(body, dict):
         raise ProviderError("invalid_provider_response", retryable=False)
     return body
+
+
+async def _quota_exhausted(response: httpx2.Response) -> bool:
+    """Read only bounded error metadata; never retain provider messages or headers."""
+    body = bytearray()
+    async for chunk in response.aiter_bytes():
+        if len(body) + len(chunk) > 8192:
+            return False
+        body.extend(chunk)
+    try:
+        decoded = json.loads(body)
+    except (ValueError, TypeError):
+        return False
+    error = decoded.get("error") if isinstance(decoded, dict) else None
+    if not isinstance(error, dict):
+        return False
+    known = {
+        "insufficient_quota",
+        "credit_balance_exhausted",
+        "billing_hard_limit_reached",
+        "organization_spend_limit_exceeded",
+        "project_spend_limit_exceeded",
+        "organization_usage_limit_exceeded",
+    }
+    return any(isinstance(error.get(key), str) and error[key] in known for key in ("code", "type"))
 
 
 def _select_images(photos: Sequence[ReviewPhoto], maximum: int) -> list[ReviewPhoto]:
@@ -244,7 +271,7 @@ def _payload(review: ReviewInput, config: OpenAIReviewConfig) -> dict[str, objec
                 },
             ]
         )
-    return {
+    payload: dict[str, object] = {
         "model": config.model,
         "store": False,
         "max_output_tokens": config.max_output_tokens,
@@ -261,6 +288,11 @@ def _payload(review: ReviewInput, config: OpenAIReviewConfig) -> dict[str, objec
             }
         },
     }
+    # GPT-4.1 remains a supported non-reasoning baseline. Never send it an
+    # unsupported reasoning field when evaluating or explicitly selecting it.
+    if config.model.startswith(("gpt-5", "gpt-6")):
+        payload["reasoning"] = {"effort": config.reasoning_effort}
+    return payload
 
 
 def _facts(review: ReviewInput) -> dict[str, object]:

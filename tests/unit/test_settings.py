@@ -143,6 +143,9 @@ def test_notification_intervals_are_positive(setting):
         {"ai_timeout_seconds": 60, "ai_total_timeout_seconds": 45},
         {"ai_model": "model\nAuthorization: leak"},
         {"ai_model": ""},
+        {"ai_reasoning_effort": "max"},
+        {"ai_max_output_tokens": 8193},
+        {"ai_max_output_tokens": 1024},
     ],
 )
 def test_ai_bounds_reject_unsafe_runtime_configuration(overrides):
