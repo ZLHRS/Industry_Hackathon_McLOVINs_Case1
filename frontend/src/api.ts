@@ -10,6 +10,9 @@ import type {
   Token,
   User,
   Workload,
+  NotificationPage,
+  NotificationItem,
+  PushConfig,
 } from "./types";
 
 export class ApiError extends Error {
@@ -202,6 +205,33 @@ export class Api {
     const identity = file.type + ":" + (await digest(await file.arrayBuffer()));
     return this.mutate(path, { headers: { "Content-Type": file.type }, body: file }, identity, key);
   }
+  notifications(offset = 0, unreadOnly = false) {
+    return this.request<NotificationPage>(
+      `/notifications?offset=${offset}&limit=50&unread_only=${unreadOnly}`,
+    );
+  }
+  markNotificationRead(id: string) {
+    return this.request<NotificationItem>(`/notifications/${id}/read`, { method: "POST" });
+  }
+  acknowledgeNotification(id: string) {
+    return this.request<NotificationItem>(`/notifications/${id}/ack`, { method: "POST" });
+  }
+  pushConfig() {
+    return this.request<PushConfig>("/notifications/push-config");
+  }
+  notification(id: string) {
+    return this.request<NotificationItem>("/notifications/" + id);
+  }
+  subscribePush(subscription: PushSubscriptionJSON) {
+    return this.request<{ id: string }>("/notifications/subscriptions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: subscription.endpoint, keys: subscription.keys }),
+    });
+  }
+  removePushSubscription(id: string) {
+    return this.request<void>(`/notifications/subscriptions/${id}`, { method: "DELETE" });
+  }
   async photoBlob(path: string): Promise<string> {
     if (!/^\/api\/v1\/work-orders\/[0-9a-f-]{36}\/photos\/[0-9a-f-]{36}$/.test(path)) {
       throw new ApiError(400, "invalid_private_photo_path");
@@ -210,3 +240,5 @@ export class Api {
     return URL.createObjectURL(await response.blob());
   }
 }
+
+// Stage 5 in-app notification contract. No credentials are placed in URLs.

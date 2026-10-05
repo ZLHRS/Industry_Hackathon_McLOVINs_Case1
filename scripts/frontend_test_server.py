@@ -12,6 +12,7 @@ import shutil
 import signal
 import subprocess
 import sys
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,8 @@ import uvicorn
 from sqlalchemy import select
 from sqlalchemy.engine import make_url
 
+from naryadai.application.push_delivery import deliver_push
+from naryadai.config import Settings
 from naryadai.demo.persist import seed_demo_database
 from naryadai.domain.lifecycle import WorkOrderStatus
 from naryadai.infrastructure.database import Database
@@ -33,6 +36,7 @@ from naryadai.infrastructure.models import (
     Material,
     WorkOrder,
 )
+from naryadai.worker import run_worker
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PORT = 58_001
@@ -197,6 +201,7 @@ async def run_server(*, port: int, metadata_path: Path, secret: str) -> None:
     admin = Database(database_url)
     database: Database | None = None
     schema_created = False
+    worker_task: asyncio.Task[None] | None = None
     photo_root = ROOT / "tmp" / ("e2e-photos-" + schema)
     try:
         async with admin.engine.begin() as connection:
@@ -212,6 +217,10 @@ async def run_server(*, port: int, metadata_path: Path, secret: str) -> None:
             environment="test",
         )
         _configure_application(isolated_url, photo_root)
+        worker_settings = Settings(web_push_private_key_file=None, web_push_subject=None)
+        worker_task = asyncio.create_task(
+            run_worker(database, worker_settings, deliver=deliver_push)
+        )
         server = uvicorn.Server(
             uvicorn.Config(
                 "naryadai.app:create_app",
@@ -220,6 +229,8 @@ async def run_server(*, port: int, metadata_path: Path, secret: str) -> None:
                 port=port,
                 access_log=False,
                 log_level="warning",
+                ws="websockets-sansio",
+                ws_max_size=4096,
             )
         )
         serve_task = asyncio.create_task(server.serve())
@@ -240,6 +251,10 @@ async def run_server(*, port: int, metadata_path: Path, secret: str) -> None:
         )
         await serve_task
     finally:
+        if worker_task is not None:
+            worker_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await worker_task
         if database is not None:
             await database.dispose()
         metadata_path.unlink(missing_ok=True)

@@ -9,6 +9,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Date,
@@ -467,3 +468,87 @@ class OutboxEvent(UUIDPrimaryKey, Base):
     )
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+
+class Notification(UUIDPrimaryKey, Base):
+    __tablename__ = "notifications"
+    __table_args__ = (
+        UniqueConstraint("employee_id", "dedup_key", name="uq_notification_employee_dedup"),
+        Index("ix_notifications_employee_inbox", "employee_id", "created_at"),
+    )
+
+    employee_id: Mapped[UUID] = mapped_column(ForeignKey("employees.id"), nullable=False)
+    work_order_id: Mapped[UUID] = mapped_column(ForeignKey("work_orders.id"), nullable=False)
+    dedup_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    urgent: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    action_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, server_default=func.now()
+    )
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+
+
+class RealtimeRevision(Base):
+    __tablename__ = "realtime_revisions"
+    employee_id: Mapped[UUID] = mapped_column(ForeignKey("employees.id"), primary_key=True)
+    revision: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1, server_default="1")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, server_default=func.now()
+    )
+
+
+class PushSubscription(UUIDPrimaryKey, Base):
+    __tablename__ = "push_subscriptions"
+    __table_args__ = (
+        UniqueConstraint("endpoint_hash", name="uq_push_subscriptions_endpoint_hash"),
+        Index("ix_push_subscriptions_employee", "employee_id"),
+    )
+    employee_id: Mapped[UUID] = mapped_column(ForeignKey("employees.id"), nullable=False)
+    session_id: Mapped[UUID] = mapped_column(ForeignKey("auth_sessions.id"), nullable=False)
+    endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    endpoint_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    p256dh: Mapped[str] = mapped_column(String(255), nullable=False)
+    auth: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, server_default=func.now()
+    )
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PushDelivery(UUIDPrimaryKey, Base):
+    __tablename__ = "push_deliveries"
+    __table_args__ = (
+        UniqueConstraint(
+            "notification_id", "subscription_id", name="uq_push_delivery_notification"
+        ),
+        CheckConstraint("attempts >= 0", name="ck_push_delivery_attempts_nonnegative"),
+        Index(
+            "ix_push_deliveries_pending",
+            "next_attempt_at",
+            postgresql_where=text("sent_at IS NULL AND failed_at IS NULL"),
+        ),
+    )
+    notification_id: Mapped[UUID] = mapped_column(ForeignKey("notifications.id"), nullable=False)
+    subscription_id: Mapped[UUID] = mapped_column(
+        ForeignKey("push_subscriptions.id"), nullable=False
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, server_default=func.now()
+    )
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_token: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(300), nullable=True)

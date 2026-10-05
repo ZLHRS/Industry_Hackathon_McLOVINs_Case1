@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Api, ApiError, clearMutationKeys } from "./api";
 import { Login } from "./features/Login";
 import { OrderDetailDialog } from "./features/OrderDetail";
+import { NotificationButton, NotificationsDialog } from "./features/Notifications";
+import { RealtimeConnection } from "./lib/realtime";
 import { OrdersView, ReferenceView, WorkloadView } from "./features/Workspace";
 import {
   clearActor,
@@ -87,6 +89,11 @@ export default function App() {
   const [error, setError] = useState("");
   const [pending, setPending] = useState<Awaited<ReturnType<typeof listPending>>>([]);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [liveState, setLiveState] = useState<"offline" | "connecting" | "live" | "reconnecting">("offline");
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [liveRevision, setLiveRevision] = useState(0);
+  const pushSubscriptionId = useRef<string | null>(null);
   const [filters, setFilters] = useState({
     status: [
       "issued",
@@ -106,6 +113,11 @@ export default function App() {
     offset: 0,
   });
   const authGeneration = useRef(0);
+  const refreshGeneration = useRef(0);
+  const loadOrderDetail = useCallback(
+    async (id: string) => ({ detail: await api.order(id), events: (await api.events(id)).items }),
+    [api],
+  );
   const sender = useCallback(
     (entry: { orderId: string; request: ActionRequest; id: string }) =>
       api.action(entry.orderId, entry.request, entry.id),
@@ -173,6 +185,7 @@ export default function App() {
       const actor = knownUser ?? user;
       if (!actor) return;
       const guard = authGeneration.current;
+      const request = ++refreshGeneration.current;
       setLoading(true);
       setError("");
       try {
@@ -199,14 +212,15 @@ export default function App() {
           actor.role === "admin" ? Promise.resolve([]) : api.workload(),
           ["master", "manager", "admin"].includes(actor.role) ? api.employees() : Promise.resolve([]),
         ]);
-        if (guard !== authGeneration.current) return;
+        if (guard !== authGeneration.current || request !== refreshGeneration.current) return;
         const dashboard = { catalog, orders, workload, employees };
         setData(dashboard);
         setSavedAt(null);
         await saveSnapshot(actor.id, "dashboard", dashboard).catch(() => undefined);
+        if (guard !== authGeneration.current || request !== refreshGeneration.current) return;
         setPending(await listPending(actor.id));
       } catch (caught) {
-        if (guard !== authGeneration.current) return;
+        if (guard !== authGeneration.current || request !== refreshGeneration.current) return;
         const failure = caught as ApiError;
         if (failure.status === 401) {
           await invalidate(actor.id);
@@ -214,13 +228,14 @@ export default function App() {
         }
         const cached = await getSnapshot<Dashboard>(actor.id, "dashboard").catch(() => null);
         if (cached) {
+          if (guard !== authGeneration.current || request !== refreshGeneration.current) return;
           setData(cached.data);
           setPending(await listPending(actor.id));
           setSavedAt(cached.savedAt);
           setNotice("Показан сохранённый снимок. Новые данные появятся после восстановления связи.");
         } else setError("Не удалось получить данные. Проверьте соединение и повторите.");
       } finally {
-        if (guard === authGeneration.current) setLoading(false);
+        if (guard === authGeneration.current && request === refreshGeneration.current) setLoading(false);
       }
     },
     [api, filters, invalidate, user],
@@ -273,6 +288,74 @@ export default function App() {
     window.addEventListener("online", retry);
     return () => window.removeEventListener("online", retry);
   }, [refresh, sync, user]);
+  useEffect(() => {
+    if (!user || user.role === "admin" || !("serviceWorker" in navigator)) return;
+    let active = true;
+    void navigator.serviceWorker.ready
+      .then((registration) => registration.pushManager.getSubscription())
+      .then((subscription) => subscription && api.subscribePush(subscription.toJSON()))
+      .then((result) => {
+        if (active && result) pushSubscriptionId.current = result.id;
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [api, user]);
+  useEffect(() => {
+    if (!user || user.role === "admin") return;
+    let active = true;
+    const updateCount = () =>
+      void api
+        .notifications(0, true)
+        .then((page) => {
+          if (active) setUnreadCount(page.unread_count);
+        })
+        .catch(() => undefined);
+    updateCount();
+    let latestRevision = 0;
+    const connection = new RealtimeConnection({
+      token: token!,
+      onState: setLiveState,
+      onUnauthorized: () => void invalidate(user.id),
+      onRefresh: (revision) => {
+        if (revision < latestRevision) return;
+        latestRevision = revision;
+        setLiveRevision(revision);
+        void refreshRef.current(user);
+        updateCount();
+      },
+    });
+    connection.start();
+    return () => {
+      active = false;
+      connection.stop();
+    };
+  }, [api, invalidate, token, user]);
+  useEffect(() => {
+    if (!user || user.role === "admin") return;
+    const id = new URLSearchParams(location.search).get("notification");
+    if (!id || !/^[0-9a-f-]{36}$/i.test(id)) return;
+    let active = true;
+    void api
+      .notification(id)
+      .then((item) => {
+        if (!active) return;
+        setSelected(item.order_id);
+        setInboxOpen(false);
+        history.replaceState(null, "", location.pathname);
+        void api.markNotificationRead(id).catch(() => undefined);
+      })
+      .catch(() => {
+        if (!active) return;
+        setInboxOpen(true);
+        setNotice("Уведомление больше недоступно. Открыт ваш журнал.");
+        history.replaceState(null, "", location.pathname);
+      });
+    return () => {
+      active = false;
+    };
+  }, [api, user]);
   const changeFilters = (next: typeof filters) => {
     const normalized = { ...next, offset: next.offset ?? 0 };
     setFilters(normalized);
@@ -297,6 +380,23 @@ export default function App() {
     }
     await api.action(id, request);
     await refresh();
+  }
+  async function signOut() {
+    const actor = user;
+    if (!actor) return;
+    const subscriptionId = pushSubscriptionId.current;
+    pushSubscriptionId.current = null;
+    try {
+      if (subscriptionId) await api.removePushSubscription(subscriptionId);
+    } catch {
+      // Session revocation below also prevents delivery if device removal fails.
+    }
+    // Browser subscription may be reused after login; delivery always requires a live session.
+    try {
+      await api.logout();
+    } finally {
+      await invalidate(actor.id);
+    }
   }
   async function retry(id: string) {
     if (!user) return;
@@ -345,19 +445,7 @@ export default function App() {
                   ? "Руководитель"
                   : "Администратор"}
           </small>
-          <button
-            onClick={() =>
-              void (async () => {
-                try {
-                  await api.logout();
-                } finally {
-                  await invalidate(user.id);
-                }
-              })()
-            }
-          >
-            Выйти
-          </button>
+          <button onClick={() => void signOut()}>Выйти</button>
         </div>
       </aside>
       <header className="mobile-header">
@@ -369,23 +457,25 @@ export default function App() {
         </div>
         <div>
           <small>{user.display_name}</small>
-          <button
-            aria-label="Выйти из учётной записи"
-            onClick={() =>
-              void (async () => {
-                try {
-                  await api.logout();
-                } finally {
-                  await invalidate(user.id);
-                }
-              })()
-            }
-          >
+          <button aria-label="Выйти из учётной записи" onClick={() => void signOut()}>
             Выйти
           </button>
         </div>
       </header>{" "}
       <main className="app-main">
+        <div className="live-bar">
+          <span className={`live-dot ${liveState}`}></span>
+          {liveState === "live"
+            ? "Обновления включены"
+            : liveState === "reconnecting"
+              ? "Переподключение…"
+              : liveState === "connecting"
+                ? "Подключение…"
+                : "Нет соединения"}
+          {user.role !== "admin" && (
+            <NotificationButton count={unreadCount} onOpen={() => setInboxOpen(true)} />
+          )}
+        </div>
         {(notice || savedAt || error) && (
           <div className={error ? "banner error-banner" : "banner"} role={error ? "alert" : "status"}>
             {error || notice}
@@ -474,14 +564,30 @@ export default function App() {
           </button>
         ))}
       </nav>
+      {inboxOpen && user.role !== "admin" && (
+        <NotificationsDialog
+          api={api}
+          onClose={() => setInboxOpen(false)}
+          onOrder={(id) => {
+            setInboxOpen(false);
+            setSelected(id);
+          }}
+          onPushBound={(id) => {
+            pushSubscriptionId.current = id;
+          }}
+          revision={liveRevision}
+        />
+      )}
       {selected && data && (
         <OrderDetailDialog
+          key={selected}
           id={selected}
           role={user.role}
           currentUserId={user.id}
           catalog={data.catalog}
           workers={data.workload}
-          load={async (id) => ({ detail: await api.order(id), events: (await api.events(id)).items })}
+          load={loadOrderDetail}
+          revision={liveRevision}
           onAction={directAction}
           photoUrl={(path) => api.photoBlob(path)}
           onPhoto={async (id, kind, version, file) => {

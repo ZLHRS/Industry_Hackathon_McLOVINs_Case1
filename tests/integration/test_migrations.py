@@ -51,4 +51,4 @@ async def test_initial_migration_roundtrip_on_empty_schema(database):
     async with database.sessions() as session:
         assert (
             await session.execute(text("SELECT version_num FROM alembic_version"))
-        ).scalar_one() == "0002_order_workflow"
+        ).scalar_one() == "0003_notifications"

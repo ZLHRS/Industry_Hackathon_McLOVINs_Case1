@@ -94,6 +94,7 @@ async def api(database, tmp_path):
             headers[login] = {"Authorization": "Bearer " + response.json()["access_token"]}
         yield {
             "client": client,
+            "app": app,
             "headers": headers,
             "users": users,
             "areas": areas,

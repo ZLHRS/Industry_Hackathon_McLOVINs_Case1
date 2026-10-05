@@ -190,3 +190,25 @@ export interface CreateOrder {
   fault_code_id?: string;
   comment?: string;
 }
+export interface NotificationItem {
+  id: string;
+  order_id: string | null;
+  kind: string;
+  title: string;
+  body: string;
+  urgent: boolean;
+  action_required: boolean;
+  created_at: string;
+  read_at: string | null;
+  acknowledged_at: string | null;
+  payload: Record<string, unknown>;
+}
+export interface NotificationPage {
+  items: NotificationItem[];
+  total: number;
+  unread_count: number;
+}
+export interface PushConfig {
+  enabled: boolean;
+  public_key: string | null;
+}

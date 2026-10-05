@@ -270,10 +270,7 @@ test("revoked session clears the visible workspace and private local snapshots",
     headers: { Authorization: `Bearer ${session.token}` },
   });
   expect(logout.status()).toBe(204);
-  await page
-    .getByRole("button", { name: /Открыть наряд/ })
-    .first()
-    .click();
+  // The active WebSocket detects revocation without another user action.
   await expect(page.getByRole("heading", { name: "Вход в смену" })).toBeVisible();
   expect(await page.evaluate(() => sessionStorage.getItem("naryadai.session.token"))).toBeNull();
   expect(await page.evaluate(() => sessionStorage.getItem("naryadai.session.user"))).toBeNull();

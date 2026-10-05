@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../api";
 import { Dialog } from "../components/Dialog";
 import type { ActionRequest, Catalog, EventItem, OrderDetail, Role, Workload } from "../types";
@@ -42,6 +42,7 @@ type Props = {
   onAction: (id: string, request: ActionRequest, queue?: boolean) => Promise<void>;
   onPhoto: (id: string, kind: "before" | "after", version: number, file: File) => Promise<void>;
   photoUrl: (path: string) => Promise<string>;
+  revision: number;
   onClose: () => void;
 };
 export function OrderDetailDialog({
@@ -54,6 +55,7 @@ export function OrderDetailDialog({
   onAction,
   onPhoto,
   photoUrl,
+  revision,
   onClose,
 }: Props) {
   const [detail, setDetail] = useState<OrderDetail>();
@@ -73,21 +75,30 @@ export function OrderDetailDialog({
     fault_code_id: "",
     no_materials_reason: "",
   });
-  const refresh = useCallback(
-    () =>
-      load(id)
-        .then(({ detail: next, events: history }) => {
-          setDetail(next);
-          setEvents(history);
-        })
-        .catch((caught: ApiError) =>
-          setError(caught.status === 404 ? "Наряд больше недоступен." : "Не удалось загрузить карточку."),
-        ),
-    [id, load],
-  );
+  const refreshGeneration = useRef(0);
+  const refresh = useCallback(() => {
+    const generation = ++refreshGeneration.current;
+    return load(id)
+      .then(({ detail: next, events: history }) => {
+        if (generation !== refreshGeneration.current) return;
+        setDetail(next);
+        setEvents(history);
+      })
+      .catch((caught: ApiError) => {
+        if (generation !== refreshGeneration.current) return;
+        if (caught.status === 404) {
+          setDetail(undefined);
+          setEvents([]);
+        }
+        setError(caught.status === 404 ? "Наряд больше недоступен." : "Не удалось загрузить карточку.");
+      });
+  }, [id, load]);
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+    return () => {
+      refreshGeneration.current += 1;
+    };
+  }, [refresh, revision]);
   async function act(action: string, extra: Record<string, unknown> = {}, queue = false) {
     if (!detail) return;
     setBusy(true);

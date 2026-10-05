@@ -35,6 +35,39 @@ class Settings(BaseSettings):
     login_account_limit: int = Field(default=5, ge=1, le=20)
     login_peer_limit: int = Field(default=50, ge=1, le=200)
 
+    worker_interval_seconds: float = Field(default=2.0, ge=0.1, le=60)
+    reminder_minutes: int = Field(default=30, ge=1, le=1440)
+    acceptance_minutes: int = Field(default=10, ge=1, le=120)
+    emergency_acceptance_minutes: int = Field(default=3, ge=1, le=30)
+    overdue_repeat_minutes: int = Field(default=30, ge=1, le=1440)
+    manager_escalation_minutes: int = Field(default=60, ge=1, le=10080)
+    web_push_private_key_file: Path | None = None
+    web_push_subject: str | None = None
+    push_timeout_seconds: int = Field(default=10, ge=1, le=20)
+    push_max_attempts: int = Field(default=5, ge=1, le=10)
+    push_lease_seconds: int = Field(default=60, ge=30, le=300)
+    realtime_poll_seconds: float = Field(default=1.0, ge=0.1, le=2)
+
+    @field_validator("web_push_subject")
+    @classmethod
+    def validate_push_subject(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        parsed = urlsplit(value)
+        if any(character.isspace() for character in value) or len(value) > 512:
+            raise ValueError("Invalid Web Push contact URI")
+        if parsed.scheme == "mailto" and "@" in parsed.path and not parsed.query:
+            return value
+        if (
+            parsed.scheme == "https"
+            and parsed.hostname
+            and not parsed.username
+            and not parsed.password
+            and not parsed.fragment
+        ):
+            return value
+        raise ValueError("Web Push subject must be a mailto or HTTPS contact URI")
+
     photo_root: Path = Path("var/photos")
     photo_max_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, le=20 * 1024 * 1024)
     photo_max_pixels: int = Field(default=24_000_000, ge=100_000, le=40_000_000)

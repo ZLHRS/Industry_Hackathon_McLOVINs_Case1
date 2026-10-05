@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 
 _POSTGRESQL_PREFIX: Final = "postgresql+psycopg://"
-SCHEMA_REVISION: Final = "0002_order_workflow"
+SCHEMA_REVISION: Final = "0003_notifications"
 
 
 class Database:

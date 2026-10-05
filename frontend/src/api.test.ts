@@ -159,3 +159,18 @@ describe("central authentication and private photo boundaries", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 });
+
+it("sends only endpoint and keys from a browser subscription JSON", async () => {
+  const fetcher = vi.fn(async () => new Response(JSON.stringify({ id: "subscription" }), { status: 201 }));
+  vi.stubGlobal("fetch", fetcher);
+  await new Api(() => "session-a").subscribePush({
+    endpoint: "https://fcm.googleapis.com/send/example",
+    expirationTime: null,
+    keys: { p256dh: "receiver", auth: "auth-secret" },
+  });
+  const [, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+  expect(JSON.parse(init.body as string)).toEqual({
+    endpoint: "https://fcm.googleapis.com/send/example",
+    keys: { p256dh: "receiver", auth: "auth-secret" },
+  });
+});

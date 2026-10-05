@@ -89,3 +89,45 @@ def test_database_url_is_redacted():
 def test_session_and_login_limits_are_bounded(values):
     with pytest.raises(ValidationError):
         Settings(**values)
+
+
+@pytest.mark.parametrize("contact", ["mailto:owner@example.org", "https://github.com/team/project"])
+def test_web_push_contact_uri(contact):
+    assert Settings(web_push_subject=contact).web_push_subject == contact
+
+
+@pytest.mark.parametrize(
+    "contact",
+    [
+        "http://example.org",
+        "owner@example.org",
+        "https://a b.org",
+        "https://user:pass@example.org",
+        "mailto:user@example.org?body=x",
+        "https://example.org/#fragment",
+        "x" * 513,
+    ],
+)
+def test_invalid_web_push_contact_uri(contact):
+    with pytest.raises(ValueError):
+        Settings(web_push_subject=contact)
+
+
+@pytest.mark.parametrize(
+    "setting",
+    [
+        "reminder_minutes",
+        "acceptance_minutes",
+        "emergency_acceptance_minutes",
+        "overdue_repeat_minutes",
+        "manager_escalation_minutes",
+        "push_timeout_seconds",
+        "push_max_attempts",
+        "push_lease_seconds",
+        "worker_interval_seconds",
+        "realtime_poll_seconds",
+    ],
+)
+def test_notification_intervals_are_positive(setting):
+    with pytest.raises(ValueError):
+        Settings(**{setting: 0})

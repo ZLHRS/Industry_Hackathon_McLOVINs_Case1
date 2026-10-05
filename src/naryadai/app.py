@@ -14,8 +14,11 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from naryadai.api.auth import router as auth_router
 from naryadai.api.catalog import router as catalog_router
 from naryadai.api.health import router as health_router
+from naryadai.api.notifications import router as notifications_router
 from naryadai.api.orders import router as orders_router
 from naryadai.api.photos import router as photos_router
+from naryadai.api.realtime import ConnectionLimits
+from naryadai.api.realtime import router as realtime_router
 from naryadai.application.common import OperationError
 from naryadai.config import Environment, Settings
 from naryadai.infrastructure.database import Database
@@ -33,6 +36,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             Database(settings.database_url.get_secret_value()) if settings.database_url else None
         )
         application.state.database = database
+        application.state.realtime_limits = ConnectionLimits()
         application.state.auth_limiter = CapacityLimiter(4)
         application.state.photo_limiter = CapacityLimiter(2)
         application.state.photo_store = PhotoStore(
@@ -64,6 +68,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(catalog_router, prefix="/api/v1")
     app.include_router(orders_router, prefix="/api/v1")
     app.include_router(photos_router, prefix="/api/v1")
+    app.include_router(notifications_router, prefix="/api/v1")
+    app.include_router(realtime_router, prefix="/api/v1")
 
     @app.exception_handler(OperationError)
     async def operation_error(_request: Request, error: OperationError) -> JSONResponse:

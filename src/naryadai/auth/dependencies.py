@@ -36,26 +36,17 @@ def get_database(request: Request) -> Database:
 DatabaseDep = Annotated[Database, Depends(get_database)]
 
 
-async def current_principal(
-    database: DatabaseDep,
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
-) -> Principal:
-    unauthorized = HTTPException(
-        status_code=401, detail="authentication_required", headers={"WWW-Authenticate": "Bearer"}
-    )
-    if (
-        credentials is None
-        or credentials.scheme.lower() != "bearer"
-        or len(credentials.credentials) != 43
-    ):
-        raise unauthorized
+async def authenticate_token(database: Database, token: str) -> Principal | None:
+    """Resolve a live session for HTTP and long-lived connections using the same policy."""
+    if len(token) != 43:
+        return None
     async with database.sessions() as session:
         row = (
             await session.execute(
                 select(Employee, AuthSession)
                 .join(AuthSession, AuthSession.employee_id == Employee.id)
                 .where(
-                    AuthSession.token_hash == fingerprint(credentials.credentials),
+                    AuthSession.token_hash == fingerprint(token),
                     AuthSession.revoked_at.is_(None),
                     AuthSession.expires_at > datetime.now(UTC),
                     Employee.is_active.is_(True),
@@ -63,7 +54,7 @@ async def current_principal(
             )
         ).one_or_none()
         if row is None:
-            raise unauthorized
+            return None
         employee, auth_session = row
         areas = tuple(
             (
@@ -80,6 +71,22 @@ async def current_principal(
             employee.role,
             areas,
         )
+
+
+async def current_principal(
+    database: DatabaseDep,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+) -> Principal:
+    principal = None
+    if credentials is not None and credentials.scheme.lower() == "bearer":
+        principal = await authenticate_token(database, credentials.credentials)
+    if principal is None:
+        raise HTTPException(
+            status_code=401,
+            detail="authentication_required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return principal
 
 
 PrincipalDep = Annotated[Principal, Depends(current_principal)]

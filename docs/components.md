@@ -57,3 +57,13 @@ PDF пользователя автоматически не копируютс�
 - [Vite: требования к среде](https://vite.dev/guide/).
 - [Node.js: официальный индекс выпусков](https://nodejs.org/dist/index.json); установщик проверяет SHASUMS256.txt.
 - [MDN: Service Worker API](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API).
+
+## Добавлено на этапе 5
+
+- websockets: WebSocket transport в Uvicorn и реальные TCP-тесты.
+- pywebpush, py-vapid, cryptography, requests: стандартное шифрование/VAPID и
+  ограниченный HTTPS transport. Прямые зависимости объявлены отдельно в pyproject.toml,
+  все версии и транзитивные компоненты зафиксированы uv.lock.
+- Native Push API / Notification API: браузерная подписка и service worker.
+  Внешний Telegram-бот не подключается.
+- Новые уведомления формируются детерминированными правилами, не выдаются за результат LLM.
