@@ -49,7 +49,7 @@ test("master filters analytics and downloads authenticated XLSX without invoking
   await page.getByRole("button", { name: "Применить", exact: true }).click();
   expect((await updated).status()).toBe(200);
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Скачать XLSX", exact: true }).click();
+  await page.getByRole("button", { name: "Скачать Excel", exact: true }).click();
   const file = await download;
   expect(file.suggestedFilename()).toMatch(/\.xlsx$/i);
   expect(summaryCalls).toBe(0);

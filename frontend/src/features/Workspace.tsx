@@ -1,4 +1,5 @@
 import { roleLabels } from "../lib/roleAccess";
+import "./workspace-ux.css";
 import { FormEvent, useMemo, useState } from "react";
 import { Dialog } from "../components/Dialog";
 import { local, ruPriority, ruStatus } from "./OrderDetail";
@@ -56,13 +57,59 @@ export function OrdersView({
 }) {
   const [creating, setCreating] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const title = role === "executor" ? "Мои работы" : role === "manager" ? "Обзор участка" : "Наряды участка";
+  const view = {
+    executor: {
+      eyebrow: "МОЯ СМЕНА",
+      title: "Мои наряды",
+      guidance: "Откройте наряд, чтобы принять его, начать работу или завершить выполнение.",
+    },
+    master: {
+      eyebrow: "УПРАВЛЕНИЕ СМЕНОЙ",
+      title: "Наряды участка",
+      guidance: "Выдавайте наряды и контролируйте ход работ по участку.",
+    },
+    manager: {
+      eyebrow: "КОНТРОЛЬ РАБОТ",
+      title: "Наряды участка",
+      guidance: "Просматривайте ход работ и переключайте список по текущей задаче.",
+    },
+    admin: {
+      eyebrow: "ПРОСМОТР РАБОТ",
+      title: "Наряды",
+      guidance: "Просматривайте текущий список нарядов.",
+    },
+  }[role];
+  const activeTab = filters.status.join(",") === activeStatuses.join(",");
+  const archiveTab = filters.status.join(",") === archiveStatuses.join(",");
+  const allTab = !filters.status.length;
+  const additionalFilterCount = [
+    Boolean(filters.priority),
+    Boolean(filters.area_id),
+    Boolean(filters.equipment_id),
+    Boolean(filters.executor_id),
+    filters.overdue,
+  ].filter(Boolean).length;
+  const hasAdditionalFilters = additionalFilterCount > 0;
+  const resetFilters = () =>
+    onFilters({
+      ...filters,
+      priority: "",
+      area_id: "",
+      equipment_id: "",
+      executor_id: "",
+      overdue: false,
+      offset: 0,
+    });
+  const emptyState = page?.items.length === 0;
+  const unfilteredEmpty = allTab && !hasAdditionalFilters;
+
   return (
-    <section className="workspace">
+    <section className="workspace orders-workspace">
       <div className="page-head">
         <div>
-          <p className="eyebrow">{role === "executor" ? "СМЕННОЕ ЗАДАНИЕ" : "ОПЕРАТИВНЫЙ КОНТУР"}</p>
-          <h1>{title}</h1>
+          <p className="eyebrow">{view.eyebrow}</p>
+          <h1>{view.title}</h1>
+          <p className="muted orders-guidance">{view.guidance}</p>
         </div>
         {role === "master" && (
           <button className="primary" onClick={() => setCreating(true)}>
@@ -70,41 +117,56 @@ export function OrdersView({
           </button>
         )}
       </div>
+
       {page && (
-        <div className="status-tabs" aria-label="Период нарядов">
+        <div className="status-tabs" aria-label="Список нарядов">
           <button
-            className={filters.status.join(",") === activeStatuses.join(",") ? "active" : ""}
+            className={activeTab ? "active" : ""}
+            aria-pressed={activeTab}
             onClick={() => onFilters({ ...filters, status: activeStatuses, offset: 0 })}
           >
             Активные
           </button>
           <button
-            className={filters.status.join(",") === archiveStatuses.join(",") ? "active" : ""}
+            className={archiveTab ? "active" : ""}
+            aria-pressed={archiveTab}
             onClick={() => onFilters({ ...filters, status: archiveStatuses, offset: 0 })}
           >
             Архив
           </button>
           <button
-            className={!filters.status.length ? "active" : ""}
+            className={allTab ? "active" : ""}
+            aria-pressed={allTab}
             onClick={() => onFilters({ ...filters, status: [], offset: 0 })}
           >
             Все наряды
           </button>
         </div>
-      )}{" "}
-      <button
-        className="filter-toggle"
-        type="button"
-        aria-expanded={filtersOpen}
-        aria-controls="order-filters"
-        onClick={() => setFiltersOpen((open) => !open)}
-      >
-        Фильтры
-      </button>
-      <div id="order-filters" className={`filters ${filtersOpen ? "is-open" : ""}`}>
+      )}
+
+      <div className="orders-filter-actions">
+        <button
+          className="filter-toggle"
+          type="button"
+          aria-expanded={filtersOpen}
+          aria-controls="order-filters"
+          aria-label={additionalFilterCount ? "Фильтры: выбрано " + additionalFilterCount : "Фильтры"}
+          onClick={() => setFiltersOpen((open) => !open)}
+        >
+          Фильтры{additionalFilterCount ? " (" + additionalFilterCount + ")" : ""}
+        </button>
+        {hasAdditionalFilters && (
+          <button className="text-button reset-order-filters" type="button" onClick={resetFilters}>
+            Сбросить фильтры
+          </button>
+        )}
+      </div>
+
+      <div id="order-filters" className={"filters " + (filtersOpen ? "is-open" : "")}>
         <label>
           Приоритет
           <select
+            aria-label="Приоритет"
             value={filters.priority}
             onChange={(e) => onFilters({ ...filters, priority: e.target.value, offset: 0 })}
           >
@@ -120,6 +182,7 @@ export function OrdersView({
           <label>
             Участок
             <select
+              aria-label="Участок"
               value={filters.area_id}
               onChange={(e) =>
                 onFilters({ ...filters, area_id: e.target.value, equipment_id: "", offset: 0 })
@@ -128,7 +191,7 @@ export function OrdersView({
               <option value="">Все участки</option>
               {catalog.areas.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.code}
+                  {item.code} · {item.name}
                 </option>
               ))}
             </select>
@@ -138,6 +201,7 @@ export function OrdersView({
           <label>
             Оборудование
             <select
+              aria-label="Оборудование"
               value={filters.equipment_id}
               onChange={(e) => onFilters({ ...filters, equipment_id: e.target.value, offset: 0 })}
             >
@@ -146,7 +210,7 @@ export function OrdersView({
                 .filter((item) => !filters.area_id || item.area_id === filters.area_id)
                 .map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.inventory_number}
+                    {item.inventory_number} · {item.name}
                   </option>
                 ))}
             </select>
@@ -156,6 +220,7 @@ export function OrdersView({
           <label>
             Исполнитель
             <select
+              aria-label="Исполнитель"
               value={filters.executor_id}
               onChange={(e) => onFilters({ ...filters, executor_id: e.target.value, offset: 0 })}
             >
@@ -173,18 +238,36 @@ export function OrdersView({
             type="checkbox"
             checked={filters.overdue}
             onChange={(e) => onFilters({ ...filters, overdue: e.target.checked, offset: 0 })}
-          />{" "}
+          />
           Только просроченные
         </label>
       </div>
-      {loading && <p className="muted">Обновляем наряды…</p>}
-      {page?.items.length === 0 && (
-        <div className="empty">
-          <h2>Нарядов нет</h2>
-          <p>По выбранным условиям ничего не найдено.</p>
-        </div>
+
+      {page && (
+        <p className="orders-summary" aria-live="polite">
+          В списке: <strong>{page.total}</strong>
+        </p>
       )}
-      {role !== "executor" ? (
+      {loading && <p className="muted">Обновляем наряды…</p>}
+      {emptyState ? (
+        <div className="empty orders-empty">
+          <h2>{unfilteredEmpty ? "Нарядов пока нет" : "По выбранным условиям нарядов нет"}</h2>
+          <p>
+            {unfilteredEmpty
+              ? role === "master"
+                ? "Создайте первый наряд, когда появится работа на участке."
+                : "Новые наряды появятся здесь после выдачи мастером."
+              : hasAdditionalFilters
+                ? "Сбросьте дополнительные фильтры или выберите другой список нарядов."
+                : "Переключите список на активные, архивные или все наряды."}
+          </p>
+          {hasAdditionalFilters && (
+            <button className="secondary" type="button" onClick={resetFilters}>
+              Сбросить фильтры
+            </button>
+          )}
+        </div>
+      ) : role !== "executor" ? (
         <Kanban orders={page?.items ?? []} catalog={catalog} onOpen={onOpen} onHistory={onHistory} />
       ) : (
         <div className="order-list">
@@ -193,6 +276,7 @@ export function OrdersView({
           ))}
         </div>
       )}
+
       {page && page.total > page.limit && (
         <div className="pagination">
           <button
@@ -228,6 +312,7 @@ export function OrdersView({
     </section>
   );
 }
+
 function Kanban({
   orders,
   catalog,

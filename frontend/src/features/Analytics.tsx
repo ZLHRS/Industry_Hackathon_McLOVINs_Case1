@@ -107,13 +107,13 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
     <section className="workspace analytics" aria-busy={loading}>
       <div className="page-head analytics-head">
         <div>
-          <p className="eyebrow">ОПЕРАТИВНАЯ АНАЛИТИКА</p>
+          <p className="eyebrow">РЕЗУЛЬТАТЫ РАБОТЫ</p>
           <h1>{role === "executor" ? "Мой отчёт" : "Отчёты смены"}</h1>
           <p className="muted">По журналу нарядов · время Костаная</p>
         </div>
         <div className="analytics-actions">
           <button className="secondary" onClick={() => void download()} disabled={!report || exporting}>
-            {exporting ? "Готовим XLSX…" : "Скачать XLSX"}
+            {exporting ? "Готовим Excel…" : "Скачать Excel"}
           </button>
           <button className="primary" onClick={() => void refresh()} disabled={loading || summarizing}>
             {loading ? "Считаем…" : "Обновить отчёт"}
@@ -185,7 +185,7 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
           </>
         ) : (
           <label>
-            Опорная дата
+            Дата отчёта
             <input
               type="date"
               value={query.date ?? date()}

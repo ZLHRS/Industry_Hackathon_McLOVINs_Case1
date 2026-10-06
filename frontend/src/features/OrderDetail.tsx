@@ -1,3 +1,4 @@
+import "./order-ux.css";
 import { canReviewRepair, roleLabels } from "../lib/roleAccess";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../api";
@@ -288,6 +289,35 @@ export function OrderDetailDialog({
     (detail.status === "ai_review" && currentReview?.needs_master_review) ||
     (detail.status === "rework" && currentReview?.verdict === "rework_required");
   const masterScoreRequiresReason = masterScore.trim().length > 0 && reason.trim().length < 3;
+  const executorNext: Partial<Record<OrderDetail["status"], string>> = {
+    issued: "Ознакомьтесь с заданием и примите наряд. Если заняты, поставьте его в очередь.",
+    accepted: "Когда будете готовы приступить, нажмите «Начать работу».",
+    queued: "Наряд в очереди. Начните его, когда завершите текущую работу.",
+    in_progress: "Опишите выполненные работы, добавьте материалы и фото, затем сдайте наряд мастеру.",
+    paused: "Работа приостановлена. Нажмите «Возобновить», чтобы продолжить.",
+    rework: "Прочитайте замечания мастера ниже и начните доработку.",
+    completed: "Работа сдана. Ожидайте решения мастера — повторная сдача не нужна.",
+    ai_review: "Работа сдана. Ожидайте решения мастера — повторная сдача не нужна.",
+    closed: "Наряд закрыт. Здесь сохранены отчёт, фотографии и история работы.",
+    cancelled: "Наряд отменён. Выполнять это задание больше не нужно.",
+    rejected: "Отказ передан мастеру. Дальнейшее назначение определяет мастер.",
+  };
+  const nextStep = canExecutor
+    ? executorNext[detail.status]
+    : masterOwns
+      ? ["completed", "ai_review"].includes(detail.status)
+        ? currentReview
+          ? "Изучите отчёт исполнителя и проверку, затем примите ремонт или верните на доработку."
+          : "Работа сдана. Дождитесь результатов проверки перед решением по ремонту."
+        : detail.status === "rejected"
+          ? "Исполнитель отказался от наряда. Изучите причину и назначьте дальнейшие действия."
+          : ["closed", "cancelled"].includes(detail.status)
+            ? "Наряд завершён. Отчёт и история доступны для просмотра."
+            : "Наряд назначен исполнителю. При необходимости уточните приоритет или назначение."
+      : "Режим просмотра. Изменять наряд и принимать ремонт может выдавший его мастер.";
+  const executorAction =
+    canExecutor &&
+    ["issued", "accepted", "queued", "in_progress", "paused", "rework"].includes(detail.status);
   const canReassign = [
     "issued",
     "accepted",
@@ -310,6 +340,25 @@ export function OrderDetailDialog({
               disabled={reportExporting}
             >
               {reportExporting ? "Готовим…" : "Отчёт Excel"}
+            </button>
+          )}
+        </div>
+        <div className="order-next-step">
+          <div>
+            <strong>{["closed", "cancelled"].includes(detail.status) ? "Итог" : "Что дальше"}</strong>
+            <p>{nextStep}</p>
+          </div>
+          {executorAction && (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                const actions = document.getElementById("executor-actions");
+                actions?.scrollIntoView({ block: "start" });
+                actions?.focus({ preventScroll: true });
+              }}
+            >
+              К действиям
             </button>
           )}
         </div>
@@ -346,9 +395,6 @@ export function OrderDetailDialog({
           (currentReview || detail.ai_job || detail.reviews.length > 0 || detail.status === "completed") && (
             <AIReviewReport review={currentReview} aiJob={detail.ai_job} attempt={detail.attempt} />
           )}
-        {canExecutor && ["completed", "ai_review"].includes(detail.status) && (
-          <p className="notice">Работа сдана. Ожидайте решения мастера.</p>
-        )}
         {canExecutor && detail.status === "rework" && (
           <section className="action-block">
             <h3>Что исправить</h3>
@@ -365,7 +411,7 @@ export function OrderDetailDialog({
         )}
         {canExecutor &&
           ["issued", "accepted", "queued", "in_progress", "paused", "rework"].includes(detail.status) && (
-            <section className="action-block">
+            <section className="action-block" id="executor-actions" tabIndex={-1}>
               <h3>Действия исполнителя</h3>
               <div className="action-row">
                 {detail.status === "issued" && (
@@ -390,7 +436,8 @@ export function OrderDetailDialog({
                 )}
               </div>
               {detail.status === "issued" && (
-                <>
+                <details className="secondary-action">
+                  <summary>Не могу выполнить наряд</summary>
                   <label>
                     Причина отказа
                     <textarea
@@ -409,10 +456,11 @@ export function OrderDetailDialog({
                   >
                     Отказаться
                   </button>
-                </>
+                </details>
               )}
               {detail.status === "in_progress" && (
-                <>
+                <details className="secondary-action">
+                  <summary>Приостановить работу</summary>
                   <label>
                     Причина паузы
                     <textarea
@@ -431,7 +479,7 @@ export function OrderDetailDialog({
                   >
                     Поставить на паузу
                   </button>
-                </>
+                </details>
               )}
               {["in_progress", "paused"].includes(detail.status) && (
                 <label className="file-input">
@@ -851,44 +899,49 @@ export function OrderDetailDialog({
         </section>
         <section>
           <h3>Журнал</h3>
-          <ol className="timeline">
-            {events
-              .filter(
-                (item) =>
-                  detailedReview ||
-                  ![
-                    "start_ai_review",
-                    "record_ai_assessment",
-                    "mark_rework",
-                    "record_downtime",
-                    "adjudicate_refusal",
-                  ].includes(item.action),
-              )
-              .map((item) => (
-                <li key={item.id}>
-                  <strong>{ruStatus[item.to_status] || item.to_status}</strong>
-                  <span>
-                    {local(item.occurred_at)} ·{" "}
-                    {roleLabels[item.actor_role as keyof typeof roleLabels] ?? "Сотрудник"}
-                  </span>
-                  {item.reason && <small>{item.reason}</small>}
-                  {item.action === "record_downtime" && (
-                    <small>
-                      <strong>
-                        {item.details.void === true ? "Простой аннулирован" : "Простой зафиксирован"}
-                      </strong>
-                      {item.details.started_at ? `: с ${local(String(item.details.started_at))}` : ""}
-                      {item.details.ended_at ? ` по ${local(String(item.details.ended_at))}` : ""}
-                    </small>
-                  )}
-                  {item.action === "adjudicate_refusal" && (
-                    <small>
-                      <strong>Отказ: {item.details.justified === true ? "обоснован" : "необоснован"}</strong>
-                    </small>
-                  )}
-                </li>
-              ))}
-          </ol>
+          <details className="secondary-action">
+            <summary>Показать историю действий</summary>
+            <ol className="timeline">
+              {events
+                .filter(
+                  (item) =>
+                    detailedReview ||
+                    ![
+                      "start_ai_review",
+                      "record_ai_assessment",
+                      "mark_rework",
+                      "record_downtime",
+                      "adjudicate_refusal",
+                    ].includes(item.action),
+                )
+                .map((item) => (
+                  <li key={item.id}>
+                    <strong>{ruStatus[item.to_status] || item.to_status}</strong>
+                    <span>
+                      {local(item.occurred_at)} ·{" "}
+                      {roleLabels[item.actor_role as keyof typeof roleLabels] ?? "Сотрудник"}
+                    </span>
+                    {item.reason && <small>{item.reason}</small>}
+                    {item.action === "record_downtime" && (
+                      <small>
+                        <strong>
+                          {item.details.void === true ? "Простой аннулирован" : "Простой зафиксирован"}
+                        </strong>
+                        {item.details.started_at ? `: с ${local(String(item.details.started_at))}` : ""}
+                        {item.details.ended_at ? ` по ${local(String(item.details.ended_at))}` : ""}
+                      </small>
+                    )}
+                    {item.action === "adjudicate_refusal" && (
+                      <small>
+                        <strong>
+                          Отказ: {item.details.justified === true ? "обоснован" : "необоснован"}
+                        </strong>
+                      </small>
+                    )}
+                  </li>
+                ))}
+            </ol>
+          </details>
         </section>
       </div>
     </Dialog>

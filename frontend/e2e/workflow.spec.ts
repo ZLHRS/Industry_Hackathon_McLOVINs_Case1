@@ -102,10 +102,11 @@ test("master issue, mobile photo/material completion", async ({ page, browser, r
     await expect(detail.getByRole("button", { name: "Начать работу", exact: true })).toBeVisible();
     await detail.getByRole("button", { name: "Начать работу", exact: true }).click();
     await expect(detail.getByText("Сдать работу", { exact: true })).toBeVisible();
+    await detail.getByText("Приостановить работу", { exact: true }).click();
     await detail.getByLabel("Причина паузы", { exact: true }).fill("Ожидание проверки давления");
     await detail.getByRole("button", { name: "Поставить на паузу", exact: true }).click();
     await detail.getByRole("button", { name: "Возобновить", exact: true }).click();
-    await expect(detail.getByRole("button", { name: "Поставить на паузу", exact: true })).toBeVisible();
+    await expect(detail.getByText("Приостановить работу", { exact: true })).toBeVisible();
     await detail.getByLabel("Фото после", { exact: false }).setInputFiles(proof);
     await expect(detail.locator("img")).toHaveCount(1);
     await expect
@@ -314,6 +315,7 @@ test("executor queues a job and refuses another with an explicit reason", async 
   await page.getByRole("dialog").getByRole("button", { name: "Закрыть", exact: true }).click();
   await page.getByText(refusedTitle, { exact: true }).click();
   const detail = page.getByRole("dialog");
+  await detail.getByText("Не могу выполнить наряд", { exact: true }).click();
   await expect(detail.getByRole("button", { name: "Отказаться", exact: true })).toBeDisabled();
   await detail.getByLabel("Причина отказа", { exact: true }).fill("Нет допуска к этой операции");
   await detail.getByRole("button", { name: "Отказаться", exact: true }).click();

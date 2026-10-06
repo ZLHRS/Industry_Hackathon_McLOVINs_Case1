@@ -47,6 +47,8 @@ export function EmployeesView({
   const [role, setRole] = useState<Role | "">("");
   const [status, setStatus] = useState<"all" | "active" | "inactive">("all");
   const [loading, setLoading] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState<AdminEmployee | null>(null);
@@ -102,7 +104,9 @@ export function EmployeesView({
         <div>
           <p className="eyebrow">АДМИНИСТРИРОВАНИЕ</p>
           <h1>Сотрудники и доступ</h1>
-          <p className="muted">Учётные записи, участки допуска и статус доступа к системе.</p>
+          <p className="muted">
+            Добавьте сотрудника или откройте его запись, чтобы настроить права и пароль.
+          </p>
         </div>
         <button className="primary" type="button" onClick={() => setCreateOpen(true)}>
           Добавить сотрудника
@@ -118,37 +122,64 @@ export function EmployeesView({
             placeholder="Имя, логин или специальность"
           />
         </label>
-        <label>
-          Роль
-          <select
-            aria-label="Роль"
-            value={role}
-            onChange={(event) => setRole(event.target.value as Role | "")}
-          >
-            <option value="">Все роли</option>
-            {roles.map((value) => (
-              <option value={value} key={value}>
-                {roleLabels[value]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Статус
-          <select
-            aria-label="Статус"
-            value={status}
-            onChange={(event) => setStatus(event.target.value as typeof status)}
-          >
-            <option value="all">Все статусы</option>
-            <option value="active">Доступ активен</option>
-            <option value="inactive">Доступ отключён</option>
-          </select>
-        </label>
+        <button
+          type="button"
+          className="secondary employee-filter-toggle"
+          aria-expanded={filtersOpen}
+          aria-controls="employee-filter-options"
+          onClick={() => setFiltersOpen(!filtersOpen)}
+        >
+          Фильтры{role || status !== "all" ? ` · ${Number(Boolean(role)) + Number(status !== "all")}` : ""}
+        </button>
+        <div
+          id="employee-filter-options"
+          className={`employee-filter-options ${filtersOpen ? "is-open" : ""}`}
+        >
+          <label>
+            Роль
+            <select
+              aria-label="Роль"
+              value={role}
+              onChange={(event) => setRole(event.target.value as Role | "")}
+            >
+              <option value="">Все роли</option>
+              {roles.map((value) => (
+                <option value={value} key={value}>
+                  {roleLabels[value]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Статус
+            <select
+              aria-label="Статус"
+              value={status}
+              onChange={(event) => setStatus(event.target.value as typeof status)}
+            >
+              <option value="all">Все статусы</option>
+              <option value="active">Доступ активен</option>
+              <option value="inactive">Доступ отключён</option>
+            </select>
+          </label>
+        </div>
         <button className="secondary" type="button" onClick={() => void refresh()} disabled={loading}>
           {loading ? "Обновляем…" : "Обновить"}
         </button>
       </section>
+      {notice && (
+        <p className="employee-feedback" role="status">
+          {notice}
+          <button
+            type="button"
+            className="text-button"
+            aria-label="Закрыть подтверждение"
+            onClick={() => setNotice("")}
+          >
+            ×
+          </button>
+        </p>
+      )}
       {error && (
         <p className="error" role="alert">
           {error}
@@ -156,7 +187,22 @@ export function EmployeesView({
       )}
       {!loading && items && (
         <p className="employees-count">
-          Показано: <strong>{visible.length}</strong> из {items.length}
+          <span>
+            Найдено: <strong>{visible.length}</strong> из {items.length}
+          </span>
+          {(search || role || status !== "all") && (
+            <button
+              className="text-button"
+              type="button"
+              onClick={() => {
+                setSearch("");
+                setRole("");
+                setStatus("all");
+              }}
+            >
+              Сбросить поиск и фильтры
+            </button>
+          )}
         </p>
       )}
       {loading && !items ? (
@@ -205,6 +251,10 @@ export function EmployeesView({
           onClose={() => setCreateOpen(false)}
           onSaved={async () => {
             setCreateOpen(false);
+            setNotice("Сотрудник создан. Передайте ему логин и пароль для входа.");
+            setSearch("");
+            setRole("");
+            setStatus("all");
             await refresh();
           }}
         />
@@ -218,6 +268,7 @@ export function EmployeesView({
           onClose={() => setSelected(null)}
           onSaved={async () => {
             setSelected(null);
+            setNotice("Права доступа сохранены. Сотруднику нужно войти заново.");
             await refresh();
           }}
           onPassword={() => {
@@ -238,6 +289,7 @@ export function EmployeesView({
           onSaved={async () => {
             const own = passwordTarget.id === currentUserId;
             setPasswordTarget(null);
+            setNotice("Пароль изменён. Старый пароль больше не действует.");
             if (own) {
               onSelfPasswordChanged?.();
               return;
@@ -253,6 +305,11 @@ export function EmployeesView({
           onClose={() => setStatusTarget(null)}
           onSaved={async () => {
             setStatusTarget(null);
+            setNotice(
+              statusTarget.is_active
+                ? "Доступ отключён. История работы сохранена."
+                : "Доступ восстановлен. Сотрудник может войти в систему.",
+            );
             await refresh();
           }}
         />
@@ -329,7 +386,13 @@ function CreateDialog({
   return (
     <Dialog title="Новый сотрудник" onClose={busy ? () => undefined : onClose}>
       <form className="dialog-form employee-form" onSubmit={(event) => void submit(event)}>
-        <p className="muted">Приложение не сохраняет пароль на устройстве.</p>
+        <p className="muted">
+          Сначала укажите сотрудника и его работу, затем выберите участки и задайте пароль.
+        </p>
+        <p className="muted" id="employee-login-hint">
+          Логин: от 3 до 64 символов — строчные латинские буквы, цифры, точка, дефис или подчёркивание.
+          Пароль: от 8 символов.
+        </p>
         {error && (
           <p className="error" role="alert">
             {error}
@@ -342,13 +405,15 @@ function CreateDialog({
               value={input.login}
               onChange={(event) => setInput({ ...input, login: event.target.value })}
               autoComplete="off"
+              aria-label="Логин"
+              aria-describedby="employee-login-hint"
               pattern={"[a-z0-9][a-z0-9._\\-]{2,63}"}
               maxLength={64}
               required
             />
           </label>
           <label>
-            Отображаемое имя
+            ФИО сотрудника
             <input
               value={input.display_name}
               onChange={(event) => setInput({ ...input, display_name: event.target.value })}
