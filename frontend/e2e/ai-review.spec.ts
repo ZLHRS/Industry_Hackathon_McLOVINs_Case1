@@ -150,7 +150,7 @@ test("master returns current review to rework and executor starts a clean attemp
     await detail
       .getByLabel("Причина решения", { exact: true })
       .fill("Нужно добавить фото результата и уточнить описание.");
-    await detail.getByRole("button", { name: "Вернуть", exact: true }).click();
+    await detail.getByRole("button", { name: "Вернуть на доработку", exact: true }).click();
     await expect
       .poll(async () => (await readOrder(request, candidate.master, candidate.id)).status)
       .toBe("rework");

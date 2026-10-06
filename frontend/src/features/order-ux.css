@@ -32,6 +32,71 @@
 .secondary-action label {
   margin-bottom: 0.75rem;
 }
+.master-controls {
+  gap: 1rem;
+}
+.master-controls > .muted {
+  margin: -0.35rem 0 0;
+}
+.master-action-panel {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid #d8d5ce;
+  background: #fbfaf7;
+  padding: 1rem;
+}
+.master-action-panel h4 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+.master-action-panel > .muted {
+  margin: -0.25rem 0 0;
+}
+.master-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+}
+.master-action-danger {
+  border-color: #ddc2bc;
+  background: #fff8f6;
+}
+.master-action-panel > summary {
+  cursor: pointer;
+  color: #34393b;
+  font-weight: 800;
+}
+.master-action-panel[open] > summary {
+  margin-bottom: 0.9rem;
+}
+.master-action-danger summary {
+  cursor: pointer;
+  color: #8f281d;
+  font-weight: 800;
+}
+.master-action-danger[open] summary {
+  margin-bottom: 0.9rem;
+}
+.master-confirmation {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  font-weight: 700;
+}
+.master-confirmation input {
+  width: 1.1rem;
+  min-height: 1.1rem;
+  margin-top: 0.15rem;
+}
+@media (max-width: 560px) {
+  .master-action-panel {
+    padding: 0.85rem;
+  }
+  .master-panel-actions > button {
+    width: 100%;
+  }
+}
 #executor-actions {
   scroll-margin-top: 5rem;
 }
@@ -40,4 +105,9 @@
     flex-direction: column;
     align-items: stretch;
   }
+}
+
+.master-panel-body {
+  display: grid;
+  gap: 1rem;
 }

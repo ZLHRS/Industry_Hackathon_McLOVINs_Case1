@@ -605,6 +605,15 @@ function AccessDialog({
         ) : (
           <AreaFields catalog={catalog} value={areaIds} onChange={setAreaIds} />
         )}
+        <section className="employee-password-action" aria-label="Пароль сотрудника">
+          <div>
+            <strong>Пароль сотрудника</strong>
+            <p>Задайте новый пароль, если сотрудник потерял доступ.</p>
+          </div>
+          <button className="secondary" type="button" onClick={onPassword} disabled={busy}>
+            Сбросить пароль
+          </button>
+        </section>
         <div className="employee-danger-zone">
           <div>
             <strong>{employee.is_active ? "Доступ включён" : "Доступ отключён"}</strong>
@@ -625,9 +634,6 @@ function AccessDialog({
           </button>
           <button className="primary" disabled={busy || !changed}>
             {busy ? "Сохраняем…" : "Сохранить доступ"}
-          </button>
-          <button className="text-button" type="button" onClick={onPassword} disabled={busy}>
-            Сбросить пароль
           </button>
         </div>
       </form>

@@ -91,6 +91,11 @@ export function OrderDetailDialog({
   const [reason, setReason] = useState("");
   const [comment, setComment] = useState("");
   const [priority, setPriority] = useState("");
+  const [priorityReason, setPriorityReason] = useState("");
+  const [reassignExecutorId, setReassignExecutorId] = useState("");
+  const [reassignReason, setReassignReason] = useState("");
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelConfirmed, setCancelConfirmed] = useState(false);
   const [masterScore, setMasterScore] = useState("");
   const [photo, setPhoto] = useState<File>();
   const [materials, setMaterials] = useState<{ material_id: string; quantity: string }[]>([
@@ -141,6 +146,13 @@ export function OrderDetailDialog({
       await refresh();
       setReason("");
       setComment("");
+      setPriority("");
+      setPriorityReason("");
+      setReassignExecutorId("");
+      setReassignReason("");
+      setCancelReason("");
+      setCancelConfirmed(false);
+      setMasterScore("");
     } catch (caught) {
       const failure = caught as ApiError;
       setError(
@@ -741,62 +753,81 @@ export function OrderDetailDialog({
           </section>
         )}
         {masterOwns && !["closed", "cancelled"].includes(detail.status) && (
-          <section className="action-block">
+          <section className="action-block master-controls">
             <h3>Управление мастера</h3>
-            <label>
-              Причина решения
-              <textarea
-                disabled={busy}
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                minLength={3}
-              />
-            </label>
-            {["ai_review", "rework"].includes(detail.status) && (
-              <label>
-                Оценка мастера (необязательно)
-                <input
-                  type="number"
-                  min="1"
-                  max="5"
-                  step="1"
-                  inputMode="numeric"
-                  disabled={busy}
-                  value={masterScore}
-                  placeholder={
-                    typeof currentReview?.score === "number" ? `AI: ${currentReview.score}` : "1–5"
-                  }
-                  onChange={(event) => setMasterScore(event.target.value)}
-                />
-              </label>
-            )}
-            {!["closed", "cancelled"].includes(detail.status) && (
-              <div className="action-row">
+            <p className="muted">
+              Каждое действие оформляется отдельно: причина относится только к выбранному изменению.
+            </p>
+            {(detail.status === "ai_review" || canOverride) && (
+              <section className="master-action-panel">
+                <h4>Решение по проверке</h4>
                 <label>
-                  Новый приоритет
-                  <select value={priority} onChange={(event) => setPriority(event.target.value)}>
-                    <option value="">Изменить приоритет…</option>
-                    {Object.entries(ruPriority).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
+                  Причина решения
+                  <textarea
+                    disabled={busy}
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    minLength={3}
+                  />
                 </label>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={busy || reason.trim().length < 3 || !priority}
-                  onClick={() => void act("change_priority", { priority, reason })}
-                >
-                  Изменить приоритет
-                </button>
-              </div>
+                {["ai_review", "rework"].includes(detail.status) && (
+                  <label>
+                    Оценка мастера (необязательно)
+                    <input
+                      type="number"
+                      min="1"
+                      max="5"
+                      step="1"
+                      inputMode="numeric"
+                      disabled={busy}
+                      value={masterScore}
+                      placeholder="1–5"
+                      onChange={(event) => setMasterScore(event.target.value)}
+                    />
+                  </label>
+                )}
+                <div className="master-panel-actions">
+                  {detail.status === "ai_review" && (
+                    <>
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={busy || reason.trim().length < 3}
+                        onClick={() => void decideMaster("request_rework")}
+                      >
+                        Вернуть на доработку
+                      </button>
+                      {canClose && (
+                        <button
+                          type="button"
+                          className="primary"
+                          disabled={busy || masterScoreRequiresReason}
+                          onClick={() => void decideMaster("close")}
+                        >
+                          Закрыть наряд
+                        </button>
+                      )}
+                    </>
+                  )}
+                  {canOverride && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy || reason.trim().length < 3}
+                      onClick={() => void decideMaster("override_close")}
+                    >
+                      Закрыть вручную
+                    </button>
+                  )}
+                </div>
+              </section>
             )}
-            <div className="action-row">
-              {detail.status === "issued" && (
+            {detail.status === "issued" && (
+              <section className="master-action-panel">
+                <h4>Фото до ремонта</h4>
+                <p className="muted">Добавьте исходное состояние оборудования до начала работ.</p>
                 <label>
-                  Фото до
+                  Фотография
                   <input
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
@@ -804,73 +835,139 @@ export function OrderDetailDialog({
                     disabled={busy}
                   />
                 </label>
-              )}
-              {!["closed", "cancelled"].includes(detail.status) && (
-                <button
-                  className="secondary"
-                  disabled={busy || reason.length < 3}
-                  onClick={() => void act("cancel", { reason })}
-                >
-                  Отменить
-                </button>
-              )}
-              {detail.status === "ai_review" && (
-                <>
-                  <button
-                    className="secondary"
-                    disabled={busy || reason.length < 3}
-                    onClick={() => void decideMaster("request_rework")}
-                  >
-                    Вернуть
-                  </button>
-                  {canClose && (
-                    <button
-                      className="primary"
-                      disabled={busy || masterScoreRequiresReason}
-                      onClick={() => void decideMaster("close")}
-                    >
-                      Закрыть
-                    </button>
-                  )}
-                </>
-              )}
-              {canOverride && (
-                <button
-                  className="secondary"
-                  disabled={busy || reason.trim().length < 3}
-                  onClick={() => void decideMaster("override_close")}
-                >
-                  Закрыть вручную
-                </button>
-              )}
-              {canReassign && (
+              </section>
+            )}
+            <details className="master-action-panel">
+              <summary>Изменить приоритет</summary>
+              <div className="master-panel-body">
                 <label>
-                  Исполнитель
+                  Новый приоритет
                   <select
-                    defaultValue=""
-                    disabled={busy || reason.trim().length < 3}
-                    onChange={(e) =>
-                      e.target.value && void act("reassign", { executor_id: e.target.value, reason })
-                    }
+                    aria-label="Новый приоритет"
+                    value={priority}
+                    disabled={busy}
+                    onChange={(event) => setPriority(event.target.value)}
                   >
-                    <option value="">Переназначить…</option>
-                    {workers
-                      .filter((person) => person.is_on_shift)
-                      .map((person) => (
-                        <option key={person.employee_id} value={person.employee_id}>
-                          {person.display_name}
-                        </option>
-                      ))}
+                    <option value="">Выберите приоритет…</option>
+                    {Object.entries(ruPriority).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
                   </select>
                 </label>
-              )}
-            </div>
+                <label>
+                  Причина изменения приоритета
+                  <textarea
+                    value={priorityReason}
+                    disabled={busy}
+                    minLength={3}
+                    onChange={(event) => setPriorityReason(event.target.value)}
+                  />
+                </label>
+                <div className="master-panel-actions">
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busy || !priority || priorityReason.trim().length < 3}
+                    onClick={() => void act("change_priority", { priority, reason: priorityReason })}
+                  >
+                    Сохранить приоритет
+                  </button>
+                </div>
+              </div>
+            </details>
+            {canReassign && (
+              <details className="master-action-panel">
+                <summary>Переназначить исполнителя</summary>
+                <div className="master-panel-body">
+                  <label>
+                    Новый исполнитель
+                    <select
+                      aria-label="Новый исполнитель"
+                      value={reassignExecutorId}
+                      disabled={busy}
+                      onChange={(event) => setReassignExecutorId(event.target.value)}
+                    >
+                      <option value="">Выберите исполнителя…</option>
+                      {workers
+                        .filter((person) => person.is_on_shift && person.employee_id !== detail.executor_id)
+                        .map((person) => (
+                          <option key={person.employee_id} value={person.employee_id}>
+                            {person.display_name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <label>
+                    Причина переназначения
+                    <textarea
+                      value={reassignReason}
+                      disabled={busy}
+                      minLength={3}
+                      onChange={(event) => setReassignReason(event.target.value)}
+                    />
+                  </label>
+                  <div className="master-panel-actions">
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy || !reassignExecutorId || reassignReason.trim().length < 3}
+                      onClick={() =>
+                        void act("reassign", { executor_id: reassignExecutorId, reason: reassignReason })
+                      }
+                    >
+                      Переназначить
+                    </button>
+                  </div>
+                </div>
+              </details>
+            )}
+            <details className="master-action-panel master-action-danger">
+              <summary>Отменить наряд</summary>
+              <div className="master-panel-body">
+                <p className="muted">Отменённый наряд нельзя вернуть в работу.</p>
+                <label>
+                  Причина отмены
+                  <textarea
+                    value={cancelReason}
+                    disabled={busy}
+                    minLength={3}
+                    onChange={(event) => setCancelReason(event.target.value)}
+                  />
+                </label>
+                <label className="master-confirmation">
+                  <input
+                    type="checkbox"
+                    checked={cancelConfirmed}
+                    disabled={busy}
+                    onChange={(event) => setCancelConfirmed(event.target.checked)}
+                  />
+                  Я понимаю, что наряд будет отменён
+                </label>
+                <div className="master-panel-actions">
+                  <button
+                    type="button"
+                    className="danger-button"
+                    disabled={busy || !cancelConfirmed || cancelReason.trim().length < 3}
+                    onClick={() => void act("cancel", { reason: cancelReason })}
+                  >
+                    Отменить наряд
+                  </button>
+                </div>
+              </div>
+            </details>
           </section>
         )}
         {(canExecutor || masterOwns) && !["closed", "cancelled"].includes(detail.status) && (
           <section className="action-block">
             <h3>Комментарий</h3>
-            <textarea value={comment} onChange={(e) => setComment(e.target.value)} maxLength={5000} />
+            <textarea
+              aria-label="Текст комментария"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              maxLength={5000}
+            />
             <button
               type="button"
               className="secondary"
