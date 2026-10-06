@@ -1,4 +1,4 @@
-import { navigation, permittedView, canViewWorkload, canViewEmployees, type View } from "./lib/roleAccess";
+import { navigation, permittedView, canViewWorkload, type View } from "./lib/roleAccess";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Api, ApiError, clearMutationKeys } from "./api";
 import { Login } from "./features/Login";
@@ -6,6 +6,7 @@ import { OrderDetailDialog } from "./features/OrderDetail";
 import { NotificationButton, NotificationsDialog } from "./features/Notifications";
 import { RealtimeConnection } from "./lib/realtime";
 import { OrdersView, ReferenceView, WorkloadView } from "./features/Workspace";
+import { EmployeesView } from "./features/Employees";
 import { AnalyticsView } from "./features/Analytics";
 import {
   clearActor,
@@ -204,13 +205,14 @@ export default function App() {
                 limit: 50,
               }),
           canViewWorkload(actor.role) ? api.workload() : Promise.resolve([]),
-          canViewEmployees(actor.role) ? api.employees() : Promise.resolve([]),
+          actor.role === "master" ? api.employees() : Promise.resolve([]),
         ]);
         if (guard !== authGeneration.current || request !== refreshGeneration.current) return;
         const dashboard = { catalog, orders, workload, employees };
         setData(dashboard);
         setSavedAt(null);
-        await saveSnapshot(actor.id, "dashboard", dashboard).catch(() => undefined);
+        if (actor.role !== "admin")
+          await saveSnapshot(actor.id, "dashboard", dashboard).catch(() => undefined);
         if (guard !== authGeneration.current || request !== refreshGeneration.current) return;
         setPending(await listPending(actor.id));
       } catch (caught) {
@@ -220,7 +222,10 @@ export default function App() {
           await invalidate(actor.id);
           return;
         }
-        const cached = await getSnapshot<Dashboard>(actor.id, "dashboard").catch(() => null);
+        const cached =
+          actor.role === "admin"
+            ? null
+            : await getSnapshot<Dashboard>(actor.id, "dashboard").catch(() => null);
         if (cached) {
           if (guard !== authGeneration.current || request !== refreshGeneration.current) return;
           setData(cached.data);
@@ -250,7 +255,7 @@ export default function App() {
         actorIdRef.current = next.id;
         sessionStorage.setItem(userKey, JSON.stringify(next));
         setUser(next);
-        setView((current) => (next.role === "admin" ? "reference" : current));
+        setView((current) => (next.role === "admin" ? "employees" : current));
         await refreshRef.current(next);
         if (!live || sessionStorage.getItem(tokenKey) !== token) return;
         const report = await syncRef.current(next.id);
@@ -417,10 +422,10 @@ export default function App() {
       <aside className="side-nav">
         <div className="brand">
           <div className="brand-mark">
-            N<span>•</span>
+            Т<span>•</span>
           </div>
           <strong>
-            НАРЯД<span>AI</span>
+            Тех<span>Наряд</span>
           </strong>
         </div>
         <nav aria-label="Основная навигация">
@@ -447,9 +452,9 @@ export default function App() {
       <header className="mobile-header">
         <div className="mobile-brand">
           <span>
-            N<span>•</span>
+            Т<span>•</span>
           </span>
-          <strong>НАРЯДAI</strong>
+          <strong>ТехНаряд</strong>
         </div>
         <div>
           <small>{user.display_name}</small>
@@ -550,6 +555,18 @@ export default function App() {
         )}{" "}
         {visibleView === "workload" && <WorkloadView workers={data?.workload ?? []} />}{" "}
         {visibleView === "analytics" && <AnalyticsView api={api} role={user.role} revision={liveRevision} />}{" "}
+        {visibleView === "employees" &&
+          user.role === "admin" &&
+          (data?.catalog ? (
+            <EmployeesView
+              api={api}
+              catalog={data.catalog}
+              currentUserId={user.id}
+              onSelfPasswordChanged={() => void invalidate(user.id)}
+            />
+          ) : (
+            <p>Загрузка данных сотрудников…</p>
+          ))}
         {visibleView === "reference" && (
           <ReferenceView role={user.role} catalog={data?.catalog ?? null} employees={data?.employees ?? []} />
         )}

@@ -9,7 +9,7 @@ Staging, commit и push выполняет пользователь. Следу�
 
 | Этап | Результат | Приёмка | Название коммита |
 | --- | --- | --- | --- |
-| 1 | Требования, архитектура, uv/Python, API, доменные переходы, CI | Локальный запуск, lint/types/tests/build, проверка графа | `feat: bootstrap NaryadAI foundation and work-order lifecycle` |
+| 1 | Требования, архитектура, uv/Python, API, доменные переходы, CI | Локальный запуск, lint/types/tests/build, проверка графа | `feat: bootstrap ТехНаряд foundation and work-order lifecycle` |
 | 2 | PostgreSQL, миграции, справочники, сессии/роли, seed | Пустая БД, изоляция доступа, ≥500 нарядов за ≥3 месяца | `feat: add persistent domain data and role-based authentication` |
 | 3 | API нарядов, история, назначения, очередь, материалы, фото | Цикл до проверки, конкуренция, идемпотентность, аудит | `feat: implement work-order workflow and repair evidence` |
 | 4 | Русская PWA исполнителя и панель мастера | Телефон: вход → выдача → действия → выполнение; скорость | `feat: build mobile work-order app and supervisor dashboard` |

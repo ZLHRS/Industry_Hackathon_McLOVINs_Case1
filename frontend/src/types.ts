@@ -49,6 +49,25 @@ export interface Employee {
   is_active: boolean;
   is_on_shift: boolean;
 }
+export interface AdminEmployee extends Employee {
+  area_ids: string[];
+}
+export interface CreateEmployee {
+  login: string;
+  display_name: string;
+  role: Role;
+  specialty: string;
+  grade: number;
+  brigade_id: string | null;
+  area_ids: string[];
+  secret: string;
+}
+export interface EmployeeAccessUpdate {
+  role?: Role;
+  area_ids?: string[];
+  is_active?: boolean;
+  secret?: string;
+}
 export interface FaultCode {
   id: string;
   code: string;

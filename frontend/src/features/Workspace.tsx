@@ -533,7 +533,7 @@ export function ReferenceView({
       </div>
       {role === "admin" && (
         <p className="notice">
-          Просмотр справочников и учётных записей. Редактирование в этом интерфейсе пока недоступно.
+          Справочники доступны для просмотра. Учётные записи настраиваются в разделе «Сотрудники».
         </p>
       )}
       <div className="reference-grid">
@@ -553,19 +553,21 @@ export function ReferenceView({
             </p>
           ))}
         </section>
-        <section>
-          <h2>Сотрудники</h2>
-          {employees.length ? (
-            employees.map((item, index) => (
-              <p key={`${item.display_name}-${index}`}>
-                {item.display_name} · {roleLabels[item.role as Role] ?? "Сотрудник"} ·{" "}
-                {item.is_on_shift ? "в смене" : "не в смене"}
-              </p>
-            ))
-          ) : (
-            <p>Нет доступа к списку сотрудников.</p>
-          )}
-        </section>
+        {role !== "admin" && (
+          <section>
+            <h2>Сотрудники</h2>
+            {employees.length ? (
+              employees.map((item, index) => (
+                <p key={`${item.display_name}-${index}`}>
+                  {item.display_name} · {roleLabels[item.role as Role] ?? "Сотрудник"} ·{" "}
+                  {item.is_on_shift ? "в смене" : "не в смене"}
+                </p>
+              ))
+            ) : (
+              <p>Нет доступа к списку сотрудников.</p>
+            )}
+          </section>
+        )}
       </div>
     </section>
   );

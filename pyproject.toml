@@ -1,7 +1,7 @@
 [project]
 name = "naryadai"
 version = "0.1.0"
-description = "NaryadAI: industrial maintenance work orders and decision support"
+description = "ТехНаряд: industrial maintenance work orders and decision support"
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [

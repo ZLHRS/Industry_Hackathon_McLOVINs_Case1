@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from naryadai.auth.dependencies import DatabaseDep, PrincipalDep, require_admin, require_area
 from naryadai.auth.security import hash_secret
@@ -114,6 +115,25 @@ class EmployeeView(View):
     is_on_shift: bool
 
 
+class AdminEmployeeView(EmployeeView):
+    area_ids: list[UUID]
+
+
+async def admin_employee_view(
+    session: AsyncSession, employee: Employee
+) -> AdminEmployeeView:
+    area_ids = list(
+        await session.scalars(
+            select(EmployeeArea.area_id)
+            .where(EmployeeArea.employee_id == employee.id)
+            .order_by(EmployeeArea.area_id)
+        )
+    )
+    return AdminEmployeeView(
+        **EmployeeView.model_validate(employee).model_dump(), area_ids=area_ids
+    )
+
+
 class AccessUpdate(Input):
     is_on_shift: bool | None = None
     is_active: bool | None = None
@@ -201,10 +221,22 @@ async def employees(
         return [EmployeeView.model_validate(row) for row in await session.scalars(statement)]
 
 
-@router.post("/employees", response_model=EmployeeView, status_code=201)
+@router.get("/employees/{employee_id}", response_model=AdminEmployeeView)
+async def employee_detail(
+    employee_id: UUID, principal: PrincipalDep, database: DatabaseDep
+) -> AdminEmployeeView:
+    require_admin(principal)
+    async with database.sessions() as session:
+        employee = await session.get(Employee, employee_id)
+        if employee is None:
+            raise HTTPException(status_code=404, detail="not_found")
+        return await admin_employee_view(session, employee)
+
+
+@router.post("/employees", response_model=AdminEmployeeView, status_code=201)
 async def create_employee(
     body: EmployeeInput, principal: PrincipalDep, database: DatabaseDep, request: Request
-) -> EmployeeView:
+) -> AdminEmployeeView:
     require_admin(principal)
     hashed = await to_thread.run_sync(
         hash_secret, body.secret.get_secret_value(), limiter=request.app.state.auth_limiter
@@ -218,20 +250,20 @@ async def create_employee(
                 [EmployeeArea(employee_id=employee.id, area_id=area) for area in set(body.area_ids)]
             )
             await session.flush()
-            result = EmployeeView.model_validate(employee)
+            result = await admin_employee_view(session, employee)
     except IntegrityError:
         raise HTTPException(status_code=409, detail="duplicate_or_invalid_reference") from None
     return result
 
 
-@router.patch("/employees/{employee_id}/access", response_model=EmployeeView)
+@router.patch("/employees/{employee_id}/access", response_model=AdminEmployeeView)
 async def change_access(
     employee_id: UUID,
     body: AccessUpdate,
     principal: PrincipalDep,
     database: DatabaseDep,
     request: Request,
-) -> EmployeeView:
+) -> AdminEmployeeView:
     require_admin(principal)
     changes = body.model_dump(exclude_none=True, exclude={"secret", "area_ids"})
     hashed = (
@@ -248,6 +280,10 @@ async def change_access(
             )
             if employee is None:
                 raise HTTPException(status_code=404, detail="not_found")
+            if employee.id == principal.employee_id and (
+                body.is_active is False or (body.role is not None and body.role != "admin")
+            ):
+                raise HTTPException(status_code=409, detail="self_access_change_forbidden")
             if body.is_on_shift is False and await session.scalar(
                 select(WorkOrder.id)
                 .where(WorkOrder.executor_id == employee_id, WorkOrder.status == "in_progress")
@@ -274,7 +310,7 @@ async def change_access(
                 .values(revoked_at=datetime.now(UTC))
             )
             await session.flush()
-            result = EmployeeView.model_validate(employee)
+            result = await admin_employee_view(session, employee)
     except IntegrityError:
         raise HTTPException(status_code=409, detail="duplicate_or_invalid_reference") from None
     return result

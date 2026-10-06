@@ -22,11 +22,11 @@ for (const role of ["executor", "master", "manager", "admin"] as const) {
       executor: ["Моя работа", "Мои результаты"],
       master: ["Наряды", "Загрузка", "Справочники", "Отчёт"],
       manager: ["Наряды", "Загрузка", "Отчёт"],
-      admin: ["Справочники"],
+      admin: ["Сотрудники", "Справочники"],
     };
     await expect(navigation.getByRole("button")).toHaveText(labels[role]);
     if (role === "admin") {
-      await expect(page.getByRole("heading", { name: "Справочные данные" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Сотрудники и доступ", exact: true })).toBeVisible();
       await expect(page.locator(".live-bar")).toHaveCount(0);
       expect(requests).not.toContain("/api/v1/work-orders");
       expect(requests).not.toContain("/api/v1/workload");

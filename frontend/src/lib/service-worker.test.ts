@@ -119,7 +119,7 @@ describe("notification click in the shipped service worker", () => {
     });
     await waitUntil.mock.calls[0][0];
     expect(app.showNotification).toHaveBeenCalledWith(
-      "НАРЯДAI",
+      "ТехНаряд",
       expect.objectContaining({
         icon: "/icon-192.png",
         badge: "/notification-badge.png",

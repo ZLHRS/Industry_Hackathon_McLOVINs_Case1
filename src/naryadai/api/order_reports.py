@@ -40,7 +40,7 @@ async def order_excel(
         content,
         media_type=XLSX,
         headers={
-            "Content-Disposition": 'attachment; filename="naryadai-order.xlsx"',
+            "Content-Disposition": 'attachment; filename="tekhnaryad-order.xlsx"',
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
         },

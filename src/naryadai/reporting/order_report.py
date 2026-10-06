@@ -251,7 +251,7 @@ def _render(
     photos: list[tuple[Any, ...]],
     store: PhotoStore,
 ) -> bytes:
-    book = ReportWorkbook("Карточка наряда · НарядAI")
+    book = ReportWorkbook("Карточка наряда · ТехНаряд")
     sheet = book.table("Наряд", ["Поле", "Значение"], card)
     sheet.set_column(1, 1, 85, book.text)
     sheet = book.table(

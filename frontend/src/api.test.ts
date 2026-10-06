@@ -223,3 +223,36 @@ describe("analytics requests preserve privacy boundaries", () => {
     }
   });
 });
+
+describe("employee administration", () => {
+  it("sends secrets only in authenticated request bodies without mutation storage or retry", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ id: "employee" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetcher);
+    const api = new Api(() => "admin-token");
+    await api.updateEmployeeAccess("employee", { secret: "test-new-password" });
+    const [url, init] = fetcher.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/v1/catalog/employees/employee/access");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual({ secret: "test-new-password" });
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer admin-token");
+    expect(sessionStorage.length).toBe(0);
+    fetcher.mockRejectedValue(new TypeError("offline"));
+    await expect(api.updateEmployeeAccess("employee", { is_active: false })).rejects.toThrow("offline");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(sessionStorage.length).toBe(0);
+  });
+  it("loads employees beyond the first page", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(Array.from({ length: 200 }, (_, i) => ({ id: String(i) })))),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: "last" }])));
+    vi.stubGlobal("fetch", fetcher);
+    const employees = await new Api(() => "admin-token").employees();
+    expect(employees).toHaveLength(201);
+    expect(fetcher.mock.calls[1][0]).toBe("/api/v1/catalog/employees?limit=200&offset=200");
+  });
+});

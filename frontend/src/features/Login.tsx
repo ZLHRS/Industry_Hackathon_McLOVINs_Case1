@@ -29,11 +29,11 @@ export function Login({ onLogin }: { onLogin: (login: string, secret: string) =>
     <main className="login-shell">
       <section className="login-brand">
         <div className="mark">
-          N<span>•</span>
+          Т<span>•</span>
         </div>
         <p className="eyebrow">СИСТЕМА РЕМОНТА</p>
         <h1>
-          НАРЯД<span>AI</span>
+          Тех<span>Наряд</span>
         </h1>
         <p>Наряды, контроль ремонта и загрузка смены.</p>
       </section>

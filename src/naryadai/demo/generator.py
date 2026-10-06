@@ -1,5 +1,5 @@
 # ruff: noqa: RUF001
-"""Pure reproducible generator for the labelled NaryadAI demo dataset.
+"""Pure reproducible generator for the labelled ТехНаряд demo dataset.
 
 The persisted rows contain operational facts only.  ``ground_truth`` is deliberately
 kept outside those rows so analytics cannot accidentally read the answers.

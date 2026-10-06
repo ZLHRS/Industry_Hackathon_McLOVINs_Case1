@@ -105,7 +105,7 @@ def public_key(settings: Settings) -> str | None:
 def build_payload(notification_id: str, *, urgent: bool) -> dict[str, object]:
     return {
         "notification_id": notification_id,
-        "title": "Аварийный наряд" if urgent else "НарядAI",  # noqa: RUF001
+        "title": "Аварийный наряд" if urgent else "ТехНаряд",
         "body": "Новое служебное уведомление. Откройте приложение.",
         "urgent": urgent,
         "url": f"/?notification={notification_id}",

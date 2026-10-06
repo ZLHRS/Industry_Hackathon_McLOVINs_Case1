@@ -1,4 +1,4 @@
-"""Alembic environment for the NaryadAI PostgreSQL schema."""
+"""Alembic environment for the ТехНаряд PostgreSQL schema."""
 
 from __future__ import annotations
 

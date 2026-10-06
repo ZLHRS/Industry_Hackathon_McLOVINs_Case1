@@ -36,7 +36,7 @@ async def analytics_excel(
         content,
         media_type=XLSX,
         headers={
-            "Content-Disposition": 'attachment; filename="naryadai-analytics.xlsx"',
+            "Content-Disposition": 'attachment; filename="tekhnaryad-analytics.xlsx"',
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
         },

@@ -1,6 +1,5 @@
 """Excel rendering: literal user strings, cached numbers, no external links/macros."""
 
-# ruff: noqa: RUF001
 from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal
@@ -25,7 +24,7 @@ class ReportWorkbook:
             },
         )
         self.book.set_properties(
-            {"title": title, "author": "НарядAI", "comments": "Отчёт по доступным данным"}
+            {"title": title, "author": "ТехНаряд", "comments": "Отчёт по доступным данным"}
         )
         self.header = self.book.add_format(
             {"bold": True, "font_color": "#FFFFFF", "bg_color": "#174D45", "text_wrap": True}
@@ -70,7 +69,7 @@ class ReportWorkbook:
         sheet.set_landscape()
         sheet.fit_to_pages(1, 0)
         sheet.repeat_rows(0)
-        sheet.set_footer("НарядAI · &P / &N")
+        sheet.set_footer("ТехНаряд · &P / &N")
         return sheet
 
     def finish(self) -> bytes:

@@ -1,4 +1,4 @@
-# Этап 1: фундамент НарядAI
+# Этап 1: фундамент ТехНаряд
 
 Дата проверки: 5 октября 2026. Этап завершает только фундамент, не весь MVP.
 
@@ -66,7 +66,7 @@ curl --fail http://127.0.0.1:8000/openapi.json
 ## Коммит пользователя
 
 ```text
-feat: bootstrap NaryadAI foundation and work-order lifecycle
+feat: bootstrap ТехНаряд foundation and work-order lifecycle
 ```
 
 Staging, commit и push агентом не выполнялись. HEAD остался исходным f31b771.

@@ -1,4 +1,4 @@
-"""Explicit command-line entrypoint for the synthetic NaryadAI demo seed."""
+"""Explicit command-line entrypoint for the synthetic ТехНаряд demo seed."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def _parse_date(value: str) -> date:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Seed an empty local NaryadAI demo database")
+    parser = argparse.ArgumentParser(description="Seed an empty local ТехНаряд demo database")
     parser.add_argument(
         "--anchor",
         type=_parse_date,

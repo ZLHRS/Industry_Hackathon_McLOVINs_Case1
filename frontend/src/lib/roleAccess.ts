@@ -1,6 +1,6 @@
 import type { Role } from "../types";
 
-export type View = "orders" | "workload" | "reference" | "analytics";
+export type View = "orders" | "workload" | "reference" | "analytics" | "employees";
 export const navigation: Record<Role, Array<[View, string]>> = {
   executor: [
     ["orders", "Моя работа"],
@@ -17,7 +17,10 @@ export const navigation: Record<Role, Array<[View, string]>> = {
     ["workload", "Загрузка"],
     ["analytics", "Отчёт"],
   ],
-  admin: [["reference", "Справочники"]],
+  admin: [
+    ["employees", "Сотрудники"],
+    ["reference", "Справочники"],
+  ],
 };
 export const canReviewRepair = (role: Role) => role === "master" || role === "manager";
 export const canViewWorkload = (role: Role) => role === "master" || role === "manager";

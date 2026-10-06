@@ -51,7 +51,7 @@ self.addEventListener("fetch", (event) => {
     );
 });
 self.addEventListener("push", (event) => {
-    let data = { notification_id: "", title: "НАРЯДAI", body: "Новое уведомление", urgent: false, url: "/" };
+    let data = { notification_id: "", title: "ТехНаряд", body: "Новое уведомление", urgent: false, url: "/" };
     try {
         const incoming = event.data.json();
         if (incoming && typeof incoming === "object") data = { ...data, ...incoming };
@@ -62,7 +62,7 @@ self.addEventListener("push", (event) => {
         typeof data.notification_id === "string" && notificationId.test(data.notification_id)
             ? data.notification_id
             : "naryadai";
-    const title = typeof data.title === "string" ? data.title.slice(0, 120) : "НАРЯДAI";
+    const title = typeof data.title === "string" ? data.title.slice(0, 120) : "ТехНаряд";
     const body = typeof data.body === "string" ? data.body.slice(0, 240) : "Новое уведомление";
     const urgent = data.urgent === true;
     const url = typeof data.url === "string" && notificationPath.test(data.url) ? data.url : "/";

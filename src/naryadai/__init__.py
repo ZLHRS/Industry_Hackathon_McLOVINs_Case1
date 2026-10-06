@@ -1,1 +1,1 @@
-"""NaryadAI maintenance management prototype."""
+"""ТехНаряд maintenance management prototype."""

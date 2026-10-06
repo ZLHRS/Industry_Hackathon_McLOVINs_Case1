@@ -16,7 +16,7 @@ COMPONENTS = {
 
 
 def export_analytics(report: AnalyticsReport) -> bytes:
-    book = ReportWorkbook("Аналитика · НарядAI")
+    book = ReportWorkbook("Аналитика · ТехНаряд")
     period = report.period
     sheet = book.table(
         "Сводка",

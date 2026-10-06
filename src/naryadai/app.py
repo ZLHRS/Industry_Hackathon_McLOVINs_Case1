@@ -61,7 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         lifespan=lifespan,
-        title="NaryadAI",
+        title="ТехНаряд",
         summary="Industrial maintenance work orders and decision support",
         version=version("naryadai"),
         debug=False,

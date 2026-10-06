@@ -1,5 +1,8 @@
 import type {
   ActionRequest,
+  AdminEmployee,
+  CreateEmployee,
+  EmployeeAccessUpdate,
   Catalog,
   CreateOrder,
   Employee,
@@ -164,8 +167,30 @@ export class Api {
   catalog() {
     return this.request<Catalog>("/catalog");
   }
-  employees() {
-    return this.request<Employee[]>("/catalog/employees?limit=200");
+  async employees(): Promise<Employee[]> {
+    const result: Employee[] = [];
+    for (let offset = 0; ; offset += 200) {
+      const page = await this.request<Employee[]>(`/catalog/employees?limit=200&offset=${offset}`);
+      result.push(...page);
+      if (page.length < 200) return result;
+    }
+  }
+  employee(id: string) {
+    return this.request<AdminEmployee>(`/catalog/employees/${id}`);
+  }
+  createEmployee(input: CreateEmployee) {
+    return this.request<AdminEmployee>("/catalog/employees", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  }
+  updateEmployeeAccess(id: string, input: EmployeeAccessUpdate) {
+    return this.request<AdminEmployee>(`/catalog/employees/${id}/access`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
   }
   orders(params: Record<string, string | number | boolean | string[] | undefined> = {}) {
     const query = new URLSearchParams();
@@ -260,7 +285,7 @@ export class Api {
   async analyticsExport(query: AnalyticsQuery) {
     const response = await this.response(this.analyticsPath("/analytics/export", query));
     const disposition = response.headers.get("Content-Disposition") ?? "";
-    const name = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? "naryadai-report.xlsx";
+    const name = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? "tekhnaryad-report.xlsx";
     return { blob: await response.blob(), filename: name.replace(/[^a-zA-Zа-яА-Я0-9._-]/g, "_") };
   }
   downtime(
