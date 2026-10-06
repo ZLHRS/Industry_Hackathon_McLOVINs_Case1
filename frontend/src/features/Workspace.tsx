@@ -297,7 +297,6 @@ function OrderRow({
         <span className="order-number">{order.number}</span>
         <span className="order-main">
           <strong>{description}</strong>
-          {order.is_synthetic && <small className="demo-badge">Демо</small>}
           <small>{machine ? `${machine.inventory_number} · ${machine.name}` : "Оборудование"}</small>
         </span>
         <span className={`status status-${order.status}`}>{ruStatus[order.status]}</span>
