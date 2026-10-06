@@ -1,3 +1,4 @@
+import { readableLimitation } from "../lib/presentationText";
 import { useEffect, useMemo, useState } from "react";
 import { Api, ApiError } from "../api";
 import type { AnalyticsOptions, AnalyticsQuery, AnalyticsReport, Role } from "../types";
@@ -108,7 +109,7 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
         <div>
           <p className="eyebrow">ОПЕРАТИВНАЯ АНАЛИТИКА</p>
           <h1>{role === "executor" ? "Мой отчёт" : "Отчёты смены"}</h1>
-          <p className="muted">Расчёт по журналу нарядов · {zone}</p>
+          <p className="muted">По журналу нарядов · время Костаная</p>
         </div>
         <div className="analytics-actions">
           <button className="secondary" onClick={() => void download()} disabled={!report || exporting}>
@@ -257,7 +258,7 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
                 timeZone: zone,
               }).format(new Date(report.meta.as_of))}
             </span>
-            <span>Строк в расчёте: {report.meta.row_count}</span>
+            <span>Нарядов в расчёте: {report.meta.row_count}</span>
           </div>
           <ReportWarnings warnings={report.meta.warnings} />
           <section className="metric-grid">
@@ -313,7 +314,7 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
             <Heading
               eye="ПО ЗАПРОСУ"
               title="ИИ-сводка мастера"
-              note="Использует текущие серверные показатели и не запускается автоматически."
+              note="Основные выводы и рекомендации за выбранный период."
             />
             {role === "executor" ? (
               <p className="muted">
@@ -327,10 +328,10 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
                 {summary && (
                   <article className="summary-result">
                     <p>{summary.text}</p>
-                    <small>
-                      Источник: {summary.source}
-                      {summary.limitations?.length ? ` · ${summary.limitations.join(" ")}` : ""}
-                    </small>
+                    {summary.source !== "openai" && <small>Обзор показателей без ИИ-интерпретации.</small>}
+                    {!!summary.limitations?.length && (
+                      <small>{summary.limitations.map(readableLimitation).join(" ")}</small>
+                    )}
                   </article>
                 )}
               </>
@@ -441,6 +442,8 @@ const evidenceLabels: Record<string, string> = {
   equipment_id: "Оборудование",
   material_id: "Материал",
   rate: "Доля",
+  baseline_rate: "Средняя доля",
+  baseline_median: "Обычный расход (медиана)",
   total: "Всего",
 };
 function componentName(name: string) {
@@ -461,7 +464,7 @@ function RatingTable({ title, rows }: { title: string; rows: AnalyticsReport["ra
           <div className="rating-name">
             <strong>{row.subject_name}</strong>
             <small>
-              Выборка: {row.sample_size}
+              Нарядов: {row.sample_size}
               {row.unavailable_components.length
                 ? ` · нет: ${row.unavailable_components.map(componentName).join(", ")}`
                 : ""}
@@ -627,12 +630,14 @@ function Anomalies({ report }: { report: AnalyticsReport }) {
               <strong>Правило:</strong> {item.formula}
             </p>
             <dl>
-              {entries(item.evidence).map(([key, value]) => (
-                <div key={key}>
-                  <dt>{evidenceLabels[key] ?? key.replaceAll("_", " ")}</dt>
-                  <dd>{evidenceValue(value)}</dd>
-                </div>
-              ))}
+              {entries(item.evidence)
+                .filter(([key]) => !/(?:^|_)ids?$/.test(key))
+                .map(([key, value]) => (
+                  <div key={key}>
+                    <dt>{evidenceLabels[key] ?? key.replaceAll("_", " ")}</dt>
+                    <dd>{evidenceValue(value)}</dd>
+                  </div>
+                ))}
             </dl>
           </div>
         </article>

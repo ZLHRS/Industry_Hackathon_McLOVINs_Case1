@@ -231,7 +231,7 @@ async function sendQueue(actorId: string, send: Sender, onlyId?: string): Promis
         continue;
       }
       entry.state = "pending";
-      entry.error = "Действие пока не подтверждено сервером. Повтор сохранит исходный ключ и версию.";
+      entry.error = "Не удалось подтвердить отправку. Повторите её, когда появится связь.";
       await updateExisting(entry);
       report.offline = true;
       break;

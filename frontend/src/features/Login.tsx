@@ -35,7 +35,7 @@ export function Login({ onLogin }: { onLogin: (login: string, secret: string) =>
         <h1>
           НАРЯД<span>AI</span>
         </h1>
-        <p>Оперативный контур для участка: наряды, доказательства ремонта и актуальная загрузка смены.</p>
+        <p>Наряды, контроль ремонта и загрузка смены.</p>
       </section>
       <form className="login-form" onSubmit={submit}>
         <h2>Вход в смену</h2>

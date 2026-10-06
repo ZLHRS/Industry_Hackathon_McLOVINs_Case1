@@ -1,3 +1,4 @@
+import { readableLimitation } from "../lib/presentationText";
 import type { AiJob, Review, ReviewCheckStatus, ReviewReport } from "../types";
 
 const local = (value: string) =>
@@ -13,8 +14,8 @@ const verdictLabels: Record<string, string> = {
   rework_required: "Нужна доработка",
 };
 const sourceLabels: Record<NonNullable<ReviewReport["source"]>, string> = {
-  openai: "Модель OpenAI",
-  rules: "Проверка правилами",
+  openai: "Проверка ИИ",
+  rules: "Базовая проверка",
   unavailable: "Автоматическая проверка недоступна",
 };
 const checkStatus: Record<ReviewCheckStatus, string> = {
@@ -44,7 +45,7 @@ function ReviewSummary({ review }: { review: Review }) {
   return (
     <div className="review-summary">
       <strong>{verdictLabels[review.verdict ?? ""] || "Вердикт не сформирован"}</strong>
-      <span>{source ? sourceLabels[source] : "Архивная запись без структурированного отчёта"}</span>
+      <span>{source ? sourceLabels[source] : "Архивная проверка"}</span>
       <small>{local(review.created_at)}</small>
     </div>
   );
@@ -52,12 +53,9 @@ function ReviewSummary({ review }: { review: Review }) {
 
 function JobState({ job }: { job: AiJob }) {
   const retryAt = job.next_attempt_at ? ` Следующая попытка: ${local(job.next_attempt_at)}.` : "";
-  const error = job.last_error_code ? ` Код: ${job.last_error_code}.` : "";
   return (
     <p className="ai-job" role="status">
-      {jobLabels[job.status] || "Статус автоматической проверки обновляется."} Попыток: {job.attempts}.
-      {retryAt}
-      {error}
+      {jobLabels[job.status] || "Статус автоматической проверки обновляется."}.{retryAt}
     </p>
   );
 }
@@ -98,10 +96,7 @@ export function AIReviewReport({
     <section className="ai-review-report" aria-label="Автоматическая проверка">
       <div className="ai-review-heading">
         <div>
-          <p className="eyebrow">
-            Автоматическая проверка ·{" "}
-            {attempt ? `попытка ${attempt}` : `версия наряда ${review.order_version}`}
-          </p>
+          <p className="eyebrow">Автоматическая проверка{attempt ? ` · попытка ремонта ${attempt}` : ""}</p>
           <h3>{verdictLabels[review.verdict ?? ""] || "Вердикт не сформирован"}</h3>
         </div>
         <span className={`review-badge ${needsAttention ? "warning" : "pass"}`}>
@@ -110,12 +105,8 @@ export function AIReviewReport({
       </div>
       <p className="review-explanation">{review.explanation || "Пояснение отсутствует."}</p>
       <div className="review-meta">
-        <span>{report.source ? sourceLabels[report.source] : "Архивная запись: источник не указан"}</span>
-        {report.source && review.model_name && <span>Модель: {review.model_name}</span>}
+        <span>{report.source ? sourceLabels[report.source] : "Архивная проверка"}</span>
         {typeof review.score === "number" && <span>Оценка проверки: {review.score}/5</span>}
-        {typeof report.confidence === "number" && (
-          <span>Уверенность модели (не калиброванная оценка): {Math.round(report.confidence * 100)}%</span>
-        )}
         {typeof review.master_score === "number" && <span>Оценка мастера: {review.master_score}/5</span>}
       </div>
       {checks.length > 0 ? (
@@ -129,7 +120,7 @@ export function AIReviewReport({
           ))}
         </ul>
       ) : (
-        <p className="muted">Структурированные результаты по этой попытке отсутствуют.</p>
+        <p className="muted">Подробности проверки не сохранены.</p>
       )}
       {timing && (
         <dl className="review-timing">
@@ -156,7 +147,7 @@ export function AIReviewReport({
           <strong>Ограничения проверки</strong>
           <ul>
             {report.limitations.map((item) => (
-              <li key={item}>{item}</li>
+              <li key={item}>{readableLimitation(item)}</li>
             ))}
           </ul>
         </aside>
@@ -173,9 +164,7 @@ export function ReviewHistory({ reviews }: { reviews: Review[] }) {
       <summary>Предыдущие проверки ({older.length})</summary>
       {older.map((review) => (
         <details className="review-history-entry" key={review.id}>
-          <summary>
-            Проверка по версии наряда {review.order_version} · {local(review.created_at)}
-          </summary>
+          <summary>Проверка от {local(review.created_at)}</summary>
           <ReviewSummary review={review} />
           <AIReviewReport review={review} />
         </details>

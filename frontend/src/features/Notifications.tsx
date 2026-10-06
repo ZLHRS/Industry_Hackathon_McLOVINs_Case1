@@ -41,7 +41,7 @@ export function NotificationsDialog({
   revision,
 }: NotificationsDialogProps) {
   const [page, setPage] = useState<NotificationPage>();
-  const [pushState, setPushState] = useState("Push можно включить по запросу.");
+  const [pushState, setPushState] = useState("Получайте уведомления, когда приложение свёрнуто.");
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [error, setError] = useState("");
   const [offset, setOffset] = useState(0);
@@ -83,13 +83,13 @@ export function NotificationsDialog({
       !("Notification" in window) ||
       !window.isSecureContext
     ) {
-      setPushState("Push не поддерживается этим браузером.");
+      setPushState("Этот браузер не поддерживает фоновые уведомления.");
       return;
     }
     try {
       const config = await api.pushConfig();
       if (!config.enabled || !config.public_key) {
-        setPushState("Push для этого контура не настроен.");
+        setPushState("Фоновые уведомления пока недоступны. Обратитесь к администратору.");
         return;
       }
       const permission = await Notification.requestPermission();
@@ -104,9 +104,9 @@ export function NotificationsDialog({
       });
       const registered = await api.subscribePush(subscription.toJSON());
       onPushBound?.(registered.id);
-      setPushState("Push включён для этой сессии.");
+      setPushState("Уведомления на этом устройстве включены.");
     } catch {
-      setPushState("Не удалось включить push. Повторите позже.");
+      setPushState("Не удалось включить уведомления. Повторите позже.");
     }
   }
 
@@ -114,10 +114,10 @@ export function NotificationsDialog({
     <Dialog title="Уведомления" onClose={onClose}>
       <section className="notification-drawer">
         <div className="push-control">
-          <strong>Push-уведомления</strong>
+          <strong>Уведомления на устройстве</strong>
           <small>{pushState}</small>
           <button type="button" className="secondary" onClick={() => void enablePush()}>
-            Включить push
+            Включить уведомления
           </button>
         </div>
         <label className="check">

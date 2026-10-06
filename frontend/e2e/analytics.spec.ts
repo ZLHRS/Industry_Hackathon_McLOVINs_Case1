@@ -89,7 +89,7 @@ test("summary is only requested by an explicit action and accepts a rules fallba
   await page.getByRole("button", { name: "Сформировать ИИ-сводку", exact: true }).click();
   await summaryResponse;
   await expect(page.getByText("Правила: просрочек не выявлено.", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Источник: rules/)).toBeVisible();
+  await expect(page.getByText(/Обзор показателей без ИИ-интерпретации/)).toBeVisible();
 });
 
 test("master records then voids downtime and downloads a private order report", async ({ page, request }) => {
@@ -164,5 +164,5 @@ test("downtime KPI uses recorded equipment intervals instead of work-order pause
   await expect(metric("Отказы")).toHaveText("2");
   await expect(metric("Закрыто")).toHaveText("3");
   await expect(metric("Незакрыто")).toHaveText("4");
-  await expect(page.getByText(/Строк в расчёте:/)).toHaveCount(1);
+  await expect(page.getByText(/Нарядов в расчёте:/)).toHaveCount(1);
 });

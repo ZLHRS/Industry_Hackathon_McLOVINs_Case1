@@ -514,7 +514,7 @@ export default function App() {
           <section className="pending-panel">
             <div>
               <strong>Ожидают отправки: {pending.length}</strong>
-              <p>Версия и содержимое команды сохранены без изменений.</p>
+              <p>Действия сохранены на устройстве и ожидают отправки.</p>
             </div>
             <div>
               {pending.map((entry) => (
@@ -523,7 +523,7 @@ export default function App() {
                     {actionLabels[entry.request.action] || "Действие"} ·{" "}
                     {data?.orders.items.find((order) => order.id === entry.orderId)?.number || "наряд"}
                   </span>
-                  <small>{entry.error || "Ожидает подтверждения сервера"}</small>
+                  <small>{entry.error || "Ожидает подтверждения"}</small>
                   <button
                     className="secondary"
                     onClick={() => void retry(entry.id)}
