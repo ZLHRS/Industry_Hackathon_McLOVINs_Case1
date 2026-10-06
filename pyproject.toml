@@ -58,6 +58,7 @@ include = [
     "/frontend/package-lock.json",
     "/frontend/index.html",
     "/frontend/vite.config.ts",
+    "/frontend/service-worker.js",
     "/frontend/vitest.config.ts",
     "/frontend/tsconfig.json",
     "/frontend/eslint.config.js",

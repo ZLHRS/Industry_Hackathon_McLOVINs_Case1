@@ -7,6 +7,11 @@ import tseslint from "typescript-eslint";
 export default tseslint.config(
     { ignores: ["dist"] },
     {
+        files: ["service-worker.js"],
+        extends: [js.configs.recommended],
+        languageOptions: { globals: { ...globals.serviceworker, SHELL: "readonly", __ASSETS__: "readonly" } },
+    },
+    {
         extends: [js.configs.recommended, ...tseslint.configs.recommended],
         files: ["**/*.{ts,tsx}"],
         languageOptions: { globals: globals.browser },

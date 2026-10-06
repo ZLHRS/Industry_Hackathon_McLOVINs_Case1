@@ -11,11 +11,11 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty false",
-    "lint": "eslint src --max-warnings=0",
+    "lint": "eslint src service-worker.js --max-warnings=0",
     "test": "vitest run",
     "test:watch": "vitest",
-    "format": "prettier --write src e2e package.json vite.config.ts vitest.config.ts playwright.config.ts eslint.config.js",
-    "format:check": "prettier --check src e2e package.json vite.config.ts vitest.config.ts playwright.config.ts eslint.config.js"
+    "format": "prettier --write src e2e package.json vite.config.ts vitest.config.ts playwright.config.ts eslint.config.js service-worker.js",
+    "format:check": "prettier --check src e2e package.json vite.config.ts vitest.config.ts playwright.config.ts eslint.config.js service-worker.js"
   },
   "dependencies": {
     "react": "19.3.0",

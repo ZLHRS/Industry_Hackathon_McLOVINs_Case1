@@ -151,10 +151,20 @@ test("actual service worker displays native urgent notification from injected pu
             title: note.title,
             data: note.data,
             requireInteraction: note.requireInteraction,
+            icon: note.icon,
+            badge: note.badge,
           }));
         }),
       )
-      .toEqual([{ title: payload.title, data: { url: payload.url }, requireInteraction: true }]);
+      .toEqual([
+        {
+          title: payload.title,
+          data: { url: payload.url },
+          requireInteraction: true,
+          icon: new URL("/icon-192.png", info.project.use.baseURL!).href,
+          badge: new URL("/notification-badge.png", info.project.use.baseURL!).href,
+        },
+      ]);
     await page.evaluate(async () => {
       const registration = await navigator.serviceWorker.ready;
       for (const notification of await registration.getNotifications()) notification.close();
