@@ -1,3 +1,4 @@
+import { canReviewRepair, roleLabels } from "../lib/roleAccess";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../api";
 import { Dialog } from "../components/Dialog";
@@ -269,7 +270,8 @@ export function OrderDetailDialog({
       </Dialog>
     );
   const machine = catalog.equipment.find((item) => item.id === detail.equipment_id);
-  const canExecutor = role === "executor";
+  const canExecutor = role === "executor" && detail.executor_id === currentUserId;
+  const detailedReview = canReviewRepair(role);
   const masterOwns = role === "master" && detail.master_id === currentUserId;
   const rejections = events.filter((item) => item.action === "reject");
   const latestDowntime = [...events].reverse().find((item) => item.action === "record_downtime");
@@ -300,14 +302,16 @@ export function OrderDetailDialog({
       <div className="order-detail">
         <div className="order-tools">
           <p className="order-description">{detail.description}</p>
-          <button
-            className="secondary"
-            type="button"
-            onClick={() => void downloadReport()}
-            disabled={reportExporting}
-          >
-            {reportExporting ? "Готовим…" : "Отчёт Excel"}
-          </button>
+          {detailedReview && (
+            <button
+              className="secondary"
+              type="button"
+              onClick={() => void downloadReport()}
+              disabled={reportExporting}
+            >
+              {reportExporting ? "Готовим…" : "Отчёт Excel"}
+            </button>
+          )}
         </div>
         <dl className="facts">
           <div>
@@ -338,97 +342,111 @@ export function OrderDetailDialog({
             {detail.no_materials_reason && <p>Без расхода материалов: {detail.no_materials_reason}</p>}
           </section>
         )}
-        {(currentReview || detail.ai_job || detail.reviews.length > 0 || detail.status === "completed") && (
-          <AIReviewReport review={currentReview} aiJob={detail.ai_job} attempt={detail.attempt} />
+        {detailedReview &&
+          (currentReview || detail.ai_job || detail.reviews.length > 0 || detail.status === "completed") && (
+            <AIReviewReport review={currentReview} aiJob={detail.ai_job} attempt={detail.attempt} />
+          )}
+        {canExecutor && ["completed", "ai_review"].includes(detail.status) && (
+          <p className="notice">Работа сдана. Ожидайте решения мастера.</p>
+        )}
+        {canExecutor && detail.status === "rework" && (
+          <section className="action-block">
+            <h3>Что исправить</h3>
+            <p>
+              {[...events].reverse().find((item) => item.action === "request_rework")?.reason ??
+                "Свяжитесь с мастером, чтобы уточнить замечания перед продолжением работы."}
+            </p>
+          </section>
         )}
         {error && (
           <p className="error" role="alert">
             {error}
           </p>
         )}
-        {canExecutor && (
-          <section className="action-block">
-            <h3>Действия исполнителя</h3>
-            <div className="action-row">
+        {canExecutor &&
+          ["issued", "accepted", "queued", "in_progress", "paused", "rework"].includes(detail.status) && (
+            <section className="action-block">
+              <h3>Действия исполнителя</h3>
+              <div className="action-row">
+                {detail.status === "issued" && (
+                  <>
+                    <button className="primary" disabled={busy} onClick={() => void act("accept", {}, true)}>
+                      Принять
+                    </button>
+                    <button className="secondary" disabled={busy} onClick={() => void act("queue", {}, true)}>
+                      В очередь
+                    </button>
+                  </>
+                )}
+                {["accepted", "queued", "rework"].includes(detail.status) && (
+                  <button className="primary" disabled={busy} onClick={() => void act("start", {}, true)}>
+                    Начать работу
+                  </button>
+                )}
+                {detail.status === "paused" && (
+                  <button className="primary" disabled={busy} onClick={() => void act("resume", {}, true)}>
+                    Возобновить
+                  </button>
+                )}
+              </div>
               {detail.status === "issued" && (
                 <>
-                  <button className="primary" disabled={busy} onClick={() => void act("accept", {}, true)}>
-                    Принять
-                  </button>
-                  <button className="secondary" disabled={busy} onClick={() => void act("queue", {}, true)}>
-                    В очередь
+                  <label>
+                    Причина отказа
+                    <textarea
+                      disabled={busy}
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      minLength={3}
+                      maxLength={1000}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busy || reason.trim().length < 3}
+                    onClick={() => void act("reject", { reason }, true)}
+                  >
+                    Отказаться
                   </button>
                 </>
               )}
-              {["accepted", "queued", "rework"].includes(detail.status) && (
-                <button className="primary" disabled={busy} onClick={() => void act("start", {}, true)}>
-                  Начать работу
-                </button>
+              {detail.status === "in_progress" && (
+                <>
+                  <label>
+                    Причина паузы
+                    <textarea
+                      disabled={busy}
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      minLength={3}
+                      maxLength={1000}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busy || reason.trim().length < 3}
+                    onClick={() => void act("pause", { reason }, true)}
+                  >
+                    Поставить на паузу
+                  </button>
+                </>
               )}
-              {detail.status === "paused" && (
-                <button className="primary" disabled={busy} onClick={() => void act("resume", {}, true)}>
-                  Возобновить
-                </button>
+              {["in_progress", "paused"].includes(detail.status) && (
+                <label className="file-input">
+                  Фото после
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={upload}
+                    disabled={busy}
+                  />
+                  <span>{photo?.name || "Выбрать файл"}</span>
+                </label>
               )}
-            </div>
-            {detail.status === "issued" && (
-              <>
-                <label>
-                  Причина отказа
-                  <textarea
-                    disabled={busy}
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    minLength={3}
-                    maxLength={1000}
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={busy || reason.trim().length < 3}
-                  onClick={() => void act("reject", { reason }, true)}
-                >
-                  Отказаться
-                </button>
-              </>
-            )}
-            {detail.status === "in_progress" && (
-              <>
-                <label>
-                  Причина паузы
-                  <textarea
-                    disabled={busy}
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    minLength={3}
-                    maxLength={1000}
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={busy || reason.trim().length < 3}
-                  onClick={() => void act("pause", { reason }, true)}
-                >
-                  Поставить на паузу
-                </button>
-              </>
-            )}
-            {["in_progress", "paused"].includes(detail.status) && (
-              <label className="file-input">
-                Фото после
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={upload}
-                  disabled={busy}
-                />
-                <span>{photo?.name || "Выбрать файл"}</span>
-              </label>
-            )}
-          </section>
-        )}
+            </section>
+          )}
         {canExecutor && ["in_progress", "paused"].includes(detail.status) && (
           <form className="action-block" onSubmit={(e) => void submitCompletion(e)}>
             <h3>Сдать работу</h3>
@@ -674,7 +692,7 @@ export function OrderDetailDialog({
             </button>
           </section>
         )}
-        {masterOwns && (
+        {masterOwns && !["closed", "cancelled"].includes(detail.status) && (
           <section className="action-block">
             <h3>Управление мастера</h3>
             <label>
@@ -801,7 +819,7 @@ export function OrderDetailDialog({
             </div>
           </section>
         )}
-        {role !== "manager" && role !== "admin" && (
+        {(canExecutor || masterOwns) && !["closed", "cancelled"].includes(detail.status) && (
           <section className="action-block">
             <h3>Комментарий</h3>
             <textarea value={comment} onChange={(e) => setComment(e.target.value)} maxLength={5000} />
@@ -829,34 +847,47 @@ export function OrderDetailDialog({
             <p className="muted">Материалы не зафиксированы.</p>
           )}
           <PhotoGallery photos={detail.photos} getUrl={photoUrl} attempt={detail.attempt} />
-          <ReviewHistory reviews={detail.reviews} />
+          {detailedReview && <ReviewHistory reviews={detail.reviews} />}
         </section>
         <section>
           <h3>Журнал</h3>
           <ol className="timeline">
-            {events.map((item) => (
-              <li key={item.id}>
-                <strong>{ruStatus[item.to_status] || item.to_status}</strong>
-                <span>
-                  {local(item.occurred_at)} · {item.actor_role}
-                </span>
-                {item.reason && <small>{item.reason}</small>}
-                {item.action === "record_downtime" && (
-                  <small>
-                    <strong>
-                      {item.details.void === true ? "Простой аннулирован" : "Простой зафиксирован"}
-                    </strong>
-                    {item.details.started_at ? `: с ${local(String(item.details.started_at))}` : ""}
-                    {item.details.ended_at ? ` по ${local(String(item.details.ended_at))}` : ""}
-                  </small>
-                )}
-                {item.action === "adjudicate_refusal" && (
-                  <small>
-                    <strong>Отказ: {item.details.justified === true ? "обоснован" : "необоснован"}</strong>
-                  </small>
-                )}
-              </li>
-            ))}
+            {events
+              .filter(
+                (item) =>
+                  detailedReview ||
+                  ![
+                    "start_ai_review",
+                    "record_ai_assessment",
+                    "mark_rework",
+                    "record_downtime",
+                    "adjudicate_refusal",
+                  ].includes(item.action),
+              )
+              .map((item) => (
+                <li key={item.id}>
+                  <strong>{ruStatus[item.to_status] || item.to_status}</strong>
+                  <span>
+                    {local(item.occurred_at)} ·{" "}
+                    {roleLabels[item.actor_role as keyof typeof roleLabels] ?? "Сотрудник"}
+                  </span>
+                  {item.reason && <small>{item.reason}</small>}
+                  {item.action === "record_downtime" && (
+                    <small>
+                      <strong>
+                        {item.details.void === true ? "Простой аннулирован" : "Простой зафиксирован"}
+                      </strong>
+                      {item.details.started_at ? `: с ${local(String(item.details.started_at))}` : ""}
+                      {item.details.ended_at ? ` по ${local(String(item.details.ended_at))}` : ""}
+                    </small>
+                  )}
+                  {item.action === "adjudicate_refusal" && (
+                    <small>
+                      <strong>Отказ: {item.details.justified === true ? "обоснован" : "необоснован"}</strong>
+                    </small>
+                  )}
+                </li>
+              ))}
           </ol>
         </section>
       </div>

@@ -83,7 +83,7 @@ async def test_excel_order_auth_content_and_embedded_photo(api, database):
         ("coworker", 404),
         ("foreign", 404),
         ("admin", 403),
-        ("executor", 200),
+        ("executor", 403),
         ("manager", 200),
     ):
         response = await client.get(

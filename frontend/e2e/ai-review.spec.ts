@@ -160,6 +160,12 @@ test("master returns current review to rework and executor starts a clean attemp
     await page.getByText(candidate.description, { exact: true }).click();
     const executorDetail = page.getByRole("dialog");
     await expect(executorDetail.getByText(candidate.description, { exact: true })).toBeVisible();
+    await expect(executorDetail.getByRole("heading", { name: "Что исправить", exact: true })).toBeVisible();
+    await expect(
+      executorDetail
+        .getByText("Нужно добавить фото результата и уточнить описание.", { exact: true })
+        .first(),
+    ).toBeVisible();
     await expect(executorDetail.getByRole("button", { name: "Начать работу", exact: true })).toBeVisible();
     await executorDetail.getByRole("button", { name: "Начать работу", exact: true }).click();
     await expect
@@ -167,7 +173,9 @@ test("master returns current review to rework and executor starts a clean attemp
       .toBe("in_progress");
     const restarted = await readOrder(request, candidate.master, candidate.id);
     expect(restarted.reviews.some((item: { is_current: boolean }) => item.is_current)).toBe(false);
-    await expect(executorDetail.getByText("Отчёт для этой попытки ещё не сформирован.")).toBeVisible();
+    await expect(executorDetail.getByRole("region", { name: "Автоматическая проверка" })).toHaveCount(0);
+    await expect(executorDetail.getByRole("heading", { name: "Что исправить", exact: true })).toHaveCount(0);
+    await expect(executorDetail.getByRole("heading", { name: "Сдать работу", exact: true })).toBeVisible();
   } finally {
     const current = await readOrder(request, candidate.master, candidate.id);
     if (!["closed", "cancelled"].includes(current.status)) {

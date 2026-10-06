@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
+from naryadai.application.common import ensure_role, get_order
 from naryadai.auth.dependencies import DatabaseDep, PrincipalDep
 from naryadai.reporting.order_report import export_order
 
@@ -23,6 +24,11 @@ async def order_excel(
     database: DatabaseDep,
     request: Request,
 ) -> Response:
+    # Keep the scoped-resource 404 semantics while rejecting an executor that
+    # can see the order but is not allowed to export its master-facing review.
+    async with database.sessions() as session:
+        await get_order(session, order_id, principal)
+    ensure_role(principal, "master", "manager")
     content = await export_order(
         database,
         principal,

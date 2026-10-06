@@ -278,25 +278,29 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
               value={duration(report.durations.work_seconds)}
               note="В среднем, без пауз"
             />
-            <Metric
-              label="Простой"
-              value={duration(report.downtime.known_seconds)}
-              note="Только записанные интервалы"
-            />
+            {people && (
+              <Metric
+                label="Простой"
+                value={duration(report.downtime.known_seconds)}
+                note="Только записанные интервалы"
+              />
+            )}
             <Metric label="Активные наряды" value={report.activity.active_order_count} />
           </section>
           <section className="analytics-section">
             <Heading
-              eye="СРАВНЕНИЕ"
-              title="Рейтинг исполнения"
+              eye={people ? "СРАВНЕНИЕ" : "ЛИЧНЫЕ РЕЗУЛЬТАТЫ"}
+              title={people ? "Рейтинг исполнения" : "Моя оценка"}
               note="Оценка показывает только подтверждённые компоненты; малые выборки отмечены."
             />
             <Ratings report={report} privateView={role === "executor"} />
           </section>
-          <section className="analytics-section analytics-split">
-            <Materials report={report} />
-            <Downtime report={report} />
-          </section>
+          {people && (
+            <section className="analytics-section analytics-split">
+              <Materials report={report} />
+              <Downtime report={report} />
+            </section>
+          )}
           <section className="analytics-section">
             <Activity report={report} />
           </section>
@@ -310,33 +314,27 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
               <Anomalies report={report} />
             </section>
           )}
-          <section className="analytics-section ai-summary">
-            <Heading
-              eye="ПО ЗАПРОСУ"
-              title="ИИ-сводка мастера"
-              note="Основные выводы и рекомендации за выбранный период."
-            />
-            {role === "executor" ? (
-              <p className="muted">
-                Сводка доступна мастеру и руководителю. Ваши личные показатели показаны выше.
-              </p>
-            ) : (
-              <>
-                <button className="secondary" onClick={() => void requestSummary()} disabled={summarizing}>
-                  {summarizing ? "Формируем…" : "Сформировать ИИ-сводку"}
-                </button>
-                {summary && (
-                  <article className="summary-result">
-                    <p>{summary.text}</p>
-                    {summary.source !== "openai" && <small>Обзор показателей без ИИ-интерпретации.</small>}
-                    {!!summary.limitations?.length && (
-                      <small>{summary.limitations.map(readableLimitation).join(" ")}</small>
-                    )}
-                  </article>
-                )}
-              </>
-            )}
-          </section>
+          {people && (
+            <section className="analytics-section ai-summary">
+              <Heading
+                eye="ПО ЗАПРОСУ"
+                title="ИИ-сводка мастера"
+                note="Основные выводы и рекомендации за выбранный период."
+              />
+              <button className="secondary" onClick={() => void requestSummary()} disabled={summarizing}>
+                {summarizing ? "Формируем…" : "Сформировать ИИ-сводку"}
+              </button>
+              {summary && (
+                <article className="summary-result">
+                  <p>{summary.text}</p>
+                  {summary.source !== "openai" && <small>Обзор показателей без ИИ-интерпретации.</small>}
+                  {!!summary.limitations?.length && (
+                    <small>{summary.limitations.map(readableLimitation).join(" ")}</small>
+                  )}
+                </article>
+              )}
+            </section>
+          )}
         </>
       )}
     </section>

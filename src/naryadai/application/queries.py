@@ -1,5 +1,6 @@
 """Read models scoped to the authenticated employee; no workflow mutations."""
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Literal
@@ -27,6 +28,23 @@ from naryadai.infrastructure.models import (
 )
 
 from .common import OperationError, ensure_role, get_order, visible_orders
+
+# Automated assessments and master-only factual observations are operationally
+# useful, but are not part of an executor's repair history. Keep this list
+# compatible with the earlier event spellings present in imported data.
+_EXECUTOR_HIDDEN_EVENT_ACTIONS = frozenset(
+    {
+        "start_ai_review",
+        "record_ai_assessment",
+        "mark_rework",
+        "ai_review",
+        "ai_accepted",
+        "ai_rework",
+        "manual_review",
+        "record_downtime",
+        "adjudicate_refusal",
+    }
+)
 
 
 class OrderView(BaseModel):
@@ -246,21 +264,23 @@ async def order_detail(database: Database, principal: Principal, order_id: UUID)
                 .order_by(Photo.uploaded_at, Photo.id)
             )
         ).all()
-        reviews = (
-            await session.scalars(
-                select(AIReview)
-                .where(AIReview.work_order_id == order_id)
-                .order_by(AIReview.created_at, AIReview.id)
-            )
-        ).all()
-        job = None
-        if order.last_submission_version is not None:
-            job = await session.scalar(
-                select(AIReviewJob).where(
-                    AIReviewJob.work_order_id == order_id,
-                    AIReviewJob.submission_version == order.last_submission_version,
+        reviews: Sequence[AIReview] = ()
+        job: AIReviewJob | None = None
+        if principal.role != "executor":
+            reviews = (
+                await session.scalars(
+                    select(AIReview)
+                    .where(AIReview.work_order_id == order_id)
+                    .order_by(AIReview.created_at, AIReview.id)
                 )
-            )
+            ).all()
+            if order.last_submission_version is not None:
+                job = await session.scalar(
+                    select(AIReviewJob).where(
+                        AIReviewJob.work_order_id == order_id,
+                        AIReviewJob.submission_version == order.last_submission_version,
+                    )
+                )
         return OrderDetail(
             **order_view(order, datetime.now(UTC)).model_dump(),
             work_description=order.work_description,
@@ -313,19 +333,27 @@ async def order_events(
 ) -> EventPage:
     async with database.sessions() as session:
         await get_order(session, order_id, principal)
+        predicates = [
+            WorkOrderEvent.work_order_id == order_id,
+            WorkOrderEvent.sequence > after_sequence,
+        ]
+        if principal.role == "executor":
+            predicates.append(WorkOrderEvent.action.not_in(_EXECUTOR_HIDDEN_EVENT_ACTIONS))
         rows = (
             await session.scalars(
                 select(WorkOrderEvent)
-                .where(
-                    WorkOrderEvent.work_order_id == order_id,
-                    WorkOrderEvent.sequence > after_sequence,
-                )
+                .where(*predicates)
                 .order_by(WorkOrderEvent.sequence)
                 .limit(limit + 1)
             )
         ).all()
         return EventPage(
-            items=[EventView.model_validate(r) for r in rows[:limit]],
+            items=[
+                EventView.model_validate(r).model_copy(update={"details": {}})
+                if principal.role == "executor"
+                else EventView.model_validate(r)
+                for r in rows[:limit]
+            ],
             next_after=rows[limit - 1].sequence if len(rows) > limit else None,
         )
 

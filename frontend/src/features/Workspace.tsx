@@ -1,3 +1,4 @@
+import { roleLabels } from "../lib/roleAccess";
 import { FormEvent, useMemo, useState } from "react";
 import { Dialog } from "../components/Dialog";
 import { local, ruPriority, ruStatus } from "./OrderDetail";
@@ -188,7 +189,7 @@ export function OrdersView({
       ) : (
         <div className="order-list">
           {page?.items.map((order) => (
-            <OrderRow key={order.id} order={order} catalog={catalog} onOpen={onOpen} onHistory={onHistory} />
+            <OrderRow key={order.id} order={order} catalog={catalog} onOpen={onOpen} />
           ))}
         </div>
       )}
@@ -281,7 +282,7 @@ function OrderRow({
   order: Order;
   catalog: Catalog | null;
   onOpen: (id: string) => void;
-  onHistory: (equipmentId: string) => Promise<void>;
+  onHistory?: (equipmentId: string) => Promise<void>;
 }) {
   const machine = catalog?.equipment.find((item) => item.id === order.equipment_id);
   const description = order.is_synthetic
@@ -302,7 +303,7 @@ function OrderRow({
         <span className={`status status-${order.status}`}>{ruStatus[order.status]}</span>
         <span className={order.overdue ? "deadline danger-text" : "deadline"}>{local(order.deadline)}</span>
       </button>
-      {machine && (
+      {machine && onHistory && (
         <button
           className="history-button"
           onClick={() => void onHistory(machine.id)}
@@ -530,11 +531,11 @@ export function ReferenceView({
           <h1>{role === "admin" ? "Справочные данные" : "Контекст участка"}</h1>
         </div>
       </div>
-      <p className="notice">
-        {role === "admin"
-          ? "В этой поставке доступен просмотр актуальных данных. Управление учётными записями и справочниками остаётся в API администрации."
-          : "Изменение ремонтных нарядов для руководителя недоступно."}
-      </p>
+      {role === "admin" && (
+        <p className="notice">
+          Просмотр справочников и учётных записей. Редактирование в этом интерфейсе пока недоступно.
+        </p>
+      )}
       <div className="reference-grid">
         <section>
           <h2>Участки</h2>
@@ -557,7 +558,8 @@ export function ReferenceView({
           {employees.length ? (
             employees.map((item, index) => (
               <p key={`${item.display_name}-${index}`}>
-                {item.display_name} · {item.role} · {item.is_on_shift ? "в смене" : "не в смене"}
+                {item.display_name} · {roleLabels[item.role as Role] ?? "Сотрудник"} ·{" "}
+                {item.is_on_shift ? "в смене" : "не в смене"}
               </p>
             ))
           ) : (

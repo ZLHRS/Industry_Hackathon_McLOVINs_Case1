@@ -12,7 +12,10 @@ from sqlalchemy.exc import DBAPIError
 from naryadai.app import create_app
 from naryadai.auth.security import hash_secret
 from naryadai.config import Settings
+from naryadai.domain.lifecycle import ActorRole, WorkOrderStatus
 from naryadai.infrastructure.models import (
+    AIReview,
+    AIReviewJob,
     Area,
     Employee,
     EmployeeArea,
@@ -280,6 +283,138 @@ async def test_workload_completion_materials_and_history_paging(api, database):
     ] == "free"
     async with database.sessions() as session:
         assert await session.scalar(select(func.count()).select_from(OutboxEvent)) == 4
+
+
+async def test_executor_read_models_redact_ai_and_internal_audit_data(api, database):
+    item = await issue(api)
+    order_id = UUID(item["order_id"])
+    now = datetime.now(UTC)
+    async with database.sessions.begin() as session:
+        order = await session.get(WorkOrder, order_id)
+        assert order is not None
+        order.last_submission_version = 1
+        session.add_all(
+            [
+                AIReview(
+                    work_order_id=order_id,
+                    order_version=1,
+                    score=2,
+                    explanation="Raw model explanation",
+                    model_name="private-model-name",
+                    needs_master_review=True,
+                    report={"provider": "private", "checks": [{"detail": "raw evidence"}]},
+                ),
+                AIReviewJob(
+                    work_order_id=order_id,
+                    submission_version=1,
+                    status="retry",
+                    attempts=2,
+                    next_attempt_at=now,
+                    last_error_code="provider_internal_error",
+                ),
+                WorkOrderEvent(
+                    work_order_id=order_id,
+                    sequence=2,
+                    order_version=2,
+                    actor_id=None,
+                    actor_role=ActorRole.SYSTEM,
+                    action="start_ai_review",
+                    from_status=WorkOrderStatus.ISSUED,
+                    to_status=WorkOrderStatus.AI_REVIEW,
+                    occurred_at=now,
+                    details={"model_name": "private-model-name"},
+                ),
+                WorkOrderEvent(
+                    work_order_id=order_id,
+                    sequence=3,
+                    order_version=3,
+                    actor_id=None,
+                    actor_role=ActorRole.SYSTEM,
+                    action="record_ai_assessment",
+                    from_status=WorkOrderStatus.AI_REVIEW,
+                    to_status=WorkOrderStatus.AI_REVIEW,
+                    occurred_at=now,
+                    details={"provider": "private", "score": 2},
+                ),
+                WorkOrderEvent(
+                    work_order_id=order_id,
+                    sequence=4,
+                    order_version=4,
+                    actor_id=api["users"]["master"],
+                    actor_role=ActorRole.MASTER,
+                    action="request_rework",
+                    from_status=WorkOrderStatus.AI_REVIEW,
+                    to_status=WorkOrderStatus.REWORK,
+                    occurred_at=now,
+                    reason="Repeat the inspection with photo evidence",
+                    details={"ai_score": 2, "raw": "not for executor"},
+                ),
+                WorkOrderEvent(
+                    work_order_id=order_id,
+                    sequence=5,
+                    order_version=5,
+                    actor_id=api["users"]["master"],
+                    actor_role=ActorRole.MASTER,
+                    action="record_downtime",
+                    from_status=WorkOrderStatus.REWORK,
+                    to_status=WorkOrderStatus.REWORK,
+                    occurred_at=now,
+                    reason="Internal downtime assessment",
+                    details={"started_at": "2026-01-01T00:00:00Z"},
+                ),
+                WorkOrderEvent(
+                    work_order_id=order_id,
+                    sequence=6,
+                    order_version=6,
+                    actor_id=api["users"]["master"],
+                    actor_role=ActorRole.MASTER,
+                    action="close",
+                    from_status=WorkOrderStatus.AI_REVIEW,
+                    to_status=WorkOrderStatus.CLOSED,
+                    occurred_at=now,
+                    reason="Accepted by the master after inspection",
+                    details={"master_score": 5, "needs_master_review": True},
+                ),
+            ]
+        )
+
+    client = api["client"]
+    path = f"/api/v1/work-orders/{order_id}"
+    executor = (await client.get(path, headers=api["headers"]["executor"])).json()
+    assert executor["reviews"] == []
+    assert executor["ai_job"] is None
+
+    for role in ("master", "manager"):
+        detail = (await client.get(path, headers=api["headers"][role])).json()
+        assert detail["reviews"][0]["model_name"] == "private-model-name"
+        assert detail["reviews"][0]["report"]["provider"] == "private"
+        assert detail["ai_job"]["last_error_code"] == "provider_internal_error"
+
+    events_path = path + "/events"
+    first = await client.get(events_path + "?limit=1", headers=api["headers"]["executor"])
+    assert first.status_code == 200
+    assert [event["sequence"] for event in first.json()["items"]] == [1]
+    assert first.json()["next_after"] == 1
+    rework = await client.get(
+        events_path + "?after_sequence=1&limit=1", headers=api["headers"]["executor"]
+    )
+    assert [event["sequence"] for event in rework.json()["items"]] == [4]
+    assert rework.json()["items"][0]["reason"] == "Repeat the inspection with photo evidence"
+    assert rework.json()["items"][0]["details"] == {}
+    assert rework.json()["next_after"] == 4
+    closing = await client.get(
+        events_path + "?after_sequence=4", headers=api["headers"]["executor"]
+    )
+    assert [event["sequence"] for event in closing.json()["items"]] == [6]
+    assert closing.json()["items"][0]["reason"] == "Accepted by the master after inspection"
+    assert closing.json()["items"][0]["details"] == {}
+    assert closing.json()["next_after"] is None
+
+    master_events = (
+        await client.get(events_path, headers=api["headers"]["master"])
+    ).json()["items"]
+    assert [event["sequence"] for event in master_events] == [1, 2, 3, 4, 5, 6]
+    assert master_events[1]["details"]["model_name"] == "private-model-name"
 
 
 @pytest.mark.parametrize(

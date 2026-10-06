@@ -17,7 +17,7 @@ async function login(page: Page, account: string) {
   await expect(page.getByRole("button", { name: /Выйти/ })).toBeVisible();
 }
 async function openReport(page: Page) {
-  const report = page.getByRole("button", { name: "Отчёт", exact: true });
+  const report = page.getByRole("button", { name: /^(Отчёт|Мои результаты)$/, exact: true });
   await expect(report.first()).toBeVisible();
   await report.first().click();
   await expect(page.getByRole("heading", { name: /отчёт/i })).toBeVisible();
@@ -64,7 +64,7 @@ test("executor sees a private report and never receives peer controls", async ({
   await expect(page.getByLabel("Исполнитель", { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("Бригада", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Аномалии с доказательствами", { exact: true })).toHaveCount(0);
-  await expect(page.getByText(/Сводка доступна мастеру/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "ИИ-сводка мастера" })).toHaveCount(0);
   await page.screenshot({ path: info.outputPath("analytics-executor-mobile.png"), fullPage: true });
   await noOverflow(page);
 });

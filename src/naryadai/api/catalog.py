@@ -139,13 +139,17 @@ async def read_catalog(principal: PrincipalDep, database: DatabaseDep) -> Catalo
         if principal.role != "admin":
             areas = areas.where(Area.id.in_(principal.area_ids))
             equipment = equipment.where(Equipment.area_id.in_(principal.area_ids))
+        planning_access = principal.role in {"master", "admin"}
+        material_access = principal.role in {"executor", "master", "admin"}
         return CatalogResponse(
             areas=[AreaView.model_validate(r) for r in await session.scalars(areas)],
             equipment=[EquipmentView.model_validate(r) for r in await session.scalars(equipment)],
             brigades=[
                 BrigadeView.model_validate(r)
                 for r in await session.scalars(select(Brigade).order_by(Brigade.code))
-            ],
+            ]
+            if planning_access
+            else [],
             fault_codes=[
                 FaultView.model_validate(r)
                 for r in await session.scalars(select(FaultCode).order_by(FaultCode.code))
@@ -153,11 +157,15 @@ async def read_catalog(principal: PrincipalDep, database: DatabaseDep) -> Catalo
             materials=[
                 MaterialView.model_validate(r)
                 for r in await session.scalars(select(Material).order_by(Material.code))
-            ],
+            ]
+            if material_access
+            else [],
             time_norms=[
                 TimeNormView.model_validate(r)
                 for r in await session.scalars(select(TimeNorm).order_by(TimeNorm.id))
-            ],
+            ]
+            if planning_access
+            else [],
         )
 
 

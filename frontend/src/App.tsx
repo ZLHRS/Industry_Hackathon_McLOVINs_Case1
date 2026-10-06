@@ -1,3 +1,4 @@
+import { navigation, permittedView, canViewWorkload, canViewEmployees, type View } from "./lib/roleAccess";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Api, ApiError, clearMutationKeys } from "./api";
 import { Login } from "./features/Login";
@@ -16,10 +17,9 @@ import {
   syncPending,
   retryPending,
 } from "./lib/offline";
-import type { ActionRequest, Catalog, Employee, EventItem, OrderPage, Role, User, Workload } from "./types";
+import type { ActionRequest, Catalog, Employee, EventItem, OrderPage, User, Workload } from "./types";
 import "./styles.css";
 
-type View = "orders" | "workload" | "reference" | "analytics";
 type Dashboard = { catalog: Catalog; orders: OrderPage; workload: Workload[]; employees: Employee[] };
 const tokenKey = "naryadai.session.token";
 const expiryKey = "naryadai.session.expires";
@@ -32,27 +32,6 @@ const actionLabels: Record<string, string> = {
   pause: "Пауза",
   resume: "Возобновление",
   complete: "Сдача работы",
-};
-const nav: Record<Role, Array<[View, string]>> = {
-  master: [
-    ["orders", "Наряды"],
-    ["workload", "Загрузка"],
-    ["reference", "Контекст"],
-    ["analytics", "Отчёт"],
-  ],
-  executor: [
-    ["orders", "Моя работа"],
-    ["workload", "Смена"],
-    ["reference", "Контекст"],
-    ["analytics", "Отчёт"],
-  ],
-  manager: [
-    ["orders", "Наряды"],
-    ["workload", "Загрузка"],
-    ["reference", "Контекст"],
-    ["analytics", "Отчёт"],
-  ],
-  admin: [["reference", "Справочники"]],
 };
 function storedUser(): User | null {
   try {
@@ -224,8 +203,8 @@ export default function App() {
                 offset: currentFilters.offset,
                 limit: 50,
               }),
-          actor.role === "admin" ? Promise.resolve([]) : api.workload(),
-          ["master", "manager", "admin"].includes(actor.role) ? api.employees() : Promise.resolve([]),
+          canViewWorkload(actor.role) ? api.workload() : Promise.resolve([]),
+          canViewEmployees(actor.role) ? api.employees() : Promise.resolve([]),
         ]);
         if (guard !== authGeneration.current || request !== refreshGeneration.current) return;
         const dashboard = { catalog, orders, workload, employees };
@@ -430,7 +409,8 @@ export default function App() {
         {error && <p className="error">{error}</p>}
       </main>
     );
-  const currentNav = nav[user.role];
+  const currentNav = navigation[user.role];
+  const visibleView = permittedView(user.role, view);
   const activeOrders = data?.orders ?? null;
   return (
     <div className="app-shell">
@@ -445,7 +425,7 @@ export default function App() {
         </div>
         <nav aria-label="Основная навигация">
           {currentNav.map(([key, label]) => (
-            <button key={key} className={view === key ? "active" : ""} onClick={() => setView(key)}>
+            <button key={key} className={visibleView === key ? "active" : ""} onClick={() => setView(key)}>
               {label}
             </button>
           ))}
@@ -479,19 +459,19 @@ export default function App() {
         </div>
       </header>{" "}
       <main className="app-main">
-        <div className="live-bar">
-          <span className={`live-dot ${liveState}`}></span>
-          {liveState === "live"
-            ? "Обновления включены"
-            : liveState === "reconnecting"
-              ? "Переподключение…"
-              : liveState === "connecting"
-                ? "Подключение…"
-                : "Нет соединения"}
-          {user.role !== "admin" && (
+        {user.role !== "admin" && (
+          <div className="live-bar">
+            <span className={`live-dot ${liveState}`}></span>
+            {liveState === "live"
+              ? "Обновления включены"
+              : liveState === "reconnecting"
+                ? "Переподключение…"
+                : liveState === "connecting"
+                  ? "Подключение…"
+                  : "Нет соединения"}
             <NotificationButton count={unreadCount} onOpen={() => setInboxOpen(true)} />
-          )}
-        </div>
+          </div>
+        )}
         {(notice || savedAt || error) && (
           <div className={error ? "banner error-banner" : "banner"} role={error ? "alert" : "status"}>
             {error || notice}
@@ -547,7 +527,7 @@ export default function App() {
             </div>
           </section>
         )}
-        {view === "orders" && (
+        {visibleView === "orders" && (
           <OrdersView
             role={user.role}
             page={activeOrders}
@@ -568,9 +548,9 @@ export default function App() {
             loading={loading}
           />
         )}{" "}
-        {view === "workload" && <WorkloadView workers={data?.workload ?? []} />}{" "}
-        {view === "analytics" && <AnalyticsView api={api} role={user.role} revision={liveRevision} />}{" "}
-        {view === "reference" && (
+        {visibleView === "workload" && <WorkloadView workers={data?.workload ?? []} />}{" "}
+        {visibleView === "analytics" && <AnalyticsView api={api} role={user.role} revision={liveRevision} />}{" "}
+        {visibleView === "reference" && (
           <ReferenceView role={user.role} catalog={data?.catalog ?? null} employees={data?.employees ?? []} />
         )}
       </main>
@@ -580,7 +560,7 @@ export default function App() {
         style={{ gridTemplateColumns: "repeat(" + currentNav.length + ", 1fr)" }}
       >
         {currentNav.map(([key, label]) => (
-          <button key={key} className={view === key ? "active" : ""} onClick={() => setView(key)}>
+          <button key={key} className={visibleView === key ? "active" : ""} onClick={() => setView(key)}>
             {label}
           </button>
         ))}
@@ -599,7 +579,7 @@ export default function App() {
           revision={liveRevision}
         />
       )}
-      {selected && data && (
+      {selected && data && user.role !== "admin" && (
         <OrderDetailDialog
           key={selected}
           id={selected}
