@@ -23,6 +23,8 @@ export const navigation: Record<Role, Array<[View, string]>> = {
   ],
 };
 export const canReviewRepair = (role: Role) => role === "master" || role === "manager";
+/** A worker may read the safe result of their own repair, but may never decide it. */
+export const canViewRepairOutcome = (role: Role) => canReviewRepair(role) || role === "executor";
 export const canViewWorkload = (role: Role) => role === "master" || role === "manager";
 export const canViewEmployees = (role: Role) => role === "master" || role === "admin";
 export function permittedView(role: Role, requested: View): View {

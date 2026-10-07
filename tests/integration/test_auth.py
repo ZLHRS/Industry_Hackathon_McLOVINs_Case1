@@ -88,6 +88,75 @@ async def test_login_me_logout_and_hash_only_storage(database):
         assert (await client.get("/api/v1/auth/me", headers=bearer(value))).status_code == 401
 
 
+async def test_login_trims_username_but_preserves_secret_whitespace(database):
+    await people(database)
+    exact_secret = " secret-with-spaces "
+    async with database.sessions.begin() as session:
+        employee = await session.scalar(select(Employee).where(Employee.login == "executor"))
+        assert employee is not None
+        employee.password_hash = hash_secret(exact_secret)
+    app = app_for(database)
+    async with (
+        app.router.lifespan_context(app),
+        AsyncClient(transport=ASGITransport(app), base_url="http://testserver") as client,
+    ):
+        accepted = await client.post(
+            "/api/v1/auth/login", json={"login": " executor ", "secret": exact_secret}
+        )
+        assert accepted.status_code == 200
+        rejected = await client.post(
+            "/api/v1/auth/login", json={"login": "executor", "secret": exact_secret.strip()}
+        )
+        assert rejected.status_code == 401
+
+
+async def test_employee_create_and_reset_preserve_secret_whitespace(database):
+    users, first_id, *_ = await people(database)
+    app = app_for(database)
+    created_secret = " create secret "
+    reset_secret = " reset secret "
+    async with (
+        app.router.lifespan_context(app),
+        AsyncClient(transport=ASGITransport(app), base_url="http://testserver") as client,
+    ):
+        admin = bearer(await token(client, "admin"))
+        created = await client.post(
+            "/api/v1/catalog/employees",
+            json={
+                "login": "padded.secret",
+                "display_name": "Padded secret",
+                "role": "executor",
+                "specialty": "mechanic",
+                "area_ids": [str(first_id)],
+                "secret": created_secret,
+            },
+            headers=admin,
+        )
+        assert created.status_code == 201
+        exact = await client.post(
+            "/api/v1/auth/login", json={"login": "padded.secret", "secret": created_secret}
+        )
+        trimmed = await client.post(
+            "/api/v1/auth/login",
+            json={"login": "padded.secret", "secret": created_secret.strip()},
+        )
+        assert exact.status_code == 200 and trimmed.status_code == 401
+
+        reset = await client.patch(
+            f"/api/v1/catalog/employees/{users['executor']}/access",
+            json={"secret": reset_secret},
+            headers=admin,
+        )
+        assert reset.status_code == 200
+        exact = await client.post(
+            "/api/v1/auth/login", json={"login": "executor", "secret": reset_secret}
+        )
+        trimmed = await client.post(
+            "/api/v1/auth/login", json={"login": "executor", "secret": reset_secret.strip()}
+        )
+        assert exact.status_code == 200 and trimmed.status_code == 401
+
+
 async def test_invalid_expired_and_disabled_sessions(database):
     users, *_ = await people(database)
     app = app_for(database)

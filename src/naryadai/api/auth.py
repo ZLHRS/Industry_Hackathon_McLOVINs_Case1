@@ -5,7 +5,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from sqlalchemy import update
 
 from naryadai.auth.dependencies import DatabaseDep, PrincipalDep
@@ -19,6 +19,11 @@ class LoginRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     login: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9._-]{2,63}$")]
     secret: SecretStr = Field(min_length=6, max_length=128)
+
+    @field_validator("login", mode="before")
+    @classmethod
+    def trim_login(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
 
 
 class TokenResponse(BaseModel):

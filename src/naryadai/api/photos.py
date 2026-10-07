@@ -39,6 +39,7 @@ class PhotoMutationView(BaseModel):
     attempt: int
     sha256: str
     size_bytes: int
+    ai_share_allowed: bool
     content_url: str
 
 
@@ -66,6 +67,7 @@ async def create_photo(
     kind: PhotoKindQuery,
     expected_version: ExpectedVersion,
     captured_at: CapturedAt = None,
+    ai_share_allowed: bool = False,
 ) -> PhotoMutationView:
     content_type = _upload_content_type(request)
     await preflight_upload_authorization(database, principal, order_id, kind)
@@ -77,6 +79,7 @@ async def create_photo(
         kind=kind,
         expected_version=expected_version,
         captured_at=captured_at,
+        ai_share_allowed=ai_share_allowed,
         idempotency_key=idempotency_key,
         raw=raw,
         content_type=content_type,

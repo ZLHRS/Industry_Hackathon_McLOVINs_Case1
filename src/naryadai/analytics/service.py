@@ -88,11 +88,15 @@ def _calculate(
     filter_people = bool(query.executor_ids or query.brigade_ids or principal.role == "executor")
     selected: list[WorkOrder] = []
     for order in data.orders:
-        if filter_people and order.executor_id not in actors:
+        events = data.events.get(order.id, [])
+        if (
+            filter_people
+            and order.executor_id not in actors
+            and not any(event.actor_id in actors and event.action == "complete" for event in events)
+        ):
             continue
         if order.issued_at >= end or end <= start:
             continue
-        events = data.events.get(order.id, [])
         interval = aggregates.recorded_interval(order, data, now)
         touches = any(
             within(t, start, end) for t in (order.issued_at, order.completed_at, order.closed_at)

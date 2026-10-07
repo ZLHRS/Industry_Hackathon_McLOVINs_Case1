@@ -27,6 +27,19 @@ self.addEventListener("fetch", (event) => {
     const request = event.request,
         url = new URL(request.url),
         shellAsset = ASSETS.includes(url.pathname);
+    // Deep links use the same public application shell, including offline reloads.
+    // API responses and authenticated data never enter this cache.
+    if (
+        request.method === "GET" &&
+        request.mode === "navigate" &&
+        url.origin === self.location.origin &&
+        /^\/(orders|reference|workload|analytics|employees)(\/|$)/.test(url.pathname)
+    ) {
+        event.respondWith(
+            fetch(request).catch(() => caches.open(SHELL).then((cache) => cache.match("/index.html"))),
+        );
+        return;
+    }
     if (
         request.method !== "GET" ||
         request.headers.has("Authorization") ||

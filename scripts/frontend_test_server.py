@@ -22,6 +22,7 @@ import uvicorn
 from sqlalchemy import select
 from sqlalchemy.engine import make_url
 
+from naryadai.app import create_app
 from naryadai.application.push_delivery import deliver_push
 from naryadai.config import Settings
 from naryadai.demo.persist import seed_demo_database
@@ -194,6 +195,16 @@ def _configure_application(database_url: str, photo_root: Path) -> None:
     )
 
 
+def _browser_settings() -> Settings:
+    settings = Settings()
+    if settings.environment.value != "test" or settings.database_url is None:
+        raise E2EServerError("Browser settings require an isolated test database")
+    _require_test_database_url(settings.database_url.get_secret_value())
+    # A full browser suite repeatedly authenticates seeded identities. Override
+    # only this test instance; production environment validation remains strict.
+    return settings.model_copy(update={"login_account_limit": 500, "login_peer_limit": 2000})
+
+
 async def run_server(*, port: int, metadata_path: Path, secret: str) -> None:
     if not 1 <= port <= 65_535:
         raise E2EServerError("port must be between 1 and 65535")
@@ -230,8 +241,7 @@ async def run_server(*, port: int, metadata_path: Path, secret: str) -> None:
         )
         server = uvicorn.Server(
             uvicorn.Config(
-                "naryadai.app:create_app",
-                factory=True,
+                create_app(_browser_settings()),
                 host="127.0.0.1",
                 port=port,
                 access_log=False,

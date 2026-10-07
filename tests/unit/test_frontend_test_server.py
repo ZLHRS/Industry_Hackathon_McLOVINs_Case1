@@ -2,7 +2,10 @@ import importlib.util
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy.engine import make_url
+
+from naryadai.config import Settings
 
 _PATH = Path(__file__).resolve().parents[2] / "scripts" / "frontend_test_server.py"
 _SPEC = importlib.util.spec_from_file_location("frontend_test_server", _PATH)
@@ -30,3 +33,23 @@ def test_state_file_is_restricted_to_ignored_tmp_directory() -> None:
     assert _MODULE._metadata_path("tmp/e2e-server.json").name == "e2e-server.json"
     with pytest.raises(_MODULE.E2EServerError, match="ignored tmp"):
         _MODULE._metadata_path("../e2e-server.json")
+
+
+def test_browser_login_budget_is_local_to_guarded_test_settings(monkeypatch) -> None:
+    original = Settings(
+        environment="test", database_url="postgresql+psycopg://user:pass@localhost/naryadai_test"
+    )
+    monkeypatch.setattr(_MODULE, "Settings", lambda: original)
+    browser = _MODULE._browser_settings()
+    assert browser.login_account_limit == 500
+    assert original.login_account_limit <= 20
+    with pytest.raises(ValidationError):
+        Settings(login_account_limit=500)
+    unsafe = original.model_copy(
+        update={
+            "database_url": type(original.database_url)("postgresql+psycopg://u:p@localhost/live")
+        }
+    )
+    monkeypatch.setattr(_MODULE, "Settings", lambda: unsafe)
+    with pytest.raises(_MODULE.E2EServerError, match="end in _test"):
+        _MODULE._browser_settings()

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ТехНаряд · McLOVINs · Кейс №1</title>
+<style>
+/* Offline, dependency-free deck. Theme follows the application's industrial palette. */
+:root{--ink:#132b29;--paper:#f3f6f1;--teal:#087e73;--mint:#a8e8cb;--line:#cedad3;--muted:#58716a;--slide-padding:clamp(20px,5vw,88px);--content-gap:clamp(12px,2.5vh,32px);--title-size:clamp(36px,5.3vw,86px);--h2-size:clamp(29px,4vw,60px);--body-size:clamp(17px,1.65vw,28px);--small-size:clamp(12px,1vw,17px)}
+*{box-sizing:border-box}html,body{margin:0;height:100%;overflow-x:hidden}html{scroll-snap-type:y mandatory;scroll-behavior:smooth}body{font-family:"Trebuchet MS",Verdana,sans-serif;color:var(--ink);background:var(--paper)}
+.slide{width:100vw;height:100vh;height:100dvh;overflow:hidden;scroll-snap-align:start;display:flex;flex-direction:column;position:relative;padding:var(--slide-padding)}
+.slide-content{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:var(--content-gap);max-height:100%;overflow:hidden}
+.top,.bottom{display:flex;justify-content:space-between;align-items:center;gap:1em;font-size:var(--small-size)}.top{font-weight:bold;letter-spacing:.08em}.bottom{padding-top:clamp(12px,2vh,24px);color:var(--muted)}
+.eyebrow{font-size:var(--small-size);letter-spacing:.16em;text-transform:uppercase;font-weight:bold;color:var(--teal);margin:0}h1,h2,h3,p{margin:0}h1{font-size:var(--title-size);line-height:1.03;letter-spacing:-.045em;max-width:24ch}h2{font-size:var(--h2-size);line-height:1.07;letter-spacing:-.035em;max-width:24ch}h3{font-size:clamp(20px,2vw,31px);line-height:1.15}p{font-size:var(--body-size);line-height:1.4;max-width:62ch}.lead{font-size:clamp(22px,2.5vw,38px);max-width:42ch}.muted{color:var(--muted)}.dark{background:var(--ink);color:var(--paper)}.dark .eyebrow,.dark .accent{color:var(--mint)}.dark .bottom,.dark .muted{color:#aec5bd}.accent{color:var(--teal)}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(12px,2vw,30px)}.grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.item{border-top:2px solid var(--line);padding-top:clamp(12px,2vh,24px);display:flex;flex-direction:column;gap:clamp(6px,1.3vh,14px);min-width:0}.item p{font-size:clamp(16px,1.45vw,23px)}.item .num{font-size:clamp(34px,4vw,64px);font-weight:bold;letter-spacing:-.04em;color:var(--teal)}.dark .item{border-color:#49615b}.dark .num{color:var(--mint)}
+.flow{display:flex;align-items:stretch;gap:clamp(8px,1vw,18px)}.flow>div{flex:1;border:1px solid var(--line);padding:clamp(12px,1.6vw,26px);display:flex;flex-direction:column;gap:clamp(8px,1vh,14px);font-size:var(--body-size);min-width:0}.flow span{font-size:var(--small-size);color:var(--muted)}.flow b{color:var(--teal)}.dark .flow>div{border-color:#49615b}.dark .flow b{color:var(--mint)}.dark .flow span{color:#aec5bd}
+.statement{padding:clamp(18px,2.5vw,36px);background:var(--mint);color:var(--ink);font-size:clamp(23px,3.5vw,52px);font-weight:bold;line-height:1.13;max-width:26ch}.formula{font-size:clamp(28px,4.3vw,68px);font-weight:bold;letter-spacing:-.04em;line-height:1.1}.note{font-size:var(--small-size);line-height:1.4;max-width:90ch}.tag{display:inline-block;border:1px solid currentColor;border-radius:99px;padding:.45em .8em;font-size:var(--small-size)}a{color:inherit}.url{font-size:clamp(24px,4vw,62px);font-weight:bold;color:var(--mint);text-decoration:none}.decorative{position:absolute;right:5vw;bottom:15vh;width:17vw;height:17vw;border:2px solid #315952;border-radius:50%;pointer-events:none}.decorative:before{content:"";position:absolute;inset:18%;border:2px solid #315952}.reveal{opacity:.65;transform:translateY(6px);transition:opacity .3s,transform .3s}.visible .reveal{opacity:1;transform:none}
+nav{position:fixed;bottom:clamp(10px,1.8vh,22px);right:clamp(12px,2vw,32px);display:flex;gap:8px;z-index:5}nav button{background:var(--ink);color:var(--paper);border:1px solid #7a9990;border-radius:8px;font:inherit;font-size:16px;width:44px;height:44px;cursor:pointer}nav button:focus-visible{outline:3px solid #f1b864;outline-offset:3px}.progress{position:fixed;left:0;top:0;height:4px;background:var(--teal);z-index:6;width:10%;transition:width .2s}
+@media(max-height:700px){:root{--slide-padding:clamp(18px,3vw,38px);--content-gap:clamp(10px,2vh,22px);--h2-size:clamp(27px,3.8vw,49px);--title-size:clamp(36px,5vw,66px)}}
+@media(max-height:600px){:root{--slide-padding:clamp(15px,2.6vw,30px);--content-gap:clamp(9px,1.8vh,16px);--body-size:clamp(16px,2.1vw,23px)}.decorative{display:none}.item p{font-size:clamp(15px,1.8vw,20px)}}
+@media(max-height:500px){:root{--slide-padding:clamp(12px,2vw,22px);--h2-size:clamp(25px,3.8vw,34px);--title-size:clamp(30px,5vw,48px);--small-size:clamp(11px,1.5vw,14px)}.top,.bottom{font-size:11px}.bottom{padding-top:8px}.lead{font-size:23px}.item .num{font-size:30px}.flow>div{padding:10px}.note{font-size:11px}.item h3{font-size:20px}nav{display:none}}
+@media(max-width:600px) and (min-height:501px){:root{--slide-padding:22px;--title-size:clamp(37px,9vw,54px);--h2-size:clamp(29px,7vw,40px);--content-gap:20px}.grid,.grid.two{grid-template-columns:1fr;gap:16px}.item{padding-top:10px;gap:6px}.item .num{font-size:32px}.item h3{font-size:21px}.item p{font-size:16px}.flow{flex-direction:column;gap:9px}.flow>div{padding:12px;font-size:18px;gap:4px}.flow span{font-size:12px}.lead{font-size:23px}.top{font-size:11px}.note{font-size:12px}.bottom{font-size:11px;padding-right:62px}.four{display:grid;grid-template-columns:1fr 1fr}.four .item{min-width:0}.four .item p{font-size:15px}.decorative{display:none}.statement{font-size:29px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important}html{scroll-behavior:auto}.reveal{opacity:1;transform:none}}
+.item,.flow>div{overflow-wrap:anywhere;hyphens:auto}
+@media(max-height:500px){.flow>div{font-size:17px}.item h3{font-size:18px}.item p{font-size:15px}}
+@media print{@page{size:13.333333in 7.5in;margin:0}html,body{height:auto;overflow:visible;scroll-snap-type:none}.slide{width:13.333333in;height:7.5in;break-after:page;padding:44px 64px}.slide:last-of-type{break-after:auto}.reveal{opacity:1;transform:none}nav,.progress{display:none}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style>
+</head>
+<body><main>
+<section class="slide dark" aria-label="1. ТехНаряд">
+<div class="top"><span>Т• ТЕХНАРЯД</span><span>McLOVINs / Кейс №1</span></div>
+<div class="slide-content reveal"><p class="eyebrow">Костанайские минералы</p><h1>От задания<br>до подтверждённого<br><span class="accent">ремонта.</span></h1><p class="lead">Мобильный наряд, доказательства выполнения и решение мастера — в одном процессе.</p></div>
+<div class="bottom"><span>Industry Hackathon · 2026</span><span>01 / 10</span></div><div class="decorative"></div></section>
+<section class="slide" aria-label="2. Производственная задача">
+<div class="top"><span>Т• ТЕХНАРЯД</span><span>ПРОБЛЕМА</span></div><div class="slide-content reveal"><p class="eyebrow">Цена разрыва информации</p><h2>Задание выдано.<br>А что произошло дальше?</h2><div class="grid"><div class="item"><span class="num">01</span><h3>Кто свободен?</h3><p>Мастер должен видеть смену, текущую работу и очередь исполнителя.</p></div><div class="item"><span class="num">02</span><h3>Почему задержка?</h3><p>Статус, срок, причина паузы и уведомления должны быть связаны.</p></div><div class="item"><span class="num">03</span><h3>Что исправлено?</h3><p>Фото, расход и описание нужны для обоснованной приёмки.</p></div></div></div><div class="bottom"><span>Потребности из кейса, не результаты обследования предприятия</span><span>02 / 10</span></div></section>
+<section class="slide" aria-label="3. Рабочий процесс">
+<div class="top"><span>Т• ТЕХНАРЯД</span><span>РЕШЕНИЕ</span></div><div class="slide-content reveal"><p class="eyebrow">Один наряд · одна история</p><h2>Каждой роли —<br>понятный следующий шаг.</h2><div class="flow"><div><b>Мастер</b>Выдать и назначить<span>Оборудование, загрузка, приоритет, срок</span></div><div><b>Исполнитель</b>Принять и выполнить<span>Начало, пауза, фото, материалы, сдача</span></div><div><b>Проверка</b>Объяснить замечания<span>Полнота, смысл, время, фотографии</span></div><div><b>Мастер</b>Принять или вернуть<span>Решение, оценка и аудит изменений</span></div></div><p class="muted">Руководитель видит результаты смены и повторные проблемы оборудования.</p></div><div class="bottom"><span>Повторная сдача сохраняет предыдущую попытку</span><span>03 / 10</span></div></section>
+<section class="slide dark" aria-label="4. Работа с телефона">
+<div class="top"><span>Т• ТЕХНАРЯД</span><span>В ЦЕХЕ</span></div><div class="slide-content reveal"><p class="eyebrow">PWA / Android / русский интерфейс</p><h2>Связь пропала.<br>Работа не потерялась.</h2><div class="grid"><div class="item"><h3>Быстрая выдача</h3><p>Участок и оборудование, подсказка свободного исполнителя, разумные значения по умолчанию.</p></div><div class="item"><h3>Очередь действий</h3><p>Офлайн-действие ждёт отправки. Конфликт версии показывается явно.</p></div><div class="item"><h3>Контроль сроков</h3><p>Просрочка — мастеру и исполнителю. Аварийный наряд выделен отдельно.</p></div></div><p class="note muted">Полевые критерии: ≤60 секунд / ≤6 нажатий; фоновый push со звуком; фото ≤10 секунд. Их подтверждают отдельным замером на телефонах.</p></div><div class="bottom"><span>Эмуляция браузера не заменяет проверку на устройстве</span><span>04 / 10</span></div></section>
+<section class="slide" aria-label="5. Проверка ремонта">
+<div class="top"><span>Т• ТЕХНАРЯД</span><span>ИИ И ДОКАЗАТЕЛЬСТВА</span></div><div class="slide-content reveal"><p class="eyebrow">Проверка помогает человеку</p><h2>Не просто балл.<br>Причины и следующий шаг.</h2><div class="flow"><div><b>Факты</b>Работы и материалы<span>Что поручено и что сдано</span></div><div><b>Правила + LLM</b>Проверка согласованности<span>Время, полнота, смысл, фото до/после</span></div><div><b>Мастер</b>Финальное решение<span>Принять, изменить оценку, вернуть</span></div></div><p class="note">Низкая уверенность требует проверки человеком. Источник результата указан; сбой провайдера не выдаётся за успешный ответ ИИ. Реальные производственные фото ещё требуют независимой валидации.</p></div><div class="bottom"><span>Фото — свидетельство, а не доказательство исправности узла</span><span>05 / 10</span></div></section>
+<section class="slide" aria-label="6. Аналитика">
+<div class="top"><span>Т• ТЕХНАРЯД</span><span>АНАЛИТИКА</span></div><div class="slide-content reveal"><p class="eyebrow">От истории к действию</p><h2>Показатель можно<br>проверить по нарядам.</h2><div class="grid two four"><div class="item"><h3>Смена и период</h3><p>Работы, сроки, загрузка, материалы и зарегистрированные простои.</p></div><div class="item"><h3>Объяснимый рейтинг</h3><p>Качество, сроки, повторные работы, объём и рассмотренные отказы.</p></div><div class="item"><h3>Четыре сигнала</h3><p>Повтор дефекта, работы после ППР, расход, концентрация доработок.</p></div><div class="item"><h3>Основания и Excel</h3><p>Фильтры, методика расчёта и выгрузка для проверки мастером.</p></div></div><p class="note muted">600 синтетических нарядов за несколько месяцев. Сигнал по истории не доказывает причинность и не является прогнозом отказа.</p></div><div class="bottom"><span>Неизвестное не подменяется нулём</span><span>06 / 10</span></div></section>
+<section class="slide dark" aria-label="7. Архитектура">
+<div class="top"><span>Т• ТЕХНАРЯД</span><span>АРХИТЕКТУРА</span></div><div class="slide-content reveal"><p class="eyebrow">Данные и решения под контролем</p><h2>Прозрачная архитектура.<br>Разделённые права.</h2><div class="flow"><div><b>React PWA</b>Мобильный интерфейс<span>Офлайн-очередь, закрытые фото</span></div><div><b>FastAPI</b>Правила и доступ<span>Версии, идемпотентность, роли</span></div><div><b>PostgreSQL</b>Наряды и история<span>Транзакции, события, отчёты</span></div><div><b>Worker</b>Фоновые задачи<span>Сроки, push, внешний ИИ</span></div></div><p class="note muted">Docker + HTTPS. Внешнему ИИ — минимизированные данные. ERP подключается через будущий адаптер; готовая интеграция с ERP не заявляется.</p></div><div class="bottom"><span>Решение мастера сохраняется отдельно от исходной оценки ИИ</span><span>07 / 10</span></div></section>
+<section class="slide" aria-label="8. Демонстрация">
+<div class="top"><span>Т• ТЕХНАРЯД</span><span>ПОКАЗ ПРОДУКТА</span></div><div class="slide-content reveal"><p class="eyebrow">Одна неисправность · весь цикл</p><h2>Утечка → ремонт →<br>проверка → приёмка.</h2><div class="grid"><div class="item"><span class="num">01</span><h3>Аварийный наряд</h3><p>Свободный исполнитель принимает работу; мастер видит изменение статуса.</p></div><div class="item"><span class="num">02</span><h3>Хорошая и плохая сдача</h3><p>Фото и расход проверяются. Замечания возвращаются на доработку.</p></div><div class="item"><span class="num">03</span><h3>Результат смены</h3><p>Оценка, история, отчёт и основания аналитических сигналов.</p></div></div><p class="note muted">Есть отдельные серверные и браузерные проверки прав, офлайна, повторной отправки и конфликтов. Полный протокол приложен к материалам.</p></div><div class="bottom"><span>Короткий показ — 3 минуты; полный сценарий — для вопросов</span><span>08 / 10</span></div></section>
+<section class="slide" aria-label="9. Эффект и пилот">
+<div class="top"><span>Т• ТЕХНАРЯД</span><span>ВНЕДРЕНИЕ</span></div><div class="slide-content reveal"><p class="eyebrow">Измеряем эффект, не обещаем проценты</p><h2>Начать с одного участка.</h2><p class="formula">600 × 1 минута<br><span class="accent">= 10 часов в месяц</span></p><p class="note muted">Иллюстрация: 600 нарядов и сокращение выдачи на 1 минуту. Это допущения, а не измеренная экономия предприятия.</p><div class="grid"><div class="item"><h3>Неделя 1</h3><p>Замер текущего процесса, нормативы и обучение.</p></div><div class="item"><h3>Неделя 2</h3><p>Пилот на сопоставимых работах, разбор ошибок.</p></div><div class="item"><h3>Решение</h3><p>Выдача, реакция, полнота, повторы, стоимость эксплуатации.</p></div></div></div><div class="bottom"><span>В расчёте учитываются API, размещение, поддержка и обучение</span><span>09 / 10</span></div></section>
+<section class="slide dark" aria-label="10. Следующий шаг">
+<div class="top"><span>Т• ТЕХНАРЯД</span><span>McLOVINs</span></div><div class="slide-content reveal"><p class="eyebrow">Кейс №1 · Костанайские минералы</p><h2>Принять работу —<br>значит понимать результат.</h2><a class="url" href="https://technaryad.online">technaryad.online ↗</a><p class="lead">Для пилота нужны один участок, ответственный мастер и согласованные данные.</p><p class="note muted">Стек: Python, FastAPI, PostgreSQL, React/Vite, Web Push, OpenAI API при настройке. Codex использован для разработки и проверки; команда отвечает за код и его объяснение.</p></div><div class="bottom"><span>Демо работает, пока включены компьютер, Docker и туннель</span><span>10 / 10</span></div></section>
+</main><div class="progress" aria-hidden="true"></div><nav aria-label="Слайды"><button id="prev" aria-label="Предыдущий слайд">←</button><button id="next" aria-label="Следующий слайд">→</button></nav>
+<script>
+class PresentationController {
+  constructor() {
+    this.slides = [...document.querySelectorAll('.slide')];
+    this.lastWheel = 0;
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        entry.target.classList.toggle('visible', entry.isIntersecting);
+        if (entry.intersectionRatio > .55) {
+          const index = this.slides.indexOf(entry.target);
+          document.querySelector('.progress').style.width = ((index + 1) / this.slides.length * 100) + '%';
+        }
+      }
+    }, {threshold: [.1, .55]});
+    this.slides.forEach(slide => observer.observe(slide));
+    document.getElementById('prev').onclick = () => this.go(-1);
+    document.getElementById('next').onclick = () => this.go(1);
+    addEventListener('keydown', event => {
+      if (['ArrowRight','ArrowDown','PageDown',' '].includes(event.key)) { event.preventDefault(); this.go(1); }
+      if (['ArrowLeft','ArrowUp','PageUp'].includes(event.key)) { event.preventDefault(); this.go(-1); }
+    });
+    addEventListener('wheel', event => {
+      if (Math.abs(event.deltaY) > 20 && Date.now() - this.lastWheel > 700) {
+        this.lastWheel = Date.now(); this.go(Math.sign(event.deltaY)); event.preventDefault();
+      }
+    }, {passive: false});
+    let y = 0;
+    addEventListener('touchstart', event => { y = event.changedTouches[0].clientY; }, {passive: true});
+    addEventListener('touchend', event => { const dy = y - event.changedTouches[0].clientY; if (Math.abs(dy) > 60) this.go(Math.sign(dy)); }, {passive: true});
+  }
+  go(delta) {
+    const current = this.slides.reduce((nearest, slide, index) => Math.abs(slide.getBoundingClientRect().top) < Math.abs(this.slides[nearest].getBoundingClientRect().top) ? index : nearest, 0);
+    const next = Math.max(0, Math.min(this.slides.length - 1, current + delta));
+    this.slides[next].scrollIntoView({behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'});
+  }
+}
+new PresentationController();
+</script></body></html>

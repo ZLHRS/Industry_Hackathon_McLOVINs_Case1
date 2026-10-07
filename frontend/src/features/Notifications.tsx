@@ -12,6 +12,23 @@ function decodePublicKey(value: string) {
   return Uint8Array.from(bytes, (character) => character.charCodeAt(0));
 }
 
+function supportsPush() {
+  return (
+    "serviceWorker" in navigator &&
+    "PushManager" in window &&
+    "Notification" in window &&
+    window.isSecureContext
+  );
+}
+
+function initialPushState(supported: boolean, permission: NotificationPermission | "unsupported") {
+  if (!supported)
+    return "Этот браузер не поддерживает фоновые уведомления или страница открыта не по защищённому адресу.";
+  if (permission === "denied") return "Уведомления заблокированы в настройках браузера для этого сайта.";
+  if (permission === "granted") return "Разрешение браузера выдано. Проверяем подписку этого устройства…";
+  return "Получайте уведомления, когда приложение свёрнуто.";
+}
+
 export function NotificationButton({ count, onOpen }: { count: number; onOpen: () => void }) {
   return (
     <button
@@ -41,7 +58,11 @@ export function NotificationsDialog({
   revision,
 }: NotificationsDialogProps) {
   const [page, setPage] = useState<NotificationPage>();
-  const [pushState, setPushState] = useState("Получайте уведомления, когда приложение свёрнуто.");
+  const [pushSupported] = useState(() => supportsPush());
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">(() =>
+    supportsPush() ? Notification.permission : "unsupported",
+  );
+  const [pushState, setPushState] = useState(() => initialPushState(pushSupported, pushPermission));
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [error, setError] = useState("");
   const [offset, setOffset] = useState(0);
@@ -65,6 +86,17 @@ export function NotificationsDialog({
       active = false;
     };
   }, [api, revision, offset, unreadOnly]);
+  useEffect(() => {
+    if (pushSupported && pushPermission === "granted") {
+      void navigator.serviceWorker.ready
+        .then((registration) => registration.pushManager.getSubscription())
+        .then((subscription) => {
+          if (subscription) setPushState("Уведомления на этом устройстве включены.");
+          else setPushState("Разрешение браузера выдано, но устройство ещё не подписано на уведомления.");
+        })
+        .catch(() => setPushState("Не удалось проверить подписку устройства."));
+    }
+  }, [pushPermission, pushSupported]);
   const update = (item: NotificationItem) =>
     setPage((current) => {
       if (!current) return current;
@@ -77,13 +109,11 @@ export function NotificationsDialog({
     });
 
   async function enablePush() {
-    if (
-      !("serviceWorker" in navigator) ||
-      !("PushManager" in window) ||
-      !("Notification" in window) ||
-      !window.isSecureContext
-    ) {
-      setPushState("Этот браузер не поддерживает фоновые уведомления.");
+    if (!pushSupported) {
+      return;
+    }
+    if (Notification.permission === "denied") {
+      setPushState("Уведомления заблокированы в настройках браузера для этого сайта.");
       return;
     }
     try {
@@ -92,16 +122,20 @@ export function NotificationsDialog({
         setPushState("Фоновые уведомления пока недоступны. Обратитесь к администратору.");
         return;
       }
-      const permission = await Notification.requestPermission();
+      const permission =
+        Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+      setPushPermission(permission);
       if (permission !== "granted") {
         setPushState("Разрешение на уведомления не выдано.");
         return;
       }
       const registration = await navigator.serviceWorker.ready;
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: decodePublicKey(config.public_key),
-      });
+      const subscription =
+        (await registration.pushManager.getSubscription()) ??
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: decodePublicKey(config.public_key),
+        }));
       const registered = await api.subscribePush(subscription.toJSON());
       onPushBound?.(registered.id);
       setPushState("Уведомления на этом устройстве включены.");
@@ -116,9 +150,11 @@ export function NotificationsDialog({
         <div className="push-control">
           <strong>Уведомления на устройстве</strong>
           <small>{pushState}</small>
-          <button type="button" className="secondary" onClick={() => void enablePush()}>
-            Включить уведомления
-          </button>
+          {pushPermission !== "denied" && pushSupported && (
+            <button type="button" className="secondary" onClick={() => void enablePush()}>
+              {pushPermission === "granted" ? "Подключить устройство" : "Включить уведомления"}
+            </button>
+          )}
         </div>
         <label className="check">
           <input

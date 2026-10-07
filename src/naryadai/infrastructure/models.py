@@ -141,6 +141,9 @@ class Area(UUIDPrimaryKey, Base):
 
     code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
 
 
 class Brigade(UUIDPrimaryKey, Base):
@@ -163,6 +166,9 @@ class Equipment(UUIDPrimaryKey, Base):
     area_id: Mapped[UUID] = mapped_column(ForeignKey("areas.id"), nullable=False)
     equipment_type: Mapped[str] = mapped_column(String(80), nullable=False)
     criticality: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
 
 
 class Employee(UUIDPrimaryKey, Base):
@@ -352,6 +358,10 @@ class Photo(UUIDPrimaryKey, Base):
     author_id: Mapped[UUID] = mapped_column(ForeignKey("employees.id"), nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Raw image bytes may leave the deployment only after an explicit per-photo opt-in.
+    ai_share_allowed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
 
 class MaterialUsage(UUIDPrimaryKey, Base):

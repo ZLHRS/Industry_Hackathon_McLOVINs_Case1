@@ -6,12 +6,17 @@ import { resolve, dirname } from "node:path";
 const project = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const state = JSON.parse(readFileSync(resolve(project, "tmp/e2e-server.json"), "utf8"));
 
+async function waitForRealtimeReady(page: Page) {
+  await expect(page.locator(".live-bar")).toHaveAttribute("data-live-state", "live", { timeout: 5000 });
+}
+
 async function login(page: Page, account: string) {
   await page.goto("/");
   await page.getByLabel("Логин", { exact: true }).fill(account);
   await page.getByLabel("Пароль", { exact: true }).fill(state.secret);
   await page.getByRole("button", { name: "Войти", exact: true }).click();
-  await expect(page.getByText("Обновления включены", { exact: false }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /Уведомления: непрочитанных/ })).toBeVisible();
+  await waitForRealtimeReady(page);
 }
 
 async function auth(request: APIRequestContext) {
@@ -86,7 +91,7 @@ test("two clients: issue and open-card status within 5s, urgent receipt, reconne
     await notification.getByRole("button", { name: "Открыть наряд" }).click();
     const acceptedAt = Date.now();
     await executor.getByRole("dialog").getByRole("button", { name: "Принять", exact: true }).click();
-    await expect(page.getByRole("dialog").getByText("Принят", { exact: true })).toBeVisible({
+    await expect(page.getByRole("dialog").getByRole("heading", { name: /· Принят$/ })).toBeVisible({
       timeout: 5000,
     });
     const acceptMs = Date.now() - acceptedAt;
@@ -101,8 +106,9 @@ test("two clients: issue and open-card status within 5s, urgent receipt, reconne
     await context.setOffline(true);
     const missed = await issue(request, token);
     await context.setOffline(false);
+    await waitForRealtimeReady(executor);
     await expect(executor.getByText(missed.description, { exact: true })).toBeVisible();
-    await expect(executor.getByText("Обновления включены", { exact: false }).first()).toBeVisible();
+    await expect(executor.getByRole("button", { name: /Уведомления: непрочитанных/ })).toBeVisible();
     expect(errors).toEqual([]);
   } finally {
     await context.close();
@@ -118,17 +124,82 @@ test("actual service worker displays native urgent notification from injected pu
     permissions: ["notifications"],
   });
   const page = await context.newPage();
+  const origin = new URL(info.project.use.baseURL!).origin;
+  const scopeURL = new URL("/", origin).href;
+  const scriptURL = new URL("/sw.js", origin).href;
+  let registrationId = "";
+  const lifecycleEvents: Array<Record<string, unknown>> = [];
   try {
     const cdp = await context.newCDPSession(page);
-    let registrationId = "";
-    cdp.on("ServiceWorker.workerRegistrationUpdated", ({ registrations }) => {
-      const registration = registrations.find((item) => !item.isDeleted);
-      if (registration) registrationId = registration.registrationId;
+    const registrations = new Map<string, { scopeURL: string; isDeleted: boolean }>();
+    const versions = new Map<
+      string,
+      { registrationId: string; scriptURL: string; status: string; runningStatus: string }
+    >();
+    cdp.on("ServiceWorker.workerRegistrationUpdated", ({ registrations: updated }) => {
+      for (const registration of updated) {
+        if (registration.isDeleted) registrations.delete(registration.registrationId);
+        else registrations.set(registration.registrationId, registration);
+      }
+      lifecycleEvents.push({
+        type: "registration",
+        registrations: updated.map((registration) => ({
+          registrationId: registration.registrationId,
+          scopeURL: registration.scopeURL,
+          isDeleted: registration.isDeleted,
+        })),
+      });
+    });
+    cdp.on("ServiceWorker.workerVersionUpdated", ({ versions: updated }) => {
+      for (const version of updated) versions.set(version.versionId, version);
+      lifecycleEvents.push({
+        type: "version",
+        versions: updated.map((version) => ({
+          versionId: version.versionId,
+          registrationId: version.registrationId,
+          scriptURL: version.scriptURL,
+          status: version.status,
+          runningStatus: version.runningStatus,
+        })),
+      });
     });
     await cdp.send("ServiceWorker.enable");
     await page.goto("/");
-    await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
-    await expect.poll(() => registrationId).not.toBe("");
+    await expect
+      .poll(() =>
+        page.evaluate(async () => {
+          const registration = await navigator.serviceWorker.ready;
+          return Boolean(registration.active && navigator.serviceWorker.controller);
+        }),
+      )
+      .toBe(true);
+    await expect
+      .poll(async () => {
+        const ready = await page.evaluate(async () => {
+          const registration = await navigator.serviceWorker.ready;
+          return { scope: registration.scope, activeScript: registration.active?.scriptURL ?? null };
+        });
+        const matching = [...registrations.entries()].filter(
+          ([, registration]) => !registration.isDeleted && registration.scopeURL === ready.scope,
+        );
+        if (ready.scope !== scopeURL || ready.activeScript !== scriptURL || matching.length !== 1)
+          return false;
+        registrationId = matching[0][0];
+        return true;
+      })
+      .toBe(true);
+    await cdp.send("ServiceWorker.startWorker", { scopeURL });
+    await expect
+      .poll(() =>
+        [...versions.values()].some(
+          (version) =>
+            version.registrationId === registrationId &&
+            version.scriptURL === scriptURL &&
+            version.status === "activated" &&
+            version.runningStatus === "running",
+        ),
+      )
+      .toBe(true);
     const notificationId = crypto.randomUUID();
     const payload = {
       notification_id: notificationId,
@@ -171,6 +242,10 @@ test("actual service worker displays native urgent notification from injected pu
     });
     await cdp.detach();
   } finally {
+    await info.attach("service-worker-lifecycle", {
+      body: JSON.stringify({ origin, scopeURL, registrationId, lifecycleEvents }),
+      contentType: "application/json",
+    });
     await isolated.close();
   }
 });

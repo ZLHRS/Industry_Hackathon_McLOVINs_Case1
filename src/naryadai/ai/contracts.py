@@ -6,6 +6,7 @@ import math
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Literal
 
 from pydantic import SecretStr
@@ -52,12 +53,24 @@ class ReviewMaterial:
     name: str
     unit: str | None
     quantity: str
+    historical_median_quantity: str | None = None
+    historical_sample_count: int | None = None
 
     def __post_init__(self) -> None:
         _text(self.name, "name", 200)
         if self.unit is not None:
             _text(self.unit, "unit", 40)
-        _text(self.quantity, "quantity", 40)
+        _decimal_text(self.quantity, "quantity")
+        if (self.historical_median_quantity is None) != (self.historical_sample_count is None):
+            raise ValueError("historical material baseline must include quantity and sample count")
+        if self.historical_median_quantity is not None:
+            _decimal_text(self.historical_median_quantity, "historical_median_quantity")
+            if (
+                not isinstance(self.historical_sample_count, int)
+                or isinstance(self.historical_sample_count, bool)
+                or not 1 <= self.historical_sample_count <= 50
+            ):
+                raise ValueError("historical_sample_count must be from 1 to 50")
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +115,7 @@ class ReviewInput:
     photos: tuple[ReviewPhoto, ...]
     attempt_started_at: datetime | None = None
     known_identifiers: tuple[str, ...] = field(default=(), repr=False)
+    work_type: Literal["planned", "unplanned"] = "unplanned"
 
     def __post_init__(self) -> None:
         for name in ("work_description", "completion_description", "equipment_type", "fault_name"):
@@ -136,12 +150,14 @@ class ReviewInput:
             raise TypeError("photos must be a tuple of ReviewPhoto values")
         if any(not isinstance(value, str) for value in self.known_identifiers):
             raise TypeError("known_identifiers must contain strings")
+        if self.work_type not in {"planned", "unplanned"}:
+            raise ValueError("work_type must be planned or unplanned")
 
 
 @dataclass(frozen=True, slots=True)
 class OpenAIReviewConfig:
     api_key: SecretStr | None
-    model: str = "gpt-6.1-sol"
+    model: str = "gpt-5.4"
     reasoning_effort: Literal["low", "medium", "high"] = "medium"
     vision_enabled: bool = False
     request_timeout_seconds: float = 30.0
@@ -215,6 +231,17 @@ def _text(value: object, name: str, maximum: int) -> None:
         raise TypeError(f"{name} must be a string")
     if not value.strip() or len(value) > maximum:
         raise ValueError(f"{name} must contain 1 to {maximum} characters")
+
+
+def _decimal_text(value: object, name: str) -> None:
+    _text(value, name, 40)
+    assert isinstance(value, str)
+    try:
+        decimal = Decimal(value)
+    except (InvalidOperation, ValueError):
+        raise ValueError(f"{name} must be a decimal string") from None
+    if not decimal.is_finite() or decimal <= 0:
+        raise ValueError(f"{name} must be a positive decimal string")
 
 
 def _aware(value: object, name: str) -> None:

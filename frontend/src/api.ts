@@ -58,6 +58,150 @@ async function digest(value: string | ArrayBuffer): Promise<string> {
     byte.toString(16).padStart(2, "0"),
   ).join("");
 }
+function exifIso(value: string, timezone: string | undefined): string | undefined {
+  const match = /^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/.exec(value.trim());
+  const offset = timezone?.trim();
+  if (!match || !offset || !/^[+-]\d{2}:\d{2}$/.test(offset)) return undefined;
+  const [, year, month, day, hour, minute, second] = match;
+  const [yearNumber, monthNumber, dayNumber, hourNumber, minuteNumber, secondNumber] = [
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second,
+  ].map(Number);
+  const [offsetHour, offsetMinute] = offset.slice(1).split(":").map(Number);
+  const local = new Date(
+    Date.UTC(yearNumber, monthNumber - 1, dayNumber, hourNumber, minuteNumber, secondNumber),
+  );
+  if (
+    offsetHour > 14 ||
+    offsetMinute > 59 ||
+    (offsetHour === 14 && offsetMinute !== 0) ||
+    local.getUTCFullYear() !== yearNumber ||
+    local.getUTCMonth() !== monthNumber - 1 ||
+    local.getUTCDate() !== dayNumber ||
+    local.getUTCHours() !== hourNumber ||
+    local.getUTCMinutes() !== minuteNumber ||
+    local.getUTCSeconds() !== secondNumber
+  )
+    return undefined;
+  const capturedAt = `${year}-${month}-${day}T${hour}:${minute}:${second}${offset}`;
+  return Number.isFinite(Date.parse(capturedAt)) ? capturedAt : undefined;
+}
+function exifCaptureDate(bytes: Uint8Array): string | undefined {
+  if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return undefined;
+  let cursor = 2;
+  while (cursor + 4 < bytes.length) {
+    if (bytes[cursor] !== 0xff) {
+      cursor += 1;
+      continue;
+    }
+    const marker = bytes[cursor + 1];
+    const length = (bytes[cursor + 2] << 8) | bytes[cursor + 3];
+    if (length < 2 || cursor + 2 + length > bytes.length) return undefined;
+    if (marker === 0xe1 && new TextDecoder().decode(bytes.slice(cursor + 4, cursor + 10)) === "Exif\0\0") {
+      const tiff = cursor + 10;
+      if (tiff + 8 > bytes.length) return undefined;
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const little = bytes[tiff] === 0x49 && bytes[tiff + 1] === 0x49;
+      if (
+        (!little && !(bytes[tiff] === 0x4d && bytes[tiff + 1] === 0x4d)) ||
+        view.getUint16(tiff + 2, little) !== 42
+      )
+        return undefined;
+      const entry = (
+        at: number,
+        tag: number,
+      ): { type: number; count: number; value: number; position: number } | undefined => {
+        if (at < tiff || at + 2 > bytes.length) return undefined;
+        const count = view.getUint16(at, little);
+        for (let index = 0; index < count; index += 1) {
+          const position = at + 2 + index * 12;
+          if (position + 12 > bytes.length || view.getUint16(position, little) !== tag) continue;
+          return {
+            type: view.getUint16(position + 2, little),
+            count: view.getUint32(position + 4, little),
+            value: view.getUint32(position + 8, little),
+            position,
+          };
+        }
+        return undefined;
+      };
+      const ifd0 = tiff + view.getUint32(tiff + 4, little);
+      const exifOffset = entry(ifd0, 0x8769)?.value;
+      if (!exifOffset) return undefined;
+      const exif = tiff + exifOffset;
+      const date = entry(exif, 0x9003);
+      if (!date || date.type !== 2 || !date.count) return undefined;
+      const readAscii = (item: { count: number; value: number; position: number } | undefined) => {
+        if (!item?.count) return undefined;
+        const start = item.count <= 4 ? item.position + 8 : tiff + item.value;
+        if (start < tiff || start + item.count > bytes.length) return undefined;
+        return new TextDecoder().decode(bytes.slice(start, start + item.count)).replace(/\0+$/, "");
+      };
+      const start = date.count <= 4 ? date.position + 8 : tiff + date.value;
+      if (start + date.count > bytes.length) return undefined;
+      return exifIso(readAscii(date) ?? "", readAscii(entry(exif, 0x9011)));
+    }
+    cursor += length + 2;
+  }
+  return undefined;
+}
+export async function capturePhotoTime(file: File): Promise<string | undefined> {
+  if (file.type !== "image/jpeg") return undefined;
+  try {
+    return exifCaptureDate(new Uint8Array(await file.slice(0, 256 * 1024).arrayBuffer()));
+  } catch {
+    return undefined;
+  }
+}
+async function preparePhoto(file: File): Promise<File> {
+  if (
+    !["image/jpeg", "image/png", "image/webp"].includes(file.type) ||
+    typeof createImageBitmap !== "function" ||
+    typeof document === "undefined"
+  )
+    return file;
+  let bitmap: ImageBitmap | undefined;
+  try {
+    bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, 2048 / Math.max(bitmap.width, bitmap.height));
+    const targetBytes = 600_000;
+    if (scale === 1 && file.size <= targetBytes) return file;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) return file;
+    let best: Blob | null = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      for (const quality of [0.82, 0.72, 0.6]) {
+        const blob = await new Promise<Blob | null>((resolve) =>
+          canvas.toBlob(resolve, "image/jpeg", quality),
+        );
+        if (blob && (!best || blob.size < best.size)) best = blob;
+        if (best && best.size <= targetBytes) break;
+      }
+      if (best && best.size <= targetBytes) break;
+      canvas.width = Math.max(1, Math.round(canvas.width * 0.8));
+      canvas.height = Math.max(1, Math.round(canvas.height * 0.8));
+    }
+    if (!best || best.size >= file.size) return file;
+    return new File([best], file.name.replace(/\.[^.]+$/, "") + ".jpg", {
+      type: "image/jpeg",
+      lastModified: file.lastModified,
+    });
+  } catch {
+    return file;
+  } finally {
+    bitmap?.close();
+  }
+}
 function mutationKey(fingerprint: string): string {
   let key = pendingKeys.get(fingerprint);
   try {
@@ -167,6 +311,116 @@ export class Api {
   catalog() {
     return this.request<Catalog>("/catalog");
   }
+  createArea(input: { code: string; name: string }) {
+    return this.request<import("./types").Area>("/catalog/areas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  }
+  updateArea(id: string, input: { code: string; name: string }) {
+    return this.request<import("./types").Area>(`/catalog/areas/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  }
+  setAreaActive(id: string, is_active: boolean) {
+    return this.request<import("./types").Area>(`/catalog/areas/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_active }),
+    });
+  }
+  createEquipment(input: Omit<import("./types").Equipment, "id" | "is_active">) {
+    return this.request<import("./types").Equipment>("/catalog/equipment", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  }
+  updateEquipment(id: string, input: Omit<import("./types").Equipment, "id" | "is_active">) {
+    return this.request<import("./types").Equipment>(`/catalog/equipment/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  }
+  setEquipmentActive(id: string, is_active: boolean) {
+    return this.request<import("./types").Equipment>(`/catalog/equipment/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_active }),
+    });
+  }
+  createBrigade(input: { code: string; name: string }) {
+    return this.request<import("./types").Brigade>("/catalog/brigades", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  }
+  updateBrigade(id: string, input: { code: string; name: string }) {
+    return this.request<import("./types").Brigade>(`/catalog/brigades/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  }
+  deleteBrigade(id: string) {
+    return this.request<void>(`/catalog/brigades/${id}`, { method: "DELETE" });
+  }
+  createFaultCode(input: { code: string; name: string; specialty: string }) {
+    return this.request<import("./types").FaultCode>("/catalog/fault-codes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  }
+  updateFaultCode(id: string, input: { code: string; name: string; specialty: string }) {
+    return this.request<import("./types").FaultCode>(`/catalog/fault-codes/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  }
+  deleteFaultCode(id: string) {
+    return this.request<void>(`/catalog/fault-codes/${id}`, { method: "DELETE" });
+  }
+  createMaterial(input: { code: string; name: string; unit: string }) {
+    return this.request<import("./types").Material>("/catalog/materials", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  }
+  updateMaterial(id: string, input: { code: string; name: string; unit: string }) {
+    return this.request<import("./types").Material>(`/catalog/materials/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  }
+  deleteMaterial(id: string) {
+    return this.request<void>(`/catalog/materials/${id}`, { method: "DELETE" });
+  }
+  createTimeNorm(input: { fault_code_id: string; equipment_type: string; minutes: number }) {
+    return this.request<import("./types").TimeNorm>("/catalog/time-norms", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  }
+  updateTimeNorm(id: string, input: { fault_code_id: string; equipment_type: string; minutes: number }) {
+    return this.request<import("./types").TimeNorm>(`/catalog/time-norms/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  }
+  deleteTimeNorm(id: string) {
+    return this.request<void>(`/catalog/time-norms/${id}`, { method: "DELETE" });
+  }
   async employees(): Promise<Employee[]> {
     const result: Employee[] = [];
     for (let offset = 0; ; offset += 200) {
@@ -226,10 +480,27 @@ export class Api {
       key,
     );
   }
-  async photo(id: string, kind: "before" | "after", version: number, file: File, key?: string) {
-    const path = `/work-orders/${id}/photos?kind=${kind}&expected_version=${version}`;
-    const identity = file.type + ":" + (await digest(await file.arrayBuffer()));
-    return this.mutate(path, { headers: { "Content-Type": file.type }, body: file }, identity, key);
+  async photo(
+    id: string,
+    kind: "before" | "after",
+    version: number,
+    file: File,
+    aiShareAllowed = false,
+    key?: string,
+    capturedAtOverride?: string,
+  ) {
+    const [capturedAt, upload] = await Promise.all([
+      capturedAtOverride ?? capturePhotoTime(file),
+      preparePhoto(file),
+    ]);
+    const query = new URLSearchParams({ kind, expected_version: String(version) });
+    if (capturedAt) query.set("captured_at", capturedAt);
+    // Stored work-order evidence stays private unless its uploader explicitly approves
+    // this particular image for external AI analysis.
+    query.set("ai_share_allowed", String(aiShareAllowed));
+    const path = `/work-orders/${id}/photos?${query}`;
+    const identity = upload.type + ":" + capturedAt + ":" + (await digest(await upload.arrayBuffer()));
+    return this.mutate(path, { headers: { "Content-Type": upload.type }, body: upload }, identity, key);
   }
   notifications(offset = 0, unreadOnly = false) {
     return this.request<NotificationPage>(

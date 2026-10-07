@@ -29,6 +29,7 @@ export interface Area {
   id: string;
   code: string;
   name: string;
+  is_active: boolean;
 }
 export interface Equipment {
   id: string;
@@ -37,6 +38,7 @@ export interface Equipment {
   area_id: string;
   equipment_type: string;
   criticality: number;
+  is_active: boolean;
 }
 export interface Employee {
   id: string;
@@ -74,19 +76,30 @@ export interface FaultCode {
   name: string;
   specialty: string;
 }
+export interface Brigade {
+  id: string;
+  code: string;
+  name: string;
+}
 export interface Material {
   id: string;
   code: string;
   name: string;
   unit: string;
 }
+export interface TimeNorm {
+  id: string;
+  fault_code_id: string;
+  equipment_type: string;
+  minutes: number;
+}
 export interface Catalog {
   areas: Area[];
   equipment: Equipment[];
-  brigades: Array<Area>;
+  brigades: Brigade[];
   fault_codes: FaultCode[];
   materials: Material[];
-  time_norms: unknown[];
+  time_norms: TimeNorm[];
 }
 export interface Order {
   id: string;
@@ -115,6 +128,7 @@ export interface OrderPage {
   items: Order[];
   total: number;
   counts: Record<Status, number>;
+  attention_count?: number;
   offset: number;
   limit: number;
 }
@@ -135,6 +149,8 @@ export interface Photo {
   author_id: string;
   sha256: string;
   size_bytes: number;
+  /** Explicit uploader choice; private storage does not imply external AI sharing. */
+  ai_share_allowed: boolean;
   content_url: string;
 }
 export type ReviewCheckStatus = "pass" | "warning" | "fail" | "unknown";
@@ -177,7 +193,30 @@ export interface Review {
   is_current: boolean;
   report?: ReviewReport;
 }
+export interface ExecutorFeedback {
+  submission_version: number;
+  attempt: number | null;
+  verdict: string | null;
+  score: number | null;
+  master_score: number | null;
+  effective_score: number | null;
+  needs_master_review: boolean;
+  reviewed_at: string;
+  is_current: boolean;
+  recommendations: Array<{ title: string; detail: string; status: ReviewCheckStatus }>;
+  timing: {
+    active_minutes: number | null;
+    paused_minutes: number | null;
+    elapsed_minutes: number | null;
+    norm_minutes: number | null;
+    difference_minutes: number | null;
+    percent_of_norm: number | null;
+  };
+}
 export interface OrderDetail extends Order {
+  /** Display names are returned by the detail endpoint when the caller may see the order. */
+  master_name?: string | null;
+  executor_name?: string | null;
   work_description: string | null;
   fault_code_id: string | null;
   no_materials_reason: string | null;
@@ -185,6 +224,8 @@ export interface OrderDetail extends Order {
   photos: Photo[];
   reviews: Review[];
   ai_job?: AiJob | null;
+  /** Redacted own-order assessment returned only to the assigned executor. */
+  executor_feedback?: ExecutorFeedback[];
 }
 export interface EventItem {
   id: string;
@@ -192,6 +233,9 @@ export interface EventItem {
   order_version: number | null;
   actor_id: string | null;
   actor_role: string;
+  /** Safe human-readable actor returned by the order-history contract when available. */
+  actor_name?: string | null;
+  actor_display_name?: string | null;
   action: string;
   from_status: string | null;
   to_status: string;
@@ -205,6 +249,7 @@ export interface EventPage {
 }
 export interface Workload {
   employee_id: string;
+  area_ids: string[];
   display_name: string;
   specialty: string;
   grade: number;

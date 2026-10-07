@@ -1,0 +1,9 @@
+tunnel: 12ba2127-c54a-4949-b0d6-b5e346972752
+credentials-file: /run/secrets/tunnel_credentials
+metrics: 0.0.0.0:2000
+ingress:
+  - hostname: technaryad.online
+    service: http://web:8081
+  - hostname: www.technaryad.online
+    service: http://web:8081
+  - service: http_status:404

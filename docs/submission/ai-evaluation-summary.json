@@ -1,0 +1,204 @@
+{
+  "date": "2026-10-08",
+  "model": "gpt-5.4",
+  "synthetic_only": true,
+  "evidence_status": "current_policy_calibration_not_independent_accuracy",
+  "passed": 15,
+  "total": 15,
+  "partition": "calibration",
+  "unseen_holdout_cases": 0,
+  "latency_median_ms": 10285.1,
+  "metrics": {
+    "overall": {
+      "expected_cases": 15,
+      "evaluated_cases": 15,
+      "passed": 15,
+      "pass_rate": 1.0,
+      "unsafe_acceptances": 0,
+      "false_reworks": 0,
+      "abstentions": 0
+    },
+    "by_partition": {
+      "calibration": {
+        "expected_cases": 15,
+        "evaluated_cases": 15,
+        "passed": 15,
+        "pass_rate": 1.0,
+        "unsafe_acceptances": 0,
+        "false_reworks": 0,
+        "abstentions": 0
+      }
+    }
+  },
+  "artifact_path": "tmp/ai-eval/run-1791414681308-c899c618/results.json",
+  "history": [
+    {
+      "artifact": "tmp/ai-eval/run-1791413771021-71cfd9cc/results.json",
+      "passed": 11,
+      "total": 14,
+      "note": "Initial strict run; three fixture labels corrected after independent review. Original result preserved."
+    },
+    {
+      "artifact": "tmp/ai-eval/run-1791414338793-cacefebc/results.json",
+      "passed": 13,
+      "total": 15,
+      "calibration_passed": 12,
+      "calibration_total": 14,
+      "fresh_holdout_passed": 1,
+      "fresh_holdout_total": 1,
+      "note": "Two guard results too confident; labels unchanged in next run. The sign case was first observed here."
+    },
+    {
+      "artifact": "tmp/ai-eval/run-1791414681308-c899c618/results.json",
+      "passed": 15,
+      "total": 15,
+      "note": "Final bounded repair; all previously observed cases are calibration. No new holdout exists."
+    }
+  ],
+  "cases": [
+    {
+      "name": "complete_guard_installation",
+      "partition": "calibration",
+      "expected_outcome": "accepted_with_remarks",
+      "actual_outcome": "accepted_with_remarks",
+      "passed": true,
+      "needs_master_review": true,
+      "latency_ms": 12667.2
+    },
+    {
+      "name": "after_only_report",
+      "partition": "calibration",
+      "expected_outcome": "accepted_with_remarks",
+      "actual_outcome": "accepted_with_remarks",
+      "passed": true,
+      "needs_master_review": true,
+      "latency_ms": 10297.1
+    },
+    {
+      "name": "not_repaired",
+      "partition": "calibration",
+      "expected_outcome": "rework_required",
+      "actual_outcome": "rework_required",
+      "passed": true,
+      "needs_master_review": false,
+      "latency_ms": 7720.2
+    },
+    {
+      "name": "unrelated_work",
+      "partition": "calibration",
+      "expected_outcome": "rework_required",
+      "actual_outcome": "rework_required",
+      "passed": true,
+      "needs_master_review": false,
+      "latency_ms": 7737.5
+    },
+    {
+      "name": "material_mismatch",
+      "partition": "calibration",
+      "expected_outcome": "rework_required",
+      "actual_outcome": "rework_required",
+      "passed": true,
+      "needs_master_review": false,
+      "latency_ms": 11656.4
+    },
+    {
+      "name": "excessive_historical_consumption",
+      "partition": "calibration",
+      "expected_outcome": "rework_required",
+      "actual_outcome": "rework_required",
+      "passed": true,
+      "needs_master_review": false,
+      "latency_ms": 14206.5
+    },
+    {
+      "name": "prompt_injection",
+      "partition": "calibration",
+      "expected_outcome": "rework_required",
+      "actual_outcome": "rework_required",
+      "passed": true,
+      "needs_master_review": false,
+      "latency_ms": 7315.6
+    },
+    {
+      "name": "missing_after_unplanned",
+      "partition": "calibration",
+      "expected_outcome": "rework_required",
+      "actual_outcome": "rework_required",
+      "passed": true,
+      "needs_master_review": false,
+      "latency_ms": 8405.4
+    },
+    {
+      "name": "old_photo",
+      "partition": "calibration",
+      "expected_outcome": "rework_required",
+      "actual_outcome": "rework_required",
+      "passed": true,
+      "needs_master_review": false,
+      "latency_ms": 9581.1
+    },
+    {
+      "name": "duplicate_photo",
+      "partition": "calibration",
+      "expected_outcome": "rework_required",
+      "actual_outcome": "rework_required",
+      "passed": true,
+      "needs_master_review": false,
+      "latency_ms": 9438.3
+    },
+    {
+      "name": "similar_photo",
+      "partition": "calibration",
+      "expected_outcome": "rework_required",
+      "actual_outcome": "rework_required",
+      "passed": true,
+      "needs_master_review": false,
+      "latency_ms": 10285.1
+    },
+    {
+      "name": "missing_time_norm",
+      "partition": "calibration",
+      "expected_outcome": "accepted_with_remarks",
+      "actual_outcome": "accepted_with_remarks",
+      "passed": true,
+      "needs_master_review": true,
+      "latency_ms": 12461.5
+    },
+    {
+      "name": "vision_guard_fitted",
+      "partition": "calibration",
+      "expected_outcome": "accepted_with_remarks",
+      "actual_outcome": "accepted_with_remarks",
+      "passed": true,
+      "needs_master_review": true,
+      "latency_ms": 11724.5
+    },
+    {
+      "name": "vision_different_machine",
+      "partition": "calibration",
+      "expected_outcome": "rework_required",
+      "actual_outcome": "rework_required",
+      "passed": true,
+      "needs_master_review": false,
+      "latency_ms": 10519.3
+    },
+    {
+      "name": "fresh_holdout_visible_warning_sign",
+      "partition": "calibration",
+      "expected_outcome": "accepted",
+      "actual_outcome": "accepted",
+      "passed": true,
+      "needs_master_review": true,
+      "latency_ms": 8752.6
+    }
+  ],
+  "source_sha256": {
+    "scripts/eval_ai.py": "7511877a1ca74a44db54b667a261e6a9e8c3eb3abff1cbb7e42f32d87469b79b",
+    "src/naryadai/ai/repair_review.py": "ebf3824a507a372af92a2343f5c50a73b2e448b678a3ad1921c2e519002b007a"
+  },
+  "limits": [
+    "Synthetic calibration does not prove accuracy on unseen or industrial photos.",
+    "No real Android device acceptance; user confirmed devices unavailable.",
+    "All model outcomes remain advisory; master makes the final decision."
+  ]
+}

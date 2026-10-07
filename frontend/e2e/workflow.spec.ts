@@ -59,7 +59,11 @@ async function noOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
 }
 
-test("master issue, mobile photo/material completion", async ({ page, browser, request }, info) => {
+test("full lifecycle: issue, before/after photos, mobile materials, master close and export", async ({
+  page,
+  browser,
+  request,
+}, info) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await login(page, state.master_login);
@@ -68,12 +72,16 @@ test("master issue, mobile photo/material completion", async ({ page, browser, r
   const title = description();
   await page.getByRole("button", { name: "Выдать наряд", exact: true }).click();
   const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("Срок (Asia/Almaty)", { exact: true })).toHaveValue("");
   await dialog.getByRole("combobox", { name: "Участок", exact: true }).selectOption(state.area_id);
   await dialog.getByRole("combobox", { name: "Оборудование", exact: true }).selectOption(state.equipment_id);
   await dialog
     .getByRole("combobox", { name: "Исполнитель", exact: true })
     .selectOption(state.selected_executor_id);
   await dialog.getByLabel("Описание", { exact: true }).fill(title);
+  await dialog.getByRole("button", { name: "Через 2 часа", exact: true }).click();
+  const initialComment = "Согласовать остановку с мастером перед ремонтом.";
+  await dialog.getByLabel("Комментарий для исполнителя", { exact: true }).fill(initialComment);
   await dialog.getByRole("combobox", { name: "Приоритет", exact: true }).selectOption("emergency");
   const created = page.waitForResponse(
     (response) => response.url().endsWith("/api/v1/work-orders") && response.request().method() === "POST",
@@ -84,6 +92,22 @@ test("master issue, mobile photo/material completion", async ({ page, browser, r
   const id = (await response.json()).order_id as string;
   await expect(page.getByText(title, { exact: true }).first()).toBeVisible();
   await page.screenshot({ path: info.outputPath("master-created.png"), fullPage: true });
+  await page.getByText(title, { exact: true }).click();
+  const masterDetail = page.getByRole("dialog");
+  await expect(masterDetail.getByText(initialComment, { exact: true }).first()).toBeVisible();
+  await masterDetail.getByLabel("Фотография", { exact: true }).setInputFiles(proof);
+  await masterDetail.getByText("Ввести область скрытия точно", { exact: true }).click();
+  await masterDetail.getByLabel("X, %", { exact: true }).fill("10");
+  await masterDetail.getByLabel("Y, %", { exact: true }).fill("10");
+  await masterDetail.getByLabel("Ширина, %", { exact: true }).fill("20");
+  await masterDetail.getByLabel("Высота, %", { exact: true }).fill("20");
+  await masterDetail.getByRole("button", { name: "Добавить область", exact: true }).click();
+  await expect(masterDetail.locator(".photo-redaction-box")).toHaveCount(1);
+  await masterDetail
+    .locator(".photo-redaction-stage")
+    .screenshot({ path: info.outputPath("photo-redaction-preview.png") });
+  await masterDetail.getByRole("button", { name: "Загрузить фото", exact: true }).click();
+  await expect(masterDetail.locator("img")).toHaveCount(1);
   const mobile = await browser.newContext({
     viewport: { width: 390, height: 844 },
     isMobile: true,
@@ -98,9 +122,28 @@ test("master issue, mobile photo/material completion", async ({ page, browser, r
     await login(worker, state.executor_login);
     await worker.getByText(title, { exact: true }).click();
     const detail = worker.getByRole("dialog");
+    const issued = await readOrder(request, await token(request, state.master_login), id);
+    await expect(detail.locator(".facts").getByText(issued.master_name, { exact: true })).toBeVisible();
+    await expect(detail.locator(".facts").getByText(issued.executor_name, { exact: true })).toBeVisible();
+    await expect(detail.locator(".facts").getByText("Внеплановый", { exact: true })).toBeVisible();
+    await expect(detail.getByText(initialComment, { exact: true }).first()).toBeVisible();
     await detail.getByRole("button", { name: "Принять", exact: true }).click();
     await expect(detail.getByRole("button", { name: "Начать работу", exact: true })).toBeVisible();
     await detail.getByRole("button", { name: "Начать работу", exact: true }).click();
+    await expect(detail.locator("#work-progress")).toBeFocused();
+    await expect(detail.getByRole("heading", { name: "Работа начата", exact: true })).toBeInViewport();
+    await expect
+      .poll(async () => {
+        const heading = await detail
+          .getByRole("heading", { name: "Работа начата", exact: true })
+          .boundingBox();
+        const header = await detail.locator(".dialog-head").boundingBox();
+        return !!heading && !!header && heading.y >= header.y + header.height;
+      })
+      .toBe(true);
+    await worker.screenshot({ path: info.outputPath("executor-started-mobile.png") });
+    await detail.getByRole("button", { name: "Заполнить отчёт", exact: true }).click();
+    await expect(detail.locator("#completion-form")).toBeFocused();
     await expect(detail.getByText("Сдать работу", { exact: true })).toBeVisible();
     await detail.getByText("Приостановить работу", { exact: true }).click();
     await detail.getByLabel("Причина паузы", { exact: true }).fill("Ожидание проверки давления");
@@ -108,9 +151,23 @@ test("master issue, mobile photo/material completion", async ({ page, browser, r
     await detail.getByRole("button", { name: "Возобновить", exact: true }).click();
     await expect(detail.getByText("Приостановить работу", { exact: true })).toBeVisible();
     await detail.getByLabel("Фото после", { exact: false }).setInputFiles(proof);
-    await expect(detail.locator("img")).toHaveCount(1);
+    await detail
+      .getByLabel(
+        "На фото только оборудование, личные и конфиденциальные данные скрыты. Разрешить анализ ИИ.",
+        {
+          exact: true,
+        },
+      )
+      .check();
+    await detail.getByRole("button", { name: "Загрузить фото", exact: true }).click();
+    await expect(detail.locator("img")).toHaveCount(2);
     await expect
-      .poll(() => detail.locator("img").evaluate((img) => (img as HTMLImageElement).naturalWidth))
+      .poll(() =>
+        detail
+          .locator("img")
+          .last()
+          .evaluate((img) => (img as HTMLImageElement).naturalWidth),
+      )
       .toBeGreaterThan(0);
     await detail
       .getByLabel("Что выполнено", { exact: true })
@@ -134,6 +191,8 @@ test("master issue, mobile photo/material completion", async ({ page, browser, r
     expect(secondId).toBeTruthy();
     await secondMaterial.selectOption(secondId!);
     await detail.getByLabel("Количество", { exact: true }).nth(1).fill("2");
+    const submittedComment = "Контрольный пуск согласован, замечаний нет.";
+    await detail.getByLabel("Текст комментария", { exact: true }).fill(submittedComment);
     await worker.screenshot({ path: info.outputPath("executor-mobile-completion.png"), fullPage: true });
     await noOverflow(worker);
     await detail.getByRole("button", { name: "Сдать наряд", exact: true }).click();
@@ -148,14 +207,133 @@ test("master issue, mobile photo/material completion", async ({ page, browser, r
         .map((line: { quantity: string }) => Number(line.quantity))
         .sort((a: number, b: number) => a - b),
     ).toEqual([0.125, 2]);
-    expect(saved.photos).toHaveLength(1);
+    expect(saved.photos).toHaveLength(2);
+    expect(saved.photos.map((photo: { kind: string }) => photo.kind).sort()).toEqual(["after", "before"]);
+    expect(saved.photos.find((photo: { kind: string }) => photo.kind === "before").ai_share_allowed).toBe(
+      false,
+    );
+    expect(saved.photos.find((photo: { kind: string }) => photo.kind === "after").ai_share_allowed).toBe(
+      true,
+    );
     expect((await request.get(saved.photos[0].content_url)).status()).toBe(401);
     await worker.screenshot({ path: info.outputPath("executor-mobile-completed.png"), fullPage: true });
     await expect(detail.getByRole("button", { name: "Сдать наряд", exact: true })).toHaveCount(0);
+    await expect(masterDetail.getByRole("button", { name: "Закрыть вручную", exact: true })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(
+      masterDetail.getByText("Заменено уплотнение. Гидросистема проверена под давлением, утечек нет.", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(masterDetail.locator("img")).toHaveCount(2);
+    await expect(masterDetail.getByText(submittedComment, { exact: true }).first()).toBeVisible();
+    await masterDetail
+      .getByLabel("Причина решения", { exact: true })
+      .fill("Мастер проверил фотографии и материалы, результат принят.");
+    await masterDetail.getByLabel("Оценка мастера (необязательно)", { exact: true }).fill("4");
+    await masterDetail.getByRole("button", { name: "Закрыть вручную", exact: true }).click();
+    await expect(masterDetail.getByRole("heading", { name: /· Закрыт$/ })).toBeVisible();
+    await expect(masterDetail.getByText("Решение мастера принято", { exact: true })).toBeVisible();
+    await expect(masterDetail.getByText("Ожидает решения мастера", { exact: true })).toHaveCount(0);
+    await expect(detail.getByRole("heading", { name: /· Закрыт$/ })).toBeVisible();
+    const outcome = detail.getByRole("region", { name: "Результат вашей сдачи", exact: true });
+    await expect(outcome.getByText("Оценка мастера: 4/5", { exact: true })).toBeVisible();
+    await expect(outcome.getByText("Работа принята мастером", { exact: true })).toBeVisible();
+    await expect(outcome.getByText("Ожидает решения мастера", { exact: true })).toHaveCount(0);
+    await expect(outcome.getByRole("heading", { name: "Что улучшить", exact: true })).toBeVisible();
+    await expect(outcome.getByText("Относительно нормы", { exact: true })).toBeVisible();
+    const closed = await readOrder(request, master, id);
+    expect(closed.status).toBe("closed");
+    expect(closed.reviews.find((review: { is_current: boolean }) => review.is_current).master_score).toBe(4);
+    const download = page.waitForEvent("download");
+    await masterDetail.getByRole("button", { name: "Отчёт Excel", exact: true }).click();
+    expect((await download).suggestedFilename()).toMatch(/\.xlsx$/);
+    await masterDetail.getByText("Показать историю действий", { exact: true }).click();
+    await expect(
+      masterDetail.locator(".timeline").getByText(submittedComment, { exact: true }),
+    ).toBeVisible();
+    await page.screenshot({ path: info.outputPath("master-final-closed.png") });
   } finally {
     await mobile.close();
   }
   expect(errors).toEqual([]);
+});
+
+test("executor sees a precise refusal when another order is already running", async ({
+  page,
+  request,
+}, info) => {
+  const master = await token(request, state.master_login);
+  const executor = await token(request, state.executor_login);
+  const activeId = await create(request, master, description());
+  for (const [action, version] of [
+    ["accept", 1],
+    ["start", 2],
+  ] as const) {
+    const result = await request.post(`/api/v1/work-orders/${activeId}/actions`, {
+      headers: { Authorization: `Bearer ${executor}`, "Idempotency-Key": crypto.randomUUID() },
+      data: { action, expected_version: version },
+    });
+    expect(result.status()).toBe(200);
+  }
+  const title = description();
+  const blockedId = await create(request, master, title);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page, state.executor_login);
+  await page.getByText(title, { exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Принять", exact: true }).click();
+  await dialog.getByRole("button", { name: "Начать работу", exact: true }).click();
+  await expect(dialog.getByText("Действие не выполнено", { exact: true })).toBeVisible();
+  await expect(dialog.getByText(/У вас уже есть наряд в работе/)).toBeVisible();
+  await expect(dialog.locator("#action-feedback")).toBeFocused();
+  await expect(dialog.locator("#work-progress")).toHaveCount(0);
+  expect((await readOrder(request, master, blockedId)).status).toBe("accepted");
+  await page.screenshot({ path: info.outputPath("executor-start-blocked-mobile.png") });
+  for (const id of [activeId, blockedId]) {
+    const order = await readOrder(request, master, id);
+    const result = await request.post(`/api/v1/work-orders/${id}/actions`, {
+      headers: { Authorization: `Bearer ${master}`, "Idempotency-Key": crypto.randomUUID() },
+      data: {
+        action: "cancel",
+        expected_version: order.version,
+        reason: "Завершение изолированной проверки",
+      },
+    });
+    expect(result.status()).toBe(200);
+  }
+});
+
+test("offline Start shows pending then focuses confirmed work after reconnect", async ({
+  page,
+  context,
+  request,
+}, info) => {
+  const master = await token(request, state.master_login);
+  const title = description();
+  const id = await create(request, master, title);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page, state.executor_login);
+  await page.getByText(title, { exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Принять", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "Начать работу", exact: true })).toBeVisible();
+  await context.setOffline(true);
+  await dialog.getByRole("button", { name: "Начать работу", exact: true }).click();
+  await expect(dialog.getByText("Ожидаем подтверждения", { exact: true })).toBeVisible();
+  await expect(dialog.locator("#work-progress")).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath("executor-start-pending-mobile.png") });
+  await context.setOffline(false);
+  await expect(dialog.locator("#work-progress")).toBeFocused();
+  await expect(dialog.getByText("Ожидаем подтверждения", { exact: true })).toHaveCount(0);
+  const order = await readOrder(request, master, id);
+  expect(order.status).toBe("in_progress");
+  const result = await request.post(`/api/v1/work-orders/${id}/actions`, {
+    headers: { Authorization: `Bearer ${master}`, "Idempotency-Key": crypto.randomUUID() },
+    data: { action: "cancel", expected_version: order.version, reason: "Завершение изолированной проверки" },
+  });
+  expect(result.status()).toBe(200);
 });
 
 test("offline reload/reconnect delivers once and leaves version conflict visible", async ({
@@ -183,7 +361,7 @@ test("offline reload/reconnect delivers once and leaves version conflict visible
   await expect(
     page.getByText(/Ожидает отправки|Ожидают отправки|Без связи|Нет сети|Нет связи/).first(),
   ).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Мои работы" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Мои наряды" })).toBeVisible();
   await expect(page.getByText(title, { exact: true }).first()).toBeVisible();
   expect((await readOrder(request, master, id)).status).toBe("issued");
   await page.screenshot({ path: info.outputPath("offline-mobile.png"), fullPage: true });
@@ -253,7 +431,7 @@ test("readonly roles, keyboard dialog, private cache and responsive layout", asy
   await page.getByRole("button", { name: /Выйти/ }).click();
   await expect(page.getByRole("heading", { name: "Вход в смену" })).toBeVisible();
   await login(page, state.admin_login);
-  await expect(page.getByRole("heading", { name: "Справочные данные" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Сотрудники и доступ" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Выдать наряд", exact: true })).toHaveCount(0);
   expect((await request.get("/api/v1/work-orders")).status()).toBe(401);
 });

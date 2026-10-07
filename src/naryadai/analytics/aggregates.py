@@ -62,9 +62,20 @@ def durations(
     pauses: list[float] = []
     for order in orders:
         events = data.events.get(order.id, [])
-        responses = [e.occurred_at for e in events if e.action in {"accept", "queue", "reject"}]
-        if responses and within(responses[0], start, end):
-            reaction.append(max(0, (responses[0] - order.issued_at).total_seconds()))
+        # A reassignment is a new issuance.  Measure the first response for
+        # each assignment instead of silently retaining the previous worker's
+        # response as the order's only reaction time.
+        response_started_at = order.issued_at
+        responded = False
+        for event in events:
+            if event.action == "reassign":
+                response_started_at = event.occurred_at
+                responded = False
+            elif not responded and event.action in {"accept", "queue", "reject"}:
+                if within(event.occurred_at, start, end):
+                    elapsed = (event.occurred_at - response_started_at).total_seconds()
+                    reaction.append(max(0, elapsed))
+                responded = True
         # Compute each submitted attempt separately; no overwritten current-start timestamp.
         last_reset = order.issued_at
         for event in events:

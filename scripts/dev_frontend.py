@@ -1,4 +1,4 @@
-"""Install the pinned Linux Node runtime inside this workspace, without sudo."""
+"""Install the pinned Node runtime for Linux or macOS inside this workspace."""
 
 from __future__ import annotations
 
@@ -16,10 +16,14 @@ VERSION = "24.21.0"
 
 
 def bootstrap() -> None:
-    if sys.platform != "linux" or platform.machine() not in {"x86_64", "aarch64"}:
-        raise SystemExit("Run inside Ubuntu/WSL on x64 or arm64; see README.")
+    if sys.platform not in {"linux", "darwin"} or platform.machine() not in {
+        "x86_64",
+        "aarch64",
+        "arm64",
+    }:
+        raise SystemExit("Use Linux/WSL or macOS on x64/arm64; see README.")
     arch = "x64" if platform.machine() == "x86_64" else "arm64"
-    name = f"node-v{VERSION}-linux-{arch}"
+    name = f"node-v{VERSION}-{sys.platform}-{arch}"
     parent = ROOT / "var" / "node"
     target = parent / name
     if (target / "bin" / "node").is_file():

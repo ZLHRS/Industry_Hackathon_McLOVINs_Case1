@@ -63,6 +63,7 @@ async def upload_photo(
     kind: PhotoKind,
     expected_version: int,
     captured_at: datetime | None,
+    ai_share_allowed: bool,
     idempotency_key: str,
     raw: bytes,
     content_type: str,
@@ -76,6 +77,7 @@ async def upload_photo(
         "kind": kind.value,
         "expected_version": expected_version,
         "captured_at": captured_at.isoformat() if captured_at else None,
+        "ai_share_allowed": ai_share_allowed,
         "content_type": content_type,
         "content_sha256": hashlib.sha256(raw).hexdigest(),
     }
@@ -110,6 +112,7 @@ async def upload_photo(
                 author_id=principal.employee_id,
                 sha256=stored.sha256,
                 size_bytes=stored.size_bytes,
+                ai_share_allowed=ai_share_allowed,
             )
             session.add(photo)
             order.version += 1
@@ -121,6 +124,7 @@ async def upload_photo(
                 "attempt": photo.attempt,
                 "sha256": photo.sha256,
                 "size_bytes": photo.size_bytes,
+                "ai_share_allowed": photo.ai_share_allowed,
                 "content_url": f"/api/v1/work-orders/{order.id}/photos/{photo.id}",
             }
             await record_event(
@@ -135,6 +139,7 @@ async def upload_photo(
                     "attempt": photo.attempt,
                     "sha256": photo.sha256,
                     "size_bytes": photo.size_bytes,
+                    "ai_share_allowed": photo.ai_share_allowed,
                 },
             )
             await remember(session, principal, idempotency_key, operation, payload, response)

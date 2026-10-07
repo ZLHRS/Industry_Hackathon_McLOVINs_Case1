@@ -3,11 +3,12 @@
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
+from math import isfinite
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
-from sqlalchemy import case, func, select, text
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import case, func, or_, select, text
 
 from naryadai.auth.dependencies import Principal
 from naryadai.domain.lifecycle import LifecycleState, WorkOrderStatus, is_overdue
@@ -91,6 +92,7 @@ class PhotoView(BaseModel):
     author_id: UUID
     sha256: str
     size_bytes: int
+    ai_share_allowed: bool
     content_url: str
 
 
@@ -117,7 +119,42 @@ class AiJobView(BaseModel):
     last_error_code: str | None
 
 
+class FeedbackRecommendation(BaseModel):
+    """Executor-safe, human-readable result of one completed check."""
+
+    title: str
+    detail: str
+    status: Literal["pass", "warning", "fail", "unknown"]
+
+
+class FeedbackTiming(BaseModel):
+    active_minutes: float | None
+    paused_minutes: float | None
+    elapsed_minutes: float | None
+    norm_minutes: float | None
+    difference_minutes: float | None
+    percent_of_norm: float | None
+
+
+class ExecutorFeedback(BaseModel):
+    """Sanitized assessment history for the executor assigned to this order."""
+
+    submission_version: int
+    attempt: int | None
+    verdict: str | None
+    score: int | None
+    master_score: int | None
+    effective_score: int | None
+    needs_master_review: bool
+    reviewed_at: datetime
+    is_current: bool
+    recommendations: list[FeedbackRecommendation]
+    timing: FeedbackTiming
+
+
 class OrderDetail(OrderView):
+    master_name: str
+    executor_name: str
     work_description: str | None
     fault_code_id: UUID | None
     no_materials_reason: str | None
@@ -125,6 +162,7 @@ class OrderDetail(OrderView):
     photos: list[PhotoView]
     reviews: list[ReviewView]
     ai_job: AiJobView | None
+    executor_feedback: list[ExecutorFeedback]
 
 
 class EventView(BaseModel):
@@ -134,6 +172,7 @@ class EventView(BaseModel):
     order_version: int | None
     actor_id: UUID | None
     actor_role: str
+    actor_display_name: str
     action: str
     from_status: str | None
     to_status: str
@@ -153,10 +192,12 @@ class OrderPage(BaseModel):
     counts: dict[str, int]
     offset: int
     limit: int
+    attention_count: int = 0
 
 
 class WorkloadView(BaseModel):
     employee_id: UUID
+    area_ids: list[UUID] = Field(default_factory=list)
     display_name: str
     specialty: str
     grade: int
@@ -179,6 +220,66 @@ def order_view(order: WorkOrder, now: datetime) -> OrderView:
     )
 
 
+def _safe_feedback_number(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value):
+        return None
+    if value < 0 or value > 1_000_000:
+        return None
+    return float(value)
+
+
+def _executor_feedback(
+    review: AIReview, *, attempt: int | None, is_current: bool
+) -> ExecutorFeedback:
+    """Project an allowlisted subset of a provider report for its repair author."""
+
+    report = review.report if isinstance(review.report, dict) else {}
+    recommendations: list[FeedbackRecommendation] = []
+    checks = report.get("checks")
+    if isinstance(checks, list):
+        for check in checks:
+            if not isinstance(check, dict):
+                continue
+            title, detail, status = check.get("title"), check.get("detail"), check.get("status")
+            if (
+                isinstance(title, str)
+                and 0 < len(title) <= 160
+                and isinstance(detail, str)
+                and 0 < len(detail) <= 600
+                and status in {"pass", "warning", "fail", "unknown"}
+            ):
+                recommendations.append(
+                    FeedbackRecommendation(title=title, detail=detail, status=status)
+                )
+
+    raw_timing = report.get("timing")
+    timing: dict[str, Any] = raw_timing if isinstance(raw_timing, dict) else {}
+    active = _safe_feedback_number(timing.get("active_minutes"))
+    norm = _safe_feedback_number(timing.get("norm_minutes"))
+    difference = active - norm if active is not None and norm is not None else None
+    percent = (active / norm * 100) if active is not None and norm and norm > 0 else None
+    return ExecutorFeedback(
+        submission_version=review.order_version,
+        attempt=attempt,
+        verdict=None if review.verdict is None else review.verdict.value,
+        score=review.score,
+        master_score=review.master_score,
+        effective_score=review.master_score if review.master_score is not None else review.score,
+        needs_master_review=review.needs_master_review,
+        reviewed_at=review.created_at,
+        is_current=is_current,
+        recommendations=recommendations,
+        timing=FeedbackTiming(
+            active_minutes=active,
+            paused_minutes=_safe_feedback_number(timing.get("paused_minutes")),
+            elapsed_minutes=_safe_feedback_number(timing.get("elapsed_minutes")),
+            norm_minutes=norm,
+            difference_minutes=difference,
+            percent_of_norm=percent,
+        ),
+    )
+
+
 async def list_orders(
     database: Database,
     principal: Principal,
@@ -190,11 +291,28 @@ async def list_orders(
     priority: Priority | None = None,
     work_type: WorkType | None = None,
     overdue: bool | None = None,
+    q: str | None = None,
+    attention: bool = False,
     offset: int = 0,
     limit: int = 50,
 ) -> OrderPage:
     now = datetime.now(UTC)
     predicates = [visible_orders(principal)]
+    if q and (query := q.strip()):
+        # Search before paging and aggregation, with literal user input and the same RBAC scope.
+        machines = select(Equipment.id).where(
+            or_(
+                Equipment.name.icontains(query, autoescape=True),
+                Equipment.inventory_number.icontains(query, autoescape=True),
+            )
+        )
+        predicates.append(
+            or_(
+                WorkOrder.number.icontains(query, autoescape=True),
+                WorkOrder.description.icontains(query, autoescape=True),
+                WorkOrder.equipment_id.in_(machines),
+            )
+        )
     for column, value in (
         (WorkOrder.area_id, area_id),
         (WorkOrder.equipment_id, equipment_id),
@@ -206,17 +324,22 @@ async def list_orders(
             predicates.append(column == value)
     if statuses:
         predicates.append(WorkOrder.status.in_(statuses))
+    condition = (WorkOrder.deadline < now) & WorkOrder.status.not_in(
+        [
+            WorkOrderStatus.REJECTED,
+            WorkOrderStatus.COMPLETED,
+            WorkOrderStatus.AI_REVIEW,
+            WorkOrderStatus.CLOSED,
+            WorkOrderStatus.CANCELLED,
+        ]
+    )
+    needs_attention = WorkOrder.status.not_in(
+        [WorkOrderStatus.REJECTED, WorkOrderStatus.CLOSED, WorkOrderStatus.CANCELLED]
+    ) & (WorkOrder.priority.in_([Priority.EMERGENCY, Priority.HIGH]) | condition)
     if overdue is not None:
-        condition = (WorkOrder.deadline < now) & WorkOrder.status.not_in(
-            [
-                WorkOrderStatus.REJECTED,
-                WorkOrderStatus.COMPLETED,
-                WorkOrderStatus.AI_REVIEW,
-                WorkOrderStatus.CLOSED,
-                WorkOrderStatus.CANCELLED,
-            ]
-        )
         predicates.append(condition if overdue else ~condition)
+    if attention:
+        predicates.append(needs_attention)
     ordering = case(
         (WorkOrder.priority == Priority.EMERGENCY, 0),
         (WorkOrder.priority == Priority.HIGH, 1),
@@ -231,6 +354,9 @@ async def list_orders(
             select(WorkOrder.status, func.count()).where(*predicates).group_by(WorkOrder.status)
         )
         counts.update({status.value: count for status, count in rows})
+        attention_count = await session.scalar(
+            select(func.count()).select_from(WorkOrder).where(*predicates, needs_attention)
+        )
         orders = await session.scalars(
             select(WorkOrder)
             .where(*predicates)
@@ -244,6 +370,7 @@ async def list_orders(
             counts=counts,
             offset=offset,
             limit=limit,
+            attention_count=attention_count or 0,
         )
 
 
@@ -251,6 +378,16 @@ async def order_detail(database: Database, principal: Principal, order_id: UUID)
     async with database.sessions.begin() as session:
         await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
         order = await get_order(session, order_id, principal)
+        participants = {
+            employee_id: display_name
+            for employee_id, display_name in (
+                await session.execute(
+                    select(Employee.id, Employee.display_name).where(
+                        Employee.id.in_([order.master_id, order.executor_id])
+                    )
+                )
+            ).all()
+        }
         materials = await session.execute(
             select(MaterialUsage, Material)
             .join(Material, Material.id == MaterialUsage.material_id)
@@ -266,7 +403,55 @@ async def order_detail(database: Database, principal: Principal, order_id: UUID)
         ).all()
         reviews: Sequence[AIReview] = ()
         job: AIReviewJob | None = None
-        if principal.role != "executor":
+        executor_feedback: list[ExecutorFeedback] = []
+        if principal.role == "executor":
+            own_submissions = select(WorkOrderEvent.order_version).where(
+                WorkOrderEvent.work_order_id == order_id,
+                WorkOrderEvent.action == "complete",
+                WorkOrderEvent.actor_id == principal.employee_id,
+                WorkOrderEvent.order_version.is_not(None),
+            )
+            executor_reviews = (
+                await session.scalars(
+                    select(AIReview)
+                    .where(
+                        AIReview.work_order_id == order_id,
+                        AIReview.order_version.in_(own_submissions),
+                    )
+                    .order_by(AIReview.created_at, AIReview.id)
+                )
+            ).all()
+            submission_attempts = {
+                event.order_version: event.details.get("attempt")
+                for event in (
+                    await session.scalars(
+                        select(WorkOrderEvent)
+                        .where(
+                            WorkOrderEvent.work_order_id == order_id,
+                            WorkOrderEvent.action == "complete",
+                        )
+                        .order_by(WorkOrderEvent.sequence)
+                    )
+                ).all()
+                if event.order_version is not None
+                and isinstance(event.details.get("attempt"), int)
+                and not isinstance(event.details.get("attempt"), bool)
+                and event.details["attempt"] > 0
+            }
+            executor_feedback = [
+                _executor_feedback(
+                    review,
+                    attempt=submission_attempts.get(
+                        review.order_version,
+                        order.attempt
+                        if review.order_version == order.last_submission_version
+                        else None,
+                    ),
+                    is_current=order.last_submission_version == review.order_version,
+                )
+                for review in executor_reviews
+            ]
+        else:
             reviews = (
                 await session.scalars(
                     select(AIReview)
@@ -283,6 +468,8 @@ async def order_detail(database: Database, principal: Principal, order_id: UUID)
                 )
         return OrderDetail(
             **order_view(order, datetime.now(UTC)).model_dump(),
+            master_name=participants[order.master_id],
+            executor_name=participants[order.executor_id],
             work_description=order.work_description,
             fault_code_id=order.fault_code_id,
             no_materials_reason=order.no_materials_reason,
@@ -307,6 +494,7 @@ async def order_detail(database: Database, principal: Principal, order_id: UUID)
                     author_id=p.author_id,
                     sha256=p.sha256,
                     size_bytes=p.size_bytes,
+                    ai_share_allowed=p.ai_share_allowed,
                     content_url=f"/api/v1/work-orders/{order_id}/photos/{p.id}",
                 )
                 for p in photos
@@ -320,6 +508,7 @@ async def order_detail(database: Database, principal: Principal, order_id: UUID)
                 for r in reviews
             ],
             ai_job=None if job is None else AiJobView.model_validate(job),
+            executor_feedback=executor_feedback,
         )
 
 
@@ -340,21 +529,38 @@ async def order_events(
         if principal.role == "executor":
             predicates.append(WorkOrderEvent.action.not_in(_EXECUTOR_HIDDEN_EVENT_ACTIONS))
         rows = (
-            await session.scalars(
-                select(WorkOrderEvent)
+            await session.execute(
+                select(WorkOrderEvent, Employee.display_name)
+                .outerjoin(Employee, Employee.id == WorkOrderEvent.actor_id)
                 .where(*predicates)
                 .order_by(WorkOrderEvent.sequence)
                 .limit(limit + 1)
             )
         ).all()
+
+        def event_view(event: WorkOrderEvent, display_name: str | None) -> EventView:
+            actor_display_name = display_name or (
+                "Система" if event.actor_id is None else "Недоступный сотрудник"
+            )
+            view = EventView(
+                id=event.id,
+                sequence=event.sequence,
+                order_version=event.order_version,
+                actor_id=event.actor_id,
+                actor_role=event.actor_role.value,
+                actor_display_name=actor_display_name,
+                action=event.action,
+                from_status=None if event.from_status is None else event.from_status.value,
+                to_status=event.to_status.value,
+                occurred_at=event.occurred_at,
+                reason=event.reason,
+                details=event.details,
+            )
+            return view.model_copy(update={"details": {}}) if principal.role == "executor" else view
+
         return EventPage(
-            items=[
-                EventView.model_validate(r).model_copy(update={"details": {}})
-                if principal.role == "executor"
-                else EventView.model_validate(r)
-                for r in rows[:limit]
-            ],
-            next_after=rows[limit - 1].sequence if len(rows) > limit else None,
+            items=[event_view(event, display_name) for event, display_name in rows[:limit]],
+            next_after=rows[limit - 1][0].sequence if len(rows) > limit else None,
         )
 
 
@@ -410,6 +616,18 @@ async def workload(
             )
         ).all()
         result = []
+        memberships: dict[UUID, list[UUID]] = {person.id: [] for person in people}
+        for employee_id, permitted_area in (
+            await session.execute(
+                select(EmployeeArea.employee_id, EmployeeArea.area_id)
+                .where(
+                    EmployeeArea.employee_id.in_(memberships),
+                    EmployeeArea.area_id.in_(scopes),
+                )
+                .order_by(EmployeeArea.area_id)
+            )
+        ).all():
+            memberships[employee_id].append(permitted_area)
         for person in people:
             own = [o for o in jobs if o.executor_id == person.id]
             running = next((o for o in own if o.status == WorkOrderStatus.IN_PROGRESS), None)
@@ -428,6 +646,7 @@ async def workload(
             result.append(
                 WorkloadView(
                     employee_id=person.id,
+                    area_ids=memberships[person.id],
                     display_name=person.display_name,
                     specialty=person.specialty,
                     grade=person.grade,

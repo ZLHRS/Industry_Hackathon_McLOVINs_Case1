@@ -1,0 +1,14 @@
+# Optional, explicit opt-in. Never interpolate the API key from a shell/.env.
+services:
+  api:
+    secrets: [ai_api_key]
+    environment:
+      NARYADAI_AI_MODEL: ${NARYADAI_AI_MODEL:-gpt-5.4}
+  worker:
+    secrets: [ai_api_key]
+    environment:
+      NARYADAI_AI_MODEL: ${NARYADAI_AI_MODEL:-gpt-5.4}
+      NARYADAI_AI_VISION_ENABLED: ${NARYADAI_AI_VISION_ENABLED:-true}
+secrets:
+  ai_api_key:
+    file: ./var/docker/secrets/ai_api_key

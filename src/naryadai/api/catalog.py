@@ -6,13 +6,14 @@ from uuid import UUID
 
 from anyio import to_thread
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
-from sqlalchemy import delete, select, update
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from sqlalchemy import delete, or_, select, true, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from naryadai.auth.dependencies import DatabaseDep, PrincipalDep, require_admin, require_area
 from naryadai.auth.security import hash_secret
+from naryadai.domain.lifecycle import WorkOrderStatus
 from naryadai.infrastructure.models import (
     Area,
     AuthSession,
@@ -22,6 +23,7 @@ from naryadai.infrastructure.models import (
     Equipment,
     FaultCode,
     Material,
+    MaterialUsage,
     TimeNorm,
     WorkOrder,
 )
@@ -44,7 +46,7 @@ class AreaInput(Input):
 
 
 class AreaView(AreaInput, View):
-    pass
+    is_active: bool
 
 
 class BrigadeInput(AreaInput):
@@ -64,7 +66,7 @@ class EquipmentInput(Input):
 
 
 class EquipmentView(EquipmentInput, View):
-    pass
+    is_active: bool
 
 
 class FaultInput(AreaInput):
@@ -103,6 +105,11 @@ class EmployeeInput(Input):
     area_ids: list[UUID] = Field(default_factory=list, max_length=100)
     secret: SecretStr = Field(min_length=6, max_length=128)
 
+    @field_validator("secret", mode="before")
+    @classmethod
+    def preserve_secret_whitespace(cls, value: object) -> object:
+        return SecretStr(value) if isinstance(value, str) else value
+
 
 class EmployeeView(View):
     login: str
@@ -119,9 +126,7 @@ class AdminEmployeeView(EmployeeView):
     area_ids: list[UUID]
 
 
-async def admin_employee_view(
-    session: AsyncSession, employee: Employee
-) -> AdminEmployeeView:
+async def admin_employee_view(session: AsyncSession, employee: Employee) -> AdminEmployeeView:
     area_ids = list(
         await session.scalars(
             select(EmployeeArea.area_id)
@@ -141,6 +146,15 @@ class AccessUpdate(Input):
     area_ids: list[UUID] | None = Field(default=None, max_length=100)
     secret: SecretStr | None = Field(default=None, min_length=6, max_length=128)
 
+    @field_validator("secret", mode="before")
+    @classmethod
+    def preserve_secret_whitespace(cls, value: object) -> object:
+        return SecretStr(value) if isinstance(value, str) else value
+
+
+class ActiveUpdate(Input):
+    is_active: bool
+
 
 class CatalogResponse(BaseModel):
     areas: list[AreaView]
@@ -149,6 +163,30 @@ class CatalogResponse(BaseModel):
     fault_codes: list[FaultView]
     materials: list[MaterialView]
     time_norms: list[TimeNormView]
+
+
+async def lock_equipment_areas(session: AsyncSession, area_ids: set[UUID]) -> dict[UUID, Area]:
+    rows = (
+        await session.scalars(
+            select(Area).where(Area.id.in_(area_ids)).order_by(Area.id).with_for_update()
+        )
+    ).all()
+    areas = {area.id: area for area in rows}
+    if set(areas) != area_ids:
+        raise HTTPException(status_code=409, detail="duplicate_or_invalid_reference")
+    return areas
+
+
+def require_active_equipment_area(area: Area) -> None:
+    if not area.is_active:
+        raise HTTPException(status_code=409, detail="area_inactive")
+
+
+async def equipment_parent_id(session: AsyncSession, record_id: UUID) -> UUID:
+    area_id = await session.scalar(select(Equipment.area_id).where(Equipment.id == record_id))
+    if area_id is None:
+        raise HTTPException(status_code=404, detail="not_found")
+    return area_id
 
 
 @router.get("", response_model=CatalogResponse)
@@ -284,9 +322,33 @@ async def change_access(
                 body.is_active is False or (body.role is not None and body.role != "admin")
             ):
                 raise HTTPException(status_code=409, detail="self_access_change_forbidden")
+            nonterminal = WorkOrder.status.not_in(
+                [WorkOrderStatus.CLOSED, WorkOrderStatus.CANCELLED]
+            )
+            participant = or_(
+                WorkOrder.executor_id == employee_id,
+                WorkOrder.master_id == employee_id,
+            )
+            role_changed = body.role is not None and body.role != employee.role.value
+            if (body.is_active is False or role_changed) and await session.scalar(
+                select(WorkOrder.id).where(participant, nonterminal).limit(1)
+            ):
+                raise HTTPException(status_code=409, detail="worker_has_active_order")
+            if body.area_ids is not None:
+                requested_areas = set(body.area_ids)
+                removed_area = (
+                    WorkOrder.area_id.not_in(requested_areas) if requested_areas else true()
+                )
+                if await session.scalar(
+                    select(WorkOrder.id).where(participant, nonterminal, removed_area).limit(1)
+                ):
+                    raise HTTPException(status_code=409, detail="worker_has_active_order")
             if body.is_on_shift is False and await session.scalar(
                 select(WorkOrder.id)
-                .where(WorkOrder.executor_id == employee_id, WorkOrder.status == "in_progress")
+                .where(
+                    WorkOrder.executor_id == employee_id,
+                    WorkOrder.status == WorkOrderStatus.IN_PROGRESS,
+                )
                 .limit(1)
             ):
                 raise HTTPException(status_code=409, detail="worker_has_active_order")
@@ -349,6 +411,29 @@ async def replace_areas(
     return result
 
 
+@router.patch("/areas/{record_id}", response_model=AreaView)
+async def set_area_active(
+    record_id: UUID, body: ActiveUpdate, principal: PrincipalDep, database: DatabaseDep
+) -> AreaView:
+    require_admin(principal)
+    async with database.sessions.begin() as session:
+        row = await session.get(Area, record_id, with_for_update=True)
+        if row is None:
+            raise HTTPException(status_code=404, detail="not_found")
+        if body.is_active is False and await session.scalar(
+            select(WorkOrder.id)
+            .where(
+                WorkOrder.area_id == record_id,
+                WorkOrder.status.not_in([WorkOrderStatus.CLOSED, WorkOrderStatus.CANCELLED]),
+            )
+            .limit(1)
+        ):
+            raise HTTPException(status_code=409, detail="active_work_orders_exist")
+        row.is_active = body.is_active
+        await session.flush()
+        return AreaView.model_validate(row)
+
+
 @router.post("/brigades", response_model=BrigadeView, status_code=201)
 async def create_brigades(
     body: BrigadeInput, principal: PrincipalDep, database: DatabaseDep
@@ -389,9 +474,11 @@ async def create_equipment(
     body: EquipmentInput, principal: PrincipalDep, database: DatabaseDep
 ) -> EquipmentView:
     require_admin(principal)
-    row = Equipment(**body.model_dump())
     try:
         async with database.sessions.begin() as session:
+            areas = await lock_equipment_areas(session, {body.area_id})
+            require_active_equipment_area(areas[body.area_id])
+            row = Equipment(**body.model_dump())
             session.add(row)
             await session.flush()
             result = EquipmentView.model_validate(row)
@@ -407,9 +494,21 @@ async def replace_equipment(
     require_admin(principal)
     try:
         async with database.sessions.begin() as session:
+            previous_area_id = await equipment_parent_id(session, record_id)
+            areas = await lock_equipment_areas(session, {previous_area_id, body.area_id})
             row = await session.get(Equipment, record_id, with_for_update=True)
-            if row is None:
-                raise HTTPException(status_code=404, detail="not_found")
+            if row is None or row.area_id != previous_area_id:
+                raise HTTPException(status_code=409, detail="catalog_changed_retry")
+            if body.area_id != row.area_id or body.equipment_type != row.equipment_type:
+                has_history = await session.scalar(
+                    select(WorkOrder.id).where(WorkOrder.equipment_id == record_id).limit(1)
+                )
+                if has_history and body.area_id != row.area_id:
+                    raise HTTPException(status_code=409, detail="equipment_has_history")
+                if has_history:
+                    raise HTTPException(status_code=409, detail="equipment_type_has_history")
+            if body.area_id != row.area_id:
+                require_active_equipment_area(areas[body.area_id])
             for field, value in body.model_dump().items():
                 setattr(row, field, value)
             await session.flush()
@@ -417,6 +516,33 @@ async def replace_equipment(
     except IntegrityError:
         raise HTTPException(status_code=409, detail="duplicate_or_invalid_reference") from None
     return result
+
+
+@router.patch("/equipment/{record_id}", response_model=EquipmentView)
+async def set_equipment_active(
+    record_id: UUID, body: ActiveUpdate, principal: PrincipalDep, database: DatabaseDep
+) -> EquipmentView:
+    require_admin(principal)
+    async with database.sessions.begin() as session:
+        previous_area_id = await equipment_parent_id(session, record_id)
+        areas = await lock_equipment_areas(session, {previous_area_id})
+        row = await session.get(Equipment, record_id, with_for_update=True)
+        if row is None or row.area_id != previous_area_id:
+            raise HTTPException(status_code=409, detail="catalog_changed_retry")
+        if body.is_active and not row.is_active:
+            require_active_equipment_area(areas[row.area_id])
+        if body.is_active is False and await session.scalar(
+            select(WorkOrder.id)
+            .where(
+                WorkOrder.equipment_id == record_id,
+                WorkOrder.status.not_in([WorkOrderStatus.CLOSED, WorkOrderStatus.CANCELLED]),
+            )
+            .limit(1)
+        ):
+            raise HTTPException(status_code=409, detail="active_work_orders_exist")
+        row.is_active = body.is_active
+        await session.flush()
+        return EquipmentView.model_validate(row)
 
 
 @router.post("/fault-codes", response_model=FaultView, status_code=201)
@@ -445,6 +571,13 @@ async def replace_fault_codes(
             row = await session.get(FaultCode, record_id, with_for_update=True)
             if row is None:
                 raise HTTPException(status_code=404, detail="not_found")
+            semantic_change = (
+                body.code != row.code or body.name != row.name or body.specialty != row.specialty
+            )
+            if semantic_change and await session.scalar(
+                select(WorkOrder.id).where(WorkOrder.fault_code_id == record_id).limit(1)
+            ):
+                raise HTTPException(status_code=409, detail="fault_code_has_history")
             for field, value in body.model_dump().items():
                 setattr(row, field, value)
             await session.flush()
@@ -480,6 +613,13 @@ async def replace_materials(
             row = await session.get(Material, record_id, with_for_update=True)
             if row is None:
                 raise HTTPException(status_code=404, detail="not_found")
+            semantic_change = (
+                body.code != row.code or body.name != row.name or body.unit != row.unit
+            )
+            if semantic_change and await session.scalar(
+                select(MaterialUsage.id).where(MaterialUsage.material_id == record_id).limit(1)
+            ):
+                raise HTTPException(status_code=409, detail="material_has_history")
             for field, value in body.model_dump().items():
                 setattr(row, field, value)
             await session.flush()
@@ -487,6 +627,63 @@ async def replace_materials(
     except IntegrityError:
         raise HTTPException(status_code=409, detail="duplicate_or_invalid_reference") from None
     return result
+
+
+@router.delete("/brigades/{record_id}", status_code=204)
+async def delete_brigade(record_id: UUID, principal: PrincipalDep, database: DatabaseDep) -> None:
+    require_admin(principal)
+    async with database.sessions.begin() as session:
+        row = await session.get(Brigade, record_id, with_for_update=True)
+        if row is None:
+            raise HTTPException(status_code=404, detail="not_found")
+        if await session.scalar(
+            select(Employee.id).where(Employee.brigade_id == record_id).limit(1)
+        ):
+            raise HTTPException(status_code=409, detail="reference_in_use")
+        await session.delete(row)
+
+
+@router.delete("/fault-codes/{record_id}", status_code=204)
+async def delete_fault_code(
+    record_id: UUID, principal: PrincipalDep, database: DatabaseDep
+) -> None:
+    require_admin(principal)
+    async with database.sessions.begin() as session:
+        row = await session.get(FaultCode, record_id, with_for_update=True)
+        if row is None:
+            raise HTTPException(status_code=404, detail="not_found")
+        has_reference = await session.scalar(
+            select(WorkOrder.id).where(WorkOrder.fault_code_id == record_id).limit(1)
+        ) or await session.scalar(
+            select(TimeNorm.id).where(TimeNorm.fault_code_id == record_id).limit(1)
+        )
+        if has_reference:
+            raise HTTPException(status_code=409, detail="reference_in_use")
+        await session.delete(row)
+
+
+@router.delete("/materials/{record_id}", status_code=204)
+async def delete_material(record_id: UUID, principal: PrincipalDep, database: DatabaseDep) -> None:
+    require_admin(principal)
+    async with database.sessions.begin() as session:
+        row = await session.get(Material, record_id, with_for_update=True)
+        if row is None:
+            raise HTTPException(status_code=404, detail="not_found")
+        if await session.scalar(
+            select(MaterialUsage.id).where(MaterialUsage.material_id == record_id).limit(1)
+        ):
+            raise HTTPException(status_code=409, detail="reference_in_use")
+        await session.delete(row)
+
+
+@router.delete("/time-norms/{record_id}", status_code=204)
+async def delete_time_norm(record_id: UUID, principal: PrincipalDep, database: DatabaseDep) -> None:
+    require_admin(principal)
+    async with database.sessions.begin() as session:
+        row = await session.get(TimeNorm, record_id, with_for_update=True)
+        if row is None:
+            raise HTTPException(status_code=404, detail="not_found")
+        await session.delete(row)
 
 
 @router.post("/time-norms", response_model=TimeNormView, status_code=201)

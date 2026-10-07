@@ -1,0 +1,41 @@
+services:
+  api:
+    environment:
+      NARYADAI_WEB_PUSH_PRIVATE_KEY_FILE: /run/secrets/vapid_private_key
+      NARYADAI_WEB_PUSH_SUBJECT: https://technaryad.online
+    secrets:
+      - vapid_private_key
+  worker:
+    environment:
+      NARYADAI_WEB_PUSH_PRIVATE_KEY_FILE: /run/secrets/vapid_private_key
+      NARYADAI_WEB_PUSH_SUBJECT: https://technaryad.online
+    secrets:
+      - vapid_private_key
+  tunnel:
+    image: cloudflare/cloudflared:2026.6.1@sha256:6d91c121b803126f7a5344005d17a9324788fc09d305b6e2560ec6040a7ae283
+    restart: unless-stopped
+    command: ["tunnel", "--config", "/etc/cloudflared/config.yml", "--no-autoupdate", "run"]
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks: [tunnel]
+    volumes:
+      - ./deploy/cloudflared.yml:/etc/cloudflared/config.yml:ro
+    secrets:
+      - tunnel_credentials
+    depends_on:
+      web:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+secrets:
+  vapid_private_key:
+    file: ./var/docker/secrets/vapid_private.pem
+  tunnel_credentials:
+    file: ./var/docker/tunnel/credentials.json

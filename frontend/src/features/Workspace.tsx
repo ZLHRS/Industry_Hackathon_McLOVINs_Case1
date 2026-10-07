@@ -1,9 +1,14 @@
 import { roleLabels } from "../lib/roleAccess";
+import type { DirectoryFilters, DirectorySection } from "../lib/navigation";
 import "./workspace-ux.css";
-import { FormEvent, useMemo, useState } from "react";
+import "./reference-ux.css";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "../components/Dialog";
+import { Api, ApiError } from "../api";
 import { local, ruPriority, ruStatus } from "./OrderDetail";
 import type { Catalog, CreateOrder, Order, OrderPage, Role, Workload } from "../types";
+
+type CatalogEditorKind = "area" | "equipment" | "brigade" | "material" | "fault-code" | "time-norm";
 const activeStatuses = [
   "issued",
   "accepted",
@@ -15,6 +20,34 @@ const activeStatuses = [
   "rework",
 ];
 const archiveStatuses = ["closed", "cancelled", "rejected"];
+
+function almatyInputDate(value: Date) {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Almaty",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  })
+    .format(value)
+    .replace(" ", "T");
+}
+
+function endOfCurrentShift() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Almaty",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
+  const minutesToBoundary =
+    hour < 8 ? (8 - hour) * 60 - minute : hour < 20 ? (20 - hour) * 60 - minute : (32 - hour) * 60 - minute;
+  return almatyInputDate(new Date(Date.now() + Math.max(1, minutesToBoundary) * 60_000));
+}
 
 export function OrdersView({
   role,
@@ -39,6 +72,8 @@ export function OrdersView({
     area_id: string;
     equipment_id: string;
     executor_id: string;
+    query: string;
+    attention: boolean;
     offset: number;
   };
   onFilters: (next: {
@@ -48,6 +83,8 @@ export function OrdersView({
     area_id: string;
     equipment_id: string;
     executor_id: string;
+    query: string;
+    attention: boolean;
     offset: number;
   }) => void;
   onOpen: (id: string) => void;
@@ -57,6 +94,8 @@ export function OrdersView({
 }) {
   const [creating, setCreating] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState(filters.query);
+  const committedQuery = useRef(filters.query);
   const view = {
     executor: {
       eyebrow: "МОЯ СМЕНА",
@@ -90,17 +129,40 @@ export function OrdersView({
     filters.overdue,
   ].filter(Boolean).length;
   const hasAdditionalFilters = additionalFilterCount > 0;
-  const resetFilters = () =>
+  const resetFilters = () => {
+    setSearchInput("");
     onFilters({
       ...filters,
       priority: "",
       area_id: "",
       equipment_id: "",
       executor_id: "",
+      query: "",
+      attention: false,
       overdue: false,
       offset: 0,
     });
-  const emptyState = page?.items.length === 0;
+  };
+  useEffect(() => {
+    if (searchInput === filters.query) return;
+    const timeout = window.setTimeout(() => {
+      const query = searchInput.trim();
+      committedQuery.current = query;
+      setSearchInput(query);
+      onFilters({ ...filters, query, offset: 0 });
+    }, 250);
+    return () => window.clearTimeout(timeout);
+  }, [filters, onFilters, searchInput]);
+  useEffect(() => {
+    if (filters.query === committedQuery.current) return;
+    committedQuery.current = filters.query;
+    const timeout = window.setTimeout(() => setSearchInput(filters.query), 0);
+    return () => window.clearTimeout(timeout);
+  }, [filters.query]);
+  const visibleOrders = page?.items ?? [];
+  const urgentCount = page?.attention_count ?? 0;
+  const activeCount = (page?.counts.in_progress ?? 0) + (page?.counts.paused ?? 0);
+  const emptyState = visibleOrders.length === 0;
   const unfilteredEmpty = allTab && !hasAdditionalFilters;
 
   return (
@@ -117,6 +179,29 @@ export function OrdersView({
           </button>
         )}
       </div>
+
+      {page && (role !== "executor" || urgentCount > 0) && (
+        <section className={`operations-strip role-${role}`} aria-label="Сводка очереди">
+          <button
+            type="button"
+            className={filters.attention ? "operations-signal is-active" : "operations-signal"}
+            onClick={() => onFilters({ ...filters, attention: !filters.attention, offset: 0 })}
+            aria-pressed={filters.attention}
+          >
+            <span className="operations-kicker">ТРЕБУЮТ ВНИМАНИЯ</span>
+            <strong>{urgentCount}</strong>
+            <small>{filters.attention ? "Показаны срочные" : "Сроки и высокий приоритет"}</small>
+          </button>
+          <div className="operations-stat">
+            <span>Выполняются</span>
+            <strong>{activeCount}</strong>
+          </div>
+          <div className="operations-stat">
+            <span>В выборке</span>
+            <strong>{page.total}</strong>
+          </div>
+        </section>
+      )}
 
       {page && (
         <div className="status-tabs" aria-label="Список нарядов">
@@ -145,6 +230,16 @@ export function OrdersView({
       )}
 
       <div className="orders-filter-actions">
+        <label className="order-search">
+          <span className="sr-only">Поиск наряда</span>
+          <input
+            type="search"
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder="Номер, задача или оборудование"
+            aria-label="Поиск наряда"
+          />
+        </label>
         <button
           className="filter-toggle"
           type="button"
@@ -189,11 +284,13 @@ export function OrdersView({
               }
             >
               <option value="">Все участки</option>
-              {catalog.areas.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.code} · {item.name}
-                </option>
-              ))}
+              {catalog.areas
+                .filter((item) => item.is_active !== false)
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.code} · {item.name}
+                  </option>
+                ))}
             </select>
           </label>
         )}
@@ -207,7 +304,10 @@ export function OrdersView({
             >
               <option value="">Всё оборудование</option>
               {catalog.equipment
-                .filter((item) => !filters.area_id || item.area_id === filters.area_id)
+                .filter(
+                  (item) =>
+                    item.is_active !== false && (!filters.area_id || item.area_id === filters.area_id),
+                )
                 .map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.inventory_number} · {item.name}
@@ -245,7 +345,9 @@ export function OrdersView({
 
       {page && (
         <p className="orders-summary" aria-live="polite">
-          В списке: <strong>{page.total}</strong>
+          {filters.query || filters.attention ? "Найдено" : "В списке"}:{" "}
+          <strong>{visibleOrders.length}</strong>
+          {visibleOrders.length !== page.total && ` из ${page.total}`}
         </p>
       )}
       {loading && <p className="muted">Обновляем наряды…</p>}
@@ -268,10 +370,10 @@ export function OrdersView({
           )}
         </div>
       ) : role !== "executor" ? (
-        <Kanban orders={page?.items ?? []} catalog={catalog} onOpen={onOpen} onHistory={onHistory} />
+        <Kanban orders={visibleOrders} catalog={catalog} onOpen={onOpen} onHistory={onHistory} />
       ) : (
-        <div className="order-list">
-          {page?.items.map((order) => (
+        <div className="order-list worker-queue">
+          {visibleOrders.map((order) => (
             <OrderRow key={order.id} order={order} catalog={catalog} onOpen={onOpen} />
           ))}
         </div>
@@ -400,18 +502,6 @@ function OrderRow({
     </article>
   );
 }
-function defaultDeadline() {
-  const value = new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Asia/Almaty",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).format(new Date(Date.now() + 2 * 60 * 60 * 1000));
-  return value.replace(" ", "T");
-}
 function CreateOrderDialog({
   catalog,
   workers,
@@ -423,20 +513,47 @@ function CreateOrderDialog({
   onClose: () => void;
   onCreate: (input: CreateOrder) => Promise<void>;
 }) {
+  const initialArea = catalog.areas.find((item) => item.is_active !== false)?.id ?? "";
+  const recommendedWorker = [...workers]
+    .filter((person) => person.is_on_shift && person.area_ids?.includes(initialArea))
+    .sort((left, right) => {
+      const availability = { free: 0, queued: 1, busy: 2, off_shift: 3 };
+      return (
+        availability[left.availability] - availability[right.availability] ||
+        left.queue_length - right.queue_length ||
+        left.paused_count - right.paused_count
+      );
+    })[0];
   const [input, setInput] = useState({
     work_type: "unplanned",
     description: "",
-    area_id: catalog.areas[0]?.id ?? "",
+    area_id: initialArea,
     equipment_id: "",
-    executor_id: "",
+    executor_id: recommendedWorker?.employee_id ?? "",
     priority: "normal",
-    deadline: defaultDeadline(),
+    // A deadline is an operational decision. Never silently turn an illustrative
+    // two-hour value into a real order deadline.
+    deadline: "",
     comment: "",
   });
   const [error, setError] = useState("");
   const equipment = useMemo(
-    () => catalog.equipment.filter((item) => item.area_id === input.area_id),
+    () => catalog.equipment.filter((item) => item.is_active !== false && item.area_id === input.area_id),
     [catalog, input.area_id],
+  );
+  const suggestedWorker = useMemo(
+    () =>
+      [...workers]
+        .filter((person) => person.is_on_shift && person.area_ids?.includes(input.area_id))
+        .sort((left, right) => {
+          const availability = { free: 0, queued: 1, busy: 2, off_shift: 3 };
+          return (
+            availability[left.availability] - availability[right.availability] ||
+            left.queue_length - right.queue_length ||
+            left.paused_count - right.paused_count
+          );
+        })[0],
+    [workers, input.area_id],
   );
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -459,19 +576,50 @@ function CreateOrderDialog({
   }
   return (
     <Dialog title="Выдать наряд" onClose={onClose}>
-      <form className="dialog-form" onSubmit={(e) => void submit(e)}>
+      <form className="dialog-form guided-order-form" onSubmit={(e) => void submit(e)}>
+        <div className="form-progress" aria-label="Шаги выдачи наряда">
+          <span>
+            <b>1</b> Где работа
+          </span>
+          <span>
+            <b>2</b> Кому
+          </span>
+          <span>
+            <b>3</b> Что сделать
+          </span>
+        </div>
+        <p className="form-hint">
+          Выберите оборудование, исполнителя, описание и реальный срок. Система не подставляет срок сама.
+        </p>
         <label>
           Участок
           <select
             required
             value={input.area_id}
-            onChange={(e) => setInput({ ...input, area_id: e.target.value, equipment_id: "" })}
+            onChange={(e) => {
+              const areaId = e.target.value;
+              const candidates = [...workers]
+                .filter((person) => person.is_on_shift && person.area_ids?.includes(areaId))
+                .sort(
+                  (a, b) =>
+                    Number(a.availability !== "free") - Number(b.availability !== "free") ||
+                    a.queue_length - b.queue_length,
+                );
+              setInput({
+                ...input,
+                area_id: areaId,
+                equipment_id: "",
+                executor_id: candidates[0]?.employee_id ?? "",
+              });
+            }}
           >
-            {catalog.areas.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.code} · {item.name}
-              </option>
-            ))}
+            {catalog.areas
+              .filter((item) => item.is_active !== false)
+              .map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.code} · {item.name}
+                </option>
+              ))}
           </select>
         </label>
         <label>
@@ -498,14 +646,48 @@ function CreateOrderDialog({
           >
             <option value="">Выберите исполнителя</option>
             {workers
-              .filter((person) => person.is_on_shift)
+              .filter((person) => person.area_ids?.includes(input.area_id))
               .map((person) => (
-                <option key={person.employee_id} value={person.employee_id}>
-                  {person.display_name} · {person.availability}
+                <option key={person.employee_id} value={person.employee_id} disabled={!person.is_on_shift}>
+                  {person.display_name} · {person.specialty} · {person.grade} разряд ·{" "}
+                  {person.availability === "off_shift"
+                    ? "Не на смене"
+                    : person.current_order_number
+                      ? `В работе ${person.current_order_number}`
+                      : person.availability === "busy"
+                        ? "В работе"
+                        : person.availability === "free"
+                          ? "Свободен"
+                          : "Ожидает работы"}
+                  {person.queue_length > 0 ? ` · В очереди ${person.queue_length}` : ""}
                 </option>
               ))}
           </select>
         </label>
+        {suggestedWorker && (
+          <aside className="load-suggestion" aria-label="Подсказка по загрузке">
+            <div>
+              <span className="eyebrow">ПОДСКАЗКА ПО ЗАГРУЗКЕ</span>
+              <strong>{suggestedWorker.display_name}</strong>
+              <small>
+                {suggestedWorker.availability === "free"
+                  ? "Свободен в смене"
+                  : suggestedWorker.availability === "queued"
+                    ? `В очереди: ${suggestedWorker.queue_length}`
+                    : "Занят, но с наименьшей очередью"}
+                {suggestedWorker.paused_count ? ` · пауз: ${suggestedWorker.paused_count}` : ""}
+              </small>
+            </div>
+            <button
+              className="secondary"
+              type="button"
+              onClick={() => setInput({ ...input, executor_id: suggestedWorker.employee_id })}
+            >
+              Выбрать рекомендованного
+            </button>
+            <p>Подсказка учитывает смену и текущую загрузку. Допуск к работе проверяет мастер.</p>
+          </aside>
+        )}
         <label>
           Описание
           <textarea
@@ -537,6 +719,10 @@ function CreateOrderDialog({
             </select>
           </label>
         </div>
+        <p className="muted form-action-count">
+          Исполнитель предложен по участку и загрузке — проверьте его допуск перед выдачей. Срок задаёт
+          мастер.
+        </p>
         <label>
           Срок (Asia/Almaty)
           <input
@@ -546,8 +732,36 @@ function CreateOrderDialog({
             onChange={(e) => setInput({ ...input, deadline: e.target.value })}
           />
         </label>
+        <div className="deadline-presets" aria-label="Быстрый выбор срока">
+          <span>Быстрый срок после проверки мастером:</span>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() =>
+              setInput({ ...input, deadline: almatyInputDate(new Date(Date.now() + 60 * 60_000)) })
+            }
+          >
+            Через 1 час
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() =>
+              setInput({ ...input, deadline: almatyInputDate(new Date(Date.now() + 2 * 60 * 60_000)) })
+            }
+          >
+            Через 2 часа
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => setInput({ ...input, deadline: endOfCurrentShift() })}
+          >
+            До конца смены
+          </button>
+        </div>
         <label>
-          Комментарий
+          Комментарий для исполнителя
           <input value={input.comment} onChange={(e) => setInput({ ...input, comment: e.target.value })} />
         </label>
         {error && <p className="error">{error}</p>}
@@ -556,7 +770,9 @@ function CreateOrderDialog({
     </Dialog>
   );
 }
-export function WorkloadView({ workers }: { workers: Workload[] }) {
+export function WorkloadView({ workers, onOpen }: { workers: Workload[]; onOpen: (id: string) => void }) {
+  const onShift = workers.filter((person) => person.is_on_shift);
+  const busy = onShift.filter((person) => person.availability === "busy").length;
   return (
     <section className="workspace">
       <div className="page-head">
@@ -564,6 +780,17 @@ export function WorkloadView({ workers }: { workers: Workload[] }) {
           <p className="eyebrow">СМЕНА</p>
           <h1>Загрузка исполнителей</h1>
         </div>
+      </div>
+      <div className="workload-summary" aria-label="Сводка загрузки">
+        <span>
+          <b>{onShift.length}</b> в смене
+        </span>
+        <span>
+          <b>{busy}</b> заняты
+        </span>
+        <span>
+          <b>{onShift.reduce((sum, person) => sum + person.queue_length, 0)}</b> в очереди
+        </span>
       </div>
       <div className="workload">
         {workers.map((person) => (
@@ -585,7 +812,17 @@ export function WorkloadView({ workers }: { workers: Workload[] }) {
                       ? "Очередь"
                       : "Не в смене"}
               </b>
-              <small>{person.current_order_number || `В очереди: ${person.queue_length}`}</small>
+              {person.current_order_id && person.current_order_number ? (
+                <button
+                  className="workload-order-link"
+                  type="button"
+                  onClick={() => onOpen(person.current_order_id!)}
+                >
+                  {person.current_order_number}
+                </button>
+              ) : (
+                <small>В очереди: {person.queue_length}</small>
+              )}
             </div>
           </article>
         ))}
@@ -597,63 +834,968 @@ export function ReferenceView({
   role,
   catalog,
   employees,
+  api,
+  onCatalogChange,
+  onEmployees,
+  section,
+  onSectionChange,
+  directoryFilters,
+  onDirectoryFiltersChange,
 }: {
   role: Role;
   catalog: Catalog | null;
   employees: { display_name: string; role: string; is_on_shift: boolean }[];
+  api: Api;
+  onCatalogChange: () => Promise<void>;
+  onEmployees?: () => void;
+  section: DirectorySection | null;
+  onSectionChange: (section: DirectorySection | null) => void;
+  directoryFilters: DirectoryFilters;
+  onDirectoryFiltersChange: (filters: DirectoryFilters) => void;
 }) {
+  const [editor, setEditor] = useState<{ kind: CatalogEditorKind; id?: string } | null>(null);
+  const sectionHeading = useRef<HTMLHeadingElement>(null);
+  const cardRefs = useRef<Partial<Record<DirectorySection, HTMLButtonElement | null>>>({});
+  const previousSection = useRef<DirectorySection | null>(null);
+  useEffect(() => {
+    const previous = previousSection.current;
+    previousSection.current = section;
+    if (section) {
+      if (section !== previous) setEditor(null);
+      const frame = requestAnimationFrame(() => sectionHeading.current?.focus());
+      return () => cancelAnimationFrame(frame);
+    }
+    if (!previous) return;
+    setEditor(null);
+    const frame = requestAnimationFrame(() => cardRefs.current[previous]?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [section]);
   if (!catalog)
     return (
       <section className="workspace">
         <p>Загрузка справочников…</p>
       </section>
     );
+  const canManageCatalog = role === "admin";
+  const activeAreas = catalog.areas.filter((item) => item.is_active !== false).length;
+  const activeEquipment = catalog.equipment.filter((item) => item.is_active !== false).length;
+  const sectionCards: Array<{
+    id: DirectorySection;
+    title: string;
+    count?: number;
+    summary: string;
+  }> = [
+    {
+      id: "areas",
+      title: "Участки",
+      count: catalog.areas.length,
+      summary: `${activeAreas} активных · зоны обслуживания и выдачи работ`,
+    },
+    {
+      id: "equipment",
+      title: "Оборудование",
+      count: catalog.equipment.length,
+      summary: `${activeEquipment} активных · инвентарные номера и критичность`,
+    },
+    ...(role === "admin" || role === "master"
+      ? [
+          {
+            id: "brigades" as const,
+            title: "Бригады",
+            count: catalog.brigades.length,
+            summary: "Состав ремонтных групп и назначение сотрудников",
+          },
+        ]
+      : []),
+    {
+      id: "materials",
+      title: "Материалы",
+      count: catalog.materials.length,
+      summary: "Расходники и единицы измерения для отчётов",
+    },
+    {
+      id: "fault-codes",
+      title: "Шифры неисправностей",
+      count: catalog.fault_codes.length,
+      summary: "Коды и специализации для сдачи работ",
+    },
+    ...(role === "admin" || role === "master"
+      ? [
+          {
+            id: "time-norms" as const,
+            title: "Нормативы времени",
+            count: catalog.time_norms.length,
+            summary: "Ориентир по шифру неисправности и типу оборудования",
+          },
+        ]
+      : []),
+    {
+      id: "employees",
+      title: "Сотрудники",
+      count: role === "admin" ? undefined : employees.length,
+      summary: role === "admin" ? "Учётные записи и доступы" : "Состав смены и доступность исполнителей",
+    },
+  ];
+  const directorySearch = directoryFilters.query;
+  const directoryState = directoryFilters.state;
+  const equipmentAreaId = directoryFilters.area;
+  const updateDirectoryFilters = (next: Partial<typeof directoryFilters>) =>
+    onDirectoryFiltersChange({ ...directoryFilters, ...next });
+  const resetFilters = () => onDirectoryFiltersChange({ query: "", state: "active", area: "" });
+  const openSection = (next: DirectorySection) => {
+    if (next === "employees" && role === "admin" && onEmployees) {
+      onEmployees();
+      return;
+    }
+    onSectionChange(next);
+  };
+  const goToOverview = () => onSectionChange(null);
+  const needle = directorySearch.trim().toLocaleLowerCase("ru-RU");
+  const matches = (...values: string[]) => values.join(" ").toLocaleLowerCase("ru-RU").includes(needle);
+  const inState = (active: boolean) =>
+    directoryState === "all" || (directoryState === "active" ? active : !active);
+  const empty = (count: number) =>
+    count === 0 && (
+      <div className="reference-empty" role="status">
+        <strong>По этим условиям ничего не найдено.</strong>
+        <p>Измените поиск или сбросьте фильтры.</p>
+        <button type="button" className="secondary" onClick={resetFilters}>
+          Сбросить фильтры
+        </button>
+      </div>
+    );
+  const stateTabs = (label: string) => (
+    <div className="directory-tabs" aria-label={label}>
+      {(["active", "archived", "all"] as const).map((value) => (
+        <button
+          key={value}
+          type="button"
+          className={directoryState === value ? "active" : ""}
+          aria-pressed={directoryState === value}
+          onClick={() => updateDirectoryFilters({ state: value })}
+        >
+          {value === "active" ? "Активные" : value === "archived" ? "Архив" : "Все"}
+        </button>
+      ))}
+    </div>
+  );
+  const search = (placeholder: string) => (
+    <label className="reference-search">
+      <span className="sr-only">Поиск по справочнику</span>
+      <input
+        aria-label="Поиск по справочнику"
+        value={directorySearch}
+        onChange={(event) => updateDirectoryFilters({ query: event.target.value })}
+        placeholder={placeholder}
+        type="search"
+      />
+    </label>
+  );
+  const stateLabel = (isActive: boolean) => (isActive ? "Активна" : "В архиве");
+  const resultCount = (count: number) => <p className="reference-results">Найдено: {count}</p>;
+  const areas = catalog.areas.filter(
+    (item) => inState(item.is_active !== false) && matches(item.code, item.name),
+  );
+  const equipment = catalog.equipment.filter(
+    (item) =>
+      inState(item.is_active !== false) &&
+      (!equipmentAreaId || item.area_id === equipmentAreaId) &&
+      matches(item.inventory_number, item.name, item.equipment_type),
+  );
+  const materials = catalog.materials.filter((item) => matches(item.code, item.name, item.unit));
+  const faultCodes = catalog.fault_codes.filter((item) => matches(item.code, item.name, item.specialty));
+  const brigades = catalog.brigades.filter((item) => matches(item.code, item.name));
+  const timeNorms = catalog.time_norms.filter((item) => {
+    const fault = catalog.fault_codes.find((code) => code.id === item.fault_code_id);
+    return matches(fault?.code ?? "", fault?.name ?? "", item.equipment_type, String(item.minutes));
+  });
+  const staff = employees.filter((item) =>
+    matches(
+      item.display_name,
+      roleLabels[item.role as Role] ?? item.role,
+      item.is_on_shift ? "в смене" : "не в смене",
+    ),
+  );
+
+  if (!section)
+    return (
+      <section className="workspace reference-workspace">
+        <div className="page-head">
+          <div>
+            <p className="eyebrow">{canManageCatalog ? "СПРАВОЧНИКИ" : "КОНТЕКСТ УЧАСТКА"}</p>
+            <h1>{canManageCatalog ? "Справочные данные" : "Справочники"}</h1>
+            <p className="muted reference-lead">
+              Выберите раздел, чтобы посмотреть сведения и выполнить доступные действия.
+            </p>
+          </div>
+        </div>
+        <div className="reference-overview" aria-label="Разделы справочника">
+          {sectionCards.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className="reference-card"
+              aria-label={`Открыть раздел: ${item.title}`}
+              onClick={() => openSection(item.id)}
+              ref={(node) => {
+                cardRefs.current[item.id] = node;
+              }}
+            >
+              {item.count !== undefined && <span className="reference-card-count">{item.count}</span>}
+              <strong>{item.title}</strong>
+              <small>{item.summary}</small>
+              <span className="reference-card-action">Открыть раздел →</span>
+            </button>
+          ))}
+        </div>
+      </section>
+    );
+
+  const sectionTitle = sectionCards.find((item) => item.id === section)?.title ?? "Справочники";
+  const editorMatchesSection =
+    editor &&
+    ((editor.kind === "area" && section === "areas") ||
+      (editor.kind === "equipment" && section === "equipment") ||
+      (editor.kind === "brigade" && section === "brigades") ||
+      (editor.kind === "material" && section === "materials") ||
+      (editor.kind === "fault-code" && section === "fault-codes") ||
+      (editor.kind === "time-norm" && section === "time-norms"));
+  const addAction: Partial<Record<DirectorySection, { kind: CatalogEditorKind; label: string }>> = {
+    areas: { kind: "area", label: "Добавить участок" },
+    equipment: { kind: "equipment", label: "Добавить оборудование" },
+    brigades: { kind: "brigade", label: "Добавить бригаду" },
+    materials: { kind: "material", label: "Добавить материал" },
+    "fault-codes": { kind: "fault-code", label: "Добавить шифр" },
+    "time-norms": { kind: "time-norm", label: "Добавить норматив" },
+  };
   return (
-    <section className="workspace">
+    <section className="workspace reference-workspace">
       <div className="page-head">
         <div>
-          <p className="eyebrow">{role === "admin" ? "СПРАВОЧНИКИ" : "ТОЛЬКО ЧТЕНИЕ"}</p>
-          <h1>{role === "admin" ? "Справочные данные" : "Контекст участка"}</h1>
+          <nav className="reference-breadcrumb" aria-label="Навигация справочника">
+            <button type="button" className="text-button reference-back" onClick={goToOverview}>
+              Все разделы
+            </button>
+            <span aria-hidden="true">/</span>
+            <span aria-current="page">{sectionTitle}</span>
+          </nav>
+          <p className="eyebrow">{canManageCatalog ? "СПРАВОЧНИКИ" : "ТОЛЬКО ЧТЕНИЕ"}</p>
+          <h1 ref={sectionHeading} tabIndex={-1}>
+            {sectionTitle}
+          </h1>
         </div>
+        {canManageCatalog && section && addAction[section] && (
+          <button className="primary" onClick={() => setEditor({ kind: addAction[section]!.kind })}>
+            {addAction[section]!.label}
+          </button>
+        )}
       </div>
-      {role === "admin" && (
+      {canManageCatalog && (section === "areas" || section === "equipment") && (
         <p className="notice">
-          Справочники доступны для просмотра. Учётные записи настраиваются в разделе «Сотрудники».
+          Управляйте участками и оборудованием. Архив не используется при выдаче новых нарядов, но сохраняется
+          в истории.
         </p>
       )}
-      <div className="reference-grid">
-        <section>
-          <h2>Участки</h2>
-          {catalog.areas.map((item) => (
-            <p key={item.id}>
-              {item.code} · {item.name}
-            </p>
-          ))}
+      {section === "areas" && (
+        <section className="reference-directory" aria-label="Список участков">
+          <div className="directory-controls">
+            {search("Код, инвентарный номер или название")}
+            {stateTabs("Статус участков")}
+          </div>
+          {resultCount(areas.length)}
+          <div className="reference-list">
+            {areas.map((item) => (
+              <article
+                className={`reference-row ${item.is_active === false ? "is-archived" : ""}`}
+                key={item.id}
+              >
+                <div>
+                  <strong>{item.code}</strong>
+                  <span>{item.name}</span>
+                </div>
+                <div className="reference-row-meta">
+                  <span className={item.is_active !== false ? "reference-state" : "reference-state archived"}>
+                    {stateLabel(item.is_active !== false)}
+                  </span>
+                  {canManageCatalog && (
+                    <button className="text-button" onClick={() => setEditor({ kind: "area", id: item.id })}>
+                      Изменить
+                    </button>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+          {empty(areas.length)}
         </section>
-        <section>
-          <h2>Оборудование</h2>
-          {catalog.equipment.map((item) => (
-            <p key={item.id}>
-              {item.inventory_number} · {item.name}
-            </p>
-          ))}
+      )}
+      {section === "equipment" && (
+        <section className="reference-directory" aria-label="Список оборудования">
+          <div className="directory-controls equipment-controls">
+            {search("Код, инвентарный номер или название")}
+            <label className="reference-area-filter">
+              <span>Участок</span>
+              <select
+                aria-label="Участок оборудования"
+                value={equipmentAreaId}
+                onChange={(event) => updateDirectoryFilters({ area: event.target.value })}
+              >
+                <option value="">Все участки</option>
+                {catalog.areas.map((area) => (
+                  <option value={area.id} key={area.id}>
+                    {area.code} · {area.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {stateTabs("Статус оборудования")}
+          </div>
+          {resultCount(equipment.length)}
+          <div className="reference-list">
+            {equipment.map((item) => {
+              const area = catalog.areas.find((value) => value.id === item.area_id);
+              return (
+                <article
+                  className={`reference-row ${item.is_active === false ? "is-archived" : ""}`}
+                  key={item.id}
+                >
+                  <div>
+                    <strong>{item.inventory_number}</strong>
+                    <span>{item.name}</span>
+                    <small>
+                      {area ? `${area.code} · ${area.name}` : "Участок не найден"} · {item.equipment_type} ·
+                      критичность {item.criticality}/5
+                    </small>
+                  </div>
+                  <div className="reference-row-meta">
+                    <span
+                      className={item.is_active !== false ? "reference-state" : "reference-state archived"}
+                    >
+                      {stateLabel(item.is_active !== false)}
+                    </span>
+                    {canManageCatalog && (
+                      <button
+                        className="text-button"
+                        onClick={() => setEditor({ kind: "equipment", id: item.id })}
+                      >
+                        Изменить
+                      </button>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+          {empty(equipment.length)}
         </section>
-        {role !== "admin" && (
-          <section>
-            <h2>Сотрудники</h2>
-            {employees.length ? (
-              employees.map((item, index) => (
-                <p key={`${item.display_name}-${index}`}>
-                  {item.display_name} · {roleLabels[item.role as Role] ?? "Сотрудник"} ·{" "}
-                  {item.is_on_shift ? "в смене" : "не в смене"}
-                </p>
-              ))
+      )}
+      {section === "materials" && (
+        <section className="reference-directory" aria-label="Список материалов">
+          <div className="directory-controls">{search("Код или название материала")}</div>
+          {resultCount(materials.length)}
+          <div className="reference-list">
+            {materials.map((item) => (
+              <article className="reference-row" key={item.id}>
+                <div>
+                  <strong>{item.code}</strong>
+                  <span>{item.name}</span>
+                </div>
+                <div className="reference-row-meta">
+                  <span className="reference-unit">Ед. изм.: {item.unit}</span>
+                  {canManageCatalog && (
+                    <button
+                      className="text-button"
+                      onClick={() => setEditor({ kind: "material", id: item.id })}
+                    >
+                      Изменить
+                    </button>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+          {empty(materials.length)}
+        </section>
+      )}
+      {section === "fault-codes" && (
+        <section className="reference-directory" aria-label="Список шифров неисправностей">
+          <div className="directory-controls">{search("Шифр или название неисправности")}</div>
+          {resultCount(faultCodes.length)}
+          <div className="reference-list">
+            {faultCodes.map((item) => (
+              <article className="reference-row" key={item.id}>
+                <div>
+                  <strong>{item.code}</strong>
+                  <span>{item.name}</span>
+                </div>
+                <div className="reference-row-meta">
+                  <span className="reference-unit">Специализация: {item.specialty || "Не указана"}</span>
+                  {canManageCatalog && (
+                    <button
+                      className="text-button"
+                      onClick={() => setEditor({ kind: "fault-code", id: item.id })}
+                    >
+                      Изменить
+                    </button>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+          {empty(faultCodes.length)}
+        </section>
+      )}
+      {section === "brigades" && (
+        <section className="reference-directory" aria-label="Список бригад">
+          <div className="directory-controls">{search("Код или название бригады")}</div>
+          {resultCount(brigades.length)}
+          <div className="reference-list">
+            {brigades.map((item) => (
+              <article className="reference-row" key={item.id}>
+                <div>
+                  <strong>{item.code}</strong>
+                  <span>{item.name}</span>
+                </div>
+                {canManageCatalog && (
+                  <div className="reference-row-meta">
+                    <button
+                      className="text-button"
+                      onClick={() => setEditor({ kind: "brigade", id: item.id })}
+                    >
+                      Изменить
+                    </button>
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+          {empty(brigades.length)}
+        </section>
+      )}
+      {section === "time-norms" && (
+        <section className="reference-directory" aria-label="Список нормативов времени">
+          <div className="directory-controls">{search("Шифр, тип оборудования или минуты")}</div>
+          {resultCount(timeNorms.length)}
+          <div className="reference-list">
+            {timeNorms.map((item) => {
+              const fault = catalog.fault_codes.find((code) => code.id === item.fault_code_id);
+              return (
+                <article className="reference-row" key={item.id}>
+                  <div>
+                    <strong>{fault ? `${fault.code} · ${fault.name}` : "Шифр не найден"}</strong>
+                    <span>{item.equipment_type}</span>
+                  </div>
+                  <div className="reference-row-meta">
+                    <span className="reference-unit">Норма: {item.minutes} мин</span>
+                    {canManageCatalog && (
+                      <button
+                        className="text-button"
+                        onClick={() => setEditor({ kind: "time-norm", id: item.id })}
+                      >
+                        Изменить
+                      </button>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+          {empty(timeNorms.length)}
+        </section>
+      )}
+      {section === "employees" && (
+        <section className="reference-directory" aria-label="Список сотрудников">
+          <div className="directory-controls">{search("Имя, роль или смена")}</div>
+          {resultCount(staff.length)}
+          <div className="reference-list">
+            {staff.map((item, index) => (
+              <article className="reference-row" key={`${item.display_name}-${index}`}>
+                <div>
+                  <strong>{item.display_name}</strong>
+                  <span>{roleLabels[item.role as Role] ?? "Сотрудник"}</span>
+                </div>
+                <div className="reference-row-meta">
+                  <span className={item.is_on_shift ? "reference-state" : "reference-state archived"}>
+                    {item.is_on_shift ? "В смене" : "Не в смене"}
+                  </span>
+                </div>
+              </article>
+            ))}
+          </div>
+          {empty(staff.length)}
+        </section>
+      )}
+      {editorMatchesSection &&
+        editor &&
+        (editor.kind === "area" || editor.kind === "equipment" ? (
+          <CatalogEditor
+            key={`${section}-${editor.kind}-${editor.id ?? "new"}`}
+            catalog={catalog}
+            api={api}
+            editor={editor as { kind: "area" | "equipment"; id?: string }}
+            onClose={() => setEditor(null)}
+            onSaved={async () => {
+              setEditor(null);
+              await onCatalogChange();
+            }}
+          />
+        ) : (
+          <SimpleCatalogEditor
+            key={`${section}-${editor.kind}-${editor.id ?? "new"}`}
+            catalog={catalog}
+            api={api}
+            editor={editor as { kind: Exclude<CatalogEditorKind, "area" | "equipment">; id?: string }}
+            onClose={() => setEditor(null)}
+            onSaved={async () => {
+              setEditor(null);
+              await onCatalogChange();
+            }}
+          />
+        ))}
+    </section>
+  );
+}
+
+function CatalogEditor({
+  catalog,
+  api,
+  editor,
+  onClose,
+  onSaved,
+}: {
+  catalog: Catalog;
+  api: Api;
+  editor: { kind: "area" | "equipment"; id?: string };
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const area = editor.kind === "area" ? catalog.areas.find((item) => item.id === editor.id) : undefined;
+  const equipment =
+    editor.kind === "equipment" ? catalog.equipment.find((item) => item.id === editor.id) : undefined;
+  const [input, setInput] = useState({
+    code: area?.code ?? "",
+    name: area?.name ?? equipment?.name ?? "",
+    inventory_number: equipment?.inventory_number ?? "",
+    area_id: equipment?.area_id ?? catalog.areas.find((item) => item.is_active !== false)?.id ?? "",
+    equipment_type: equipment?.equipment_type ?? "",
+    criticality: String(equipment?.criticality ?? 3),
+  });
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [archiveConfirm, setArchiveConfirm] = useState(false);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      if (editor.kind === "area") {
+        const value = { code: input.code.trim(), name: input.name.trim() };
+        if (area) await api.updateArea(area.id, value);
+        else await api.createArea(value);
+      } else {
+        const value = {
+          inventory_number: input.inventory_number.trim(),
+          name: input.name.trim(),
+          area_id: input.area_id,
+          equipment_type: input.equipment_type.trim(),
+          criticality: Number(input.criticality),
+        };
+        if (equipment) await api.updateEquipment(equipment.id, value);
+        else await api.createEquipment(value);
+      }
+      await onSaved();
+    } catch (caught) {
+      setError(
+        caught instanceof ApiError && caught.detail === "equipment_has_history"
+          ? "Оборудование с историей нарядов нельзя перенести на другой участок."
+          : caught instanceof ApiError && caught.status === 409
+            ? "Такой код уже есть или ссылка недействительна."
+            : "Не удалось сохранить изменения.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const setActive = async () => {
+    const target = area ?? equipment;
+    if (!target) return;
+    setBusy(true);
+    setError("");
+    try {
+      if (area) await api.setAreaActive(area.id, area.is_active === false);
+      if (equipment) await api.setEquipmentActive(equipment.id, equipment.is_active === false);
+      await onSaved();
+    } catch (caught) {
+      setError(
+        caught instanceof ApiError && caught.detail === "active_work_orders_exist"
+          ? `${area ? "Участок" : "Оборудование"} нельзя архивировать: есть незавершённые наряды. Завершите или отмените их, затем повторите.`
+          : "Не удалось изменить статус записи.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog
+      title={`${editor.id ? "Изменить" : "Добавить"} · ${editor.kind === "area" ? "участок" : "оборудование"}`}
+      onClose={onClose}
+    >
+      <form className="catalog-editor" onSubmit={(event) => void submit(event)}>
+        {editor.kind === "area" ? (
+          <>
+            <label>
+              Код
+              <input
+                value={input.code}
+                onChange={(event) => setInput({ ...input, code: event.target.value })}
+                required
+              />
+            </label>
+            <label>
+              Название
+              <input
+                value={input.name}
+                onChange={(event) => setInput({ ...input, name: event.target.value })}
+                required
+              />
+            </label>
+          </>
+        ) : (
+          <>
+            <label>
+              Инвентарный номер
+              <input
+                value={input.inventory_number}
+                onChange={(event) => setInput({ ...input, inventory_number: event.target.value })}
+                required
+              />
+            </label>
+            <label>
+              Название
+              <input
+                value={input.name}
+                onChange={(event) => setInput({ ...input, name: event.target.value })}
+                required
+              />
+            </label>
+            <label>
+              Участок
+              <select
+                value={input.area_id}
+                onChange={(event) => setInput({ ...input, area_id: event.target.value })}
+              >
+                {catalog.areas
+                  .filter((item) => item.is_active !== false || item.id === equipment?.area_id)
+                  .map((item) => (
+                    <option value={item.id} key={item.id}>
+                      {item.code} · {item.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              Тип
+              <input
+                value={input.equipment_type}
+                onChange={(event) => setInput({ ...input, equipment_type: event.target.value })}
+                required
+              />
+            </label>
+            <label>
+              Критичность
+              <select
+                value={input.criticality}
+                onChange={(event) => setInput({ ...input, criticality: event.target.value })}
+              >
+                {[1, 2, 3, 4, 5].map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
+        {error && <p className="error">{error}</p>}
+        <div className="dialog-actions">
+          <button className="secondary" type="button" onClick={onClose}>
+            Отмена
+          </button>
+          <button className="primary" disabled={busy}>
+            {busy ? "Сохраняем…" : "Сохранить"}
+          </button>
+        </div>
+        {(area || equipment) && (
+          <section className="catalog-archive" aria-label="Статус записи">
+            <strong>{(area ?? equipment)!.is_active !== false ? "Архивирование" : "Восстановление"}</strong>
+            <p>
+              {(area ?? equipment)!.is_active !== false
+                ? "Архив не участвует в выдаче новых нарядов. История останется доступной."
+                : "Восстановленная запись снова доступна при выдаче нарядов."}
+            </p>
+            {(area ?? equipment)!.is_active !== false && !archiveConfirm ? (
+              <button className="danger-button" type="button" onClick={() => setArchiveConfirm(true)}>
+                Архивировать запись
+              </button>
             ) : (
-              <p>Нет доступа к списку сотрудников.</p>
+              <div className="archive-confirm">
+                <button
+                  className={(area ?? equipment)!.is_active !== false ? "danger-button" : "secondary"}
+                  type="button"
+                  onClick={() => void setActive()}
+                  disabled={busy}
+                >
+                  {busy
+                    ? "Обновляем…"
+                    : (area ?? equipment)!.is_active !== false
+                      ? "Подтвердить архивирование"
+                      : "Восстановить запись"}
+                </button>
+              </div>
             )}
           </section>
         )}
-      </div>
-    </section>
+      </form>
+    </Dialog>
+  );
+}
+
+function SimpleCatalogEditor({
+  catalog,
+  api,
+  editor,
+  onClose,
+  onSaved,
+}: {
+  catalog: Catalog;
+  api: Api;
+  editor: { kind: Exclude<CatalogEditorKind, "area" | "equipment">; id?: string };
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const brigade =
+    editor.kind === "brigade" ? catalog.brigades.find((item) => item.id === editor.id) : undefined;
+  const material =
+    editor.kind === "material" ? catalog.materials.find((item) => item.id === editor.id) : undefined;
+  const fault =
+    editor.kind === "fault-code" ? catalog.fault_codes.find((item) => item.id === editor.id) : undefined;
+  const norm =
+    editor.kind === "time-norm" ? catalog.time_norms.find((item) => item.id === editor.id) : undefined;
+  const record = brigade ?? material ?? fault ?? norm;
+  const labels: Record<typeof editor.kind, string> = {
+    brigade: "бригада",
+    material: "материал",
+    "fault-code": "шифр неисправности",
+    "time-norm": "норматив времени",
+  };
+  const [input, setInput] = useState({
+    code: brigade?.code ?? material?.code ?? fault?.code ?? "",
+    name: brigade?.name ?? material?.name ?? fault?.name ?? "",
+    specialty: fault?.specialty ?? "",
+    unit: material?.unit ?? "",
+    fault_code_id: norm?.fault_code_id ?? catalog.fault_codes[0]?.id ?? "",
+    equipment_type: norm?.equipment_type ?? "",
+    minutes: String(norm?.minutes ?? ""),
+  });
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const write = async () => {
+    const codeName = { code: input.code.trim(), name: input.name.trim() };
+    if (editor.kind === "brigade") {
+      if (brigade) await api.updateBrigade(brigade.id, codeName);
+      else await api.createBrigade(codeName);
+    }
+    if (editor.kind === "material") {
+      const value = { ...codeName, unit: input.unit.trim() };
+      if (material) await api.updateMaterial(material.id, value);
+      else await api.createMaterial(value);
+    }
+    if (editor.kind === "fault-code") {
+      const value = { ...codeName, specialty: input.specialty.trim() };
+      if (fault) await api.updateFaultCode(fault.id, value);
+      else await api.createFaultCode(value);
+    }
+    if (editor.kind === "time-norm") {
+      const value = {
+        fault_code_id: input.fault_code_id,
+        equipment_type: input.equipment_type.trim(),
+        minutes: Number(input.minutes),
+      };
+      if (norm) await api.updateTimeNorm(norm.id, value);
+      else await api.createTimeNorm(value);
+    }
+  };
+  const errorMessage = (caught: unknown, verb: "save" | "delete") => {
+    if (!(caught instanceof ApiError))
+      return verb === "save" ? "Не удалось сохранить изменения." : "Не удалось удалить запись.";
+    if (caught.detail === "reference_in_use")
+      return "Запись используется в связанных данных и не может быть удалена. Сохраните историю или сначала измените связанные записи.";
+    if (caught.detail === "material_has_history" || caught.detail === "material_unit_has_history")
+      return "Материал уже использован в нарядах. Чтобы сохранить историю, его код, название и единицу менять нельзя. Добавьте новую позицию.";
+    if (caught.detail === "fault_code_has_history")
+      return "Шифр уже использован в нарядах. Чтобы сохранить историю, добавьте новый шифр вместо изменения существующего.";
+    if (caught.detail === "duplicate_or_invalid_reference" || caught.status === 409)
+      return "Такой код уже существует или выбранная ссылка больше недействительна.";
+    if (caught.status === 404) return "Запись уже удалена. Обновите список справочника.";
+    return verb === "save" ? "Не удалось сохранить изменения." : "Не удалось удалить запись.";
+  };
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await write();
+      await onSaved();
+    } catch (caught) {
+      setError(errorMessage(caught, "save"));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async () => {
+    if (!record) return;
+    setBusy(true);
+    setError("");
+    try {
+      if (editor.kind === "brigade") await api.deleteBrigade(record.id);
+      if (editor.kind === "material") await api.deleteMaterial(record.id);
+      if (editor.kind === "fault-code") await api.deleteFaultCode(record.id);
+      if (editor.kind === "time-norm") await api.deleteTimeNorm(record.id);
+      await onSaved();
+    } catch (caught) {
+      setError(errorMessage(caught, "delete"));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog title={`${editor.id ? "Изменить" : "Добавить"} · ${labels[editor.kind]}`} onClose={onClose}>
+      <form className="catalog-editor" onSubmit={(event) => void submit(event)}>
+        {editor.kind !== "time-norm" ? (
+          <>
+            <label>
+              Код
+              <input
+                value={input.code}
+                onChange={(event) => setInput({ ...input, code: event.target.value })}
+                required
+                minLength={2}
+                maxLength={32}
+              />
+            </label>
+            <label>
+              Название
+              <input
+                value={input.name}
+                onChange={(event) => setInput({ ...input, name: event.target.value })}
+                required
+                maxLength={160}
+              />
+            </label>
+          </>
+        ) : (
+          <>
+            <label>
+              Шифр неисправности
+              <select
+                value={input.fault_code_id}
+                onChange={(event) => setInput({ ...input, fault_code_id: event.target.value })}
+                required
+              >
+                <option value="">Выберите шифр</option>
+                {catalog.fault_codes.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.code} · {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Тип оборудования
+              <input
+                value={input.equipment_type}
+                onChange={(event) => setInput({ ...input, equipment_type: event.target.value })}
+                required
+                maxLength={64}
+              />
+            </label>
+            <label>
+              Норма, минут
+              <input
+                type="number"
+                min="1"
+                max="100000"
+                value={input.minutes}
+                onChange={(event) => setInput({ ...input, minutes: event.target.value })}
+                required
+              />
+            </label>
+          </>
+        )}
+        {editor.kind === "fault-code" && (
+          <label>
+            Специализация
+            <input
+              value={input.specialty}
+              onChange={(event) => setInput({ ...input, specialty: event.target.value })}
+              required
+              maxLength={64}
+            />
+          </label>
+        )}
+        {editor.kind === "material" && (
+          <label>
+            Единица измерения
+            <input
+              value={input.unit}
+              onChange={(event) => setInput({ ...input, unit: event.target.value })}
+              required
+              maxLength={24}
+            />
+          </label>
+        )}
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="dialog-actions">
+          <button className="secondary" type="button" onClick={onClose}>
+            Отмена
+          </button>
+          <button className="primary" disabled={busy}>
+            {busy ? "Сохраняем…" : "Сохранить"}
+          </button>
+        </div>
+        {record && (
+          <section className="catalog-archive catalog-delete" aria-label="Удаление записи">
+            <strong>Удаление записи</strong>
+            <p>
+              Удаление доступно только пока запись не используется в нарядах, нормативах или составе бригады.
+            </p>
+            {!deleteConfirm ? (
+              <button className="danger-button" type="button" onClick={() => setDeleteConfirm(true)}>
+                Удалить запись
+              </button>
+            ) : (
+              <div className="archive-confirm">
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={() => setDeleteConfirm(false)}
+                  disabled={busy}
+                >
+                  Не удалять
+                </button>
+                <button className="danger-button" type="button" onClick={() => void remove()} disabled={busy}>
+                  {busy ? "Удаляем…" : "Подтвердить удаление"}
+                </button>
+              </div>
+            )}
+          </section>
+        )}
+      </form>
+    </Dialog>
   );
 }

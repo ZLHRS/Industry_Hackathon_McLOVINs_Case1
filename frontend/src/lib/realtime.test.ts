@@ -59,10 +59,17 @@ describe("RealtimeConnection", () => {
     setup();
     const refresh = vi.fn();
     const live = vi.fn();
+    const events: string[] = [];
     const connection = new RealtimeConnection({
       token: "secret",
-      onState: live,
-      onRefresh: refresh,
+      onState: (state) => {
+        live(state);
+        if (state === "live") events.push("live");
+      },
+      onRefresh: (revision) => {
+        refresh(revision);
+        events.push("refresh");
+      },
       onUnauthorized: vi.fn(),
       WebSocketImpl: FakeSocket as unknown as typeof WebSocket,
     });
@@ -76,6 +83,7 @@ describe("RealtimeConnection", () => {
     socket.onmessage?.({ data: JSON.stringify({ type: "ready", revision: 1 }) } as MessageEvent);
     expect(live).toHaveBeenLastCalledWith("live");
     expect(refresh).toHaveBeenCalledWith(1);
+    expect(events).toEqual(["refresh", "live"]);
     connection.stop();
   });
 

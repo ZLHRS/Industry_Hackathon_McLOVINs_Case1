@@ -2,8 +2,9 @@ import { navigation, permittedView, canViewWorkload, type View } from "./lib/rol
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Api, ApiError, clearMutationKeys } from "./api";
 import { Login } from "./features/Login";
-import { OrderDetailDialog } from "./features/OrderDetail";
+import { OrderDetailDialog, type ActionOutcome } from "./features/OrderDetail";
 import { NotificationButton, NotificationsDialog } from "./features/Notifications";
+import { DeviceSetup } from "./features/DeviceSetup";
 import { RealtimeConnection } from "./lib/realtime";
 import { OrdersView, ReferenceView, WorkloadView } from "./features/Workspace";
 import { EmployeesView } from "./features/Employees";
@@ -20,6 +21,7 @@ import {
 } from "./lib/offline";
 import type { ActionRequest, Catalog, Employee, EventItem, OrderPage, User, Workload } from "./types";
 import "./styles.css";
+import { useAppLocation, readRoute, navigate, directoryUrl, closeOrderPage } from "./lib/navigation";
 
 type Dashboard = { catalog: Catalog; orders: OrderPage; workload: Workload[]; employees: Employee[] };
 const tokenKey = "naryadai.session.token";
@@ -33,6 +35,13 @@ const actionLabels: Record<string, string> = {
   pause: "Пауза",
   resume: "Возобновление",
   complete: "Сдача работы",
+};
+const navIcons: Record<View, string> = {
+  orders: "▦",
+  workload: "◒",
+  reference: "⌘",
+  analytics: "↗",
+  employees: "◎",
 };
 function storedUser(): User | null {
   try {
@@ -66,8 +75,32 @@ export default function App() {
   );
   const [user, setUser] = useState<User | null>(() => (initialToken ? storedUser() : null));
   const [data, setData] = useState<Dashboard | null>(null);
-  const [view, setView] = useState<View>("orders");
-  const [selected, setSelected] = useState<string | null>(null);
+  const appLocation = useAppLocation();
+  const route = readRoute(appLocation);
+  const view = route.view;
+  const selected = route.orderId;
+  const setView = (next: View) => navigate("/" + next);
+  const setSelected = (id: string | null) => (id ? navigate("/orders/" + id) : closeOrderPage());
+  useEffect(() => {
+    if (!user) return;
+    const current = readRoute(appLocation);
+    if (user.role === "admin" && current.view === "reference" && current.section === "employees") {
+      navigate("/employees", true);
+      return;
+    }
+    const allowed = permittedView(user.role, current.view);
+    if (allowed !== current.view) {
+      navigate("/" + allowed, true);
+      return;
+    }
+    const path = current.section
+      ? "/reference/" + current.section
+      : current.orderId
+        ? "/orders/" + current.orderId
+        : "/" + allowed;
+    const query = appLocation.includes("?") ? appLocation.slice(appLocation.indexOf("?")) : "";
+    navigate(path + query, true);
+  }, [appLocation, user]);
   const [loading, setLoading] = useState(Boolean(token));
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -94,6 +127,8 @@ export default function App() {
     area_id: "",
     equipment_id: "",
     executor_id: "",
+    query: "",
+    attention: false,
     offset: 0,
   });
   const authGeneration = useRef(0);
@@ -132,7 +167,7 @@ export default function App() {
       setData(null);
       setPending([]);
       setSavedAt(null);
-      setSelected(null);
+      navigate("/", true);
       if (actor) await clearActor(actor).catch(() => undefined);
     },
     [user?.id],
@@ -201,6 +236,8 @@ export default function App() {
                 area_id: currentFilters.area_id || undefined,
                 equipment_id: currentFilters.equipment_id || undefined,
                 executor_id: actor.role === "executor" ? actor.id : currentFilters.executor_id || undefined,
+                q: currentFilters.query || undefined,
+                attention: currentFilters.attention || undefined,
                 offset: currentFilters.offset,
                 limit: 50,
               }),
@@ -228,7 +265,14 @@ export default function App() {
             : await getSnapshot<Dashboard>(actor.id, "dashboard").catch(() => null);
         if (cached) {
           if (guard !== authGeneration.current || request !== refreshGeneration.current) return;
-          setData(cached.data);
+          setData(
+            currentFilters.query
+              ? {
+                  ...cached.data,
+                  orders: { items: [], total: 0, counts: {} as OrderPage["counts"], offset: 0, limit: 50 },
+                }
+              : cached.data,
+          );
           setPending(await listPending(actor.id));
           setSavedAt(cached.savedAt);
           setNotice("Показан сохранённый снимок. Новые данные появятся после восстановления связи.");
@@ -255,7 +299,6 @@ export default function App() {
         actorIdRef.current = next.id;
         sessionStorage.setItem(userKey, JSON.stringify(next));
         setUser(next);
-        setView((current) => (next.role === "admin" ? "employees" : current));
         await refreshRef.current(next);
         if (!live || sessionStorage.getItem(tokenKey) !== token) return;
         const report = await syncRef.current(next.id);
@@ -340,16 +383,16 @@ export default function App() {
       .notification(id)
       .then((item) => {
         if (!active) return;
-        setSelected(item.order_id);
+        navigate(item.order_id ? "/orders/" + item.order_id : "/orders", true);
         setInboxOpen(false);
-        history.replaceState(null, "", location.pathname);
+        navigate(location.pathname, true);
         void api.markNotificationRead(id).catch(() => undefined);
       })
       .catch(() => {
         if (!active) return;
         setInboxOpen(true);
         setNotice("Уведомление больше недоступно. Открыт ваш журнал.");
-        history.replaceState(null, "", location.pathname);
+        navigate(location.pathname, true);
       });
     return () => {
       active = false;
@@ -365,21 +408,30 @@ export default function App() {
     authGeneration.current += 1;
     sessionStorage.setItem(tokenKey, response.access_token);
     sessionStorage.setItem(expiryKey, response.expires_at);
-    setView("orders");
     setToken(response.access_token);
   }
-  async function directAction(id: string, request: ActionRequest, canQueue = false) {
-    if (!user) return;
+  async function directAction(id: string, request: ActionRequest, canQueue = false): Promise<ActionOutcome> {
+    if (!user) throw new ApiError(401, "unauthorized");
     if (user.role === "executor" && canQueue) {
-      await enqueue({ actorId: user.id, orderId: id, request });
+      const entry = await enqueue({ actorId: user.id, orderId: id, request });
       setPending(await listPending(user.id));
       const report = await sync(user.id);
+      if (report.unauthorized) throw new ApiError(401, "unauthorized");
+      const remaining = (await listPending(user.id)).find((item) => item.id === entry.id);
       if (report.offline || report.remaining) setNotice("Действие ожидает подтверждения сервером.");
       await refresh();
-      return;
+      return remaining
+        ? {
+            state: remaining.state === "blocked" ? "blocked" : "pending",
+            message:
+              remaining.error ??
+              "Действие сохранено на устройстве. Отправим его при восстановлении связи; статус ещё не изменён.",
+          }
+        : { state: "confirmed" };
     }
     await api.action(id, request);
     await refresh();
+    return { state: "confirmed" };
   }
   async function signOut() {
     const actor = user;
@@ -428,10 +480,14 @@ export default function App() {
             Тех<span>Наряд</span>
           </strong>
         </div>
+        <p className="nav-caption">РАБОЧИЙ КОНТУР</p>
         <nav aria-label="Основная навигация">
           {currentNav.map(([key, label]) => (
             <button key={key} className={visibleView === key ? "active" : ""} onClick={() => setView(key)}>
-              {label}
+              <span className="nav-icon" aria-hidden="true">
+                {navIcons[key]}
+              </span>
+              <span>{label}</span>
             </button>
           ))}
         </nav>
@@ -457,26 +513,38 @@ export default function App() {
           <strong>ТехНаряд</strong>
         </div>
         <div>
-          <small>{user.display_name}</small>
+          <small>
+            {user.display_name} · {user.role === "executor" ? "смена" : "контур"}
+          </small>
           <button aria-label="Выйти из учётной записи" onClick={() => void signOut()}>
             Выйти
           </button>
         </div>
       </header>{" "}
       <main className="app-main">
+        {history.state?.technaryad && history.state?.parent && (
+          <nav className="page-navigation" aria-label="Навигация страницы">
+            <button type="button" className="text-button" onClick={() => history.back()}>
+              ← Назад
+            </button>
+          </nav>
+        )}
         {user.role !== "admin" && (
-          <div className="live-bar">
-            <span className={`live-dot ${liveState}`}></span>
-            {liveState === "live"
-              ? "Обновления включены"
-              : liveState === "reconnecting"
-                ? "Переподключение…"
-                : liveState === "connecting"
-                  ? "Подключение…"
-                  : "Нет соединения"}
+          <div className="live-bar" data-live-state={liveState}>
+            {liveState !== "live" && (
+              <span className="connection-state" role="status">
+                <span className={`live-dot ${liveState}`}></span>
+                {liveState === "reconnecting"
+                  ? "Переподключение…"
+                  : liveState === "connecting"
+                    ? "Подключение…"
+                    : "Нет соединения"}
+              </span>
+            )}
             <NotificationButton count={unreadCount} onOpen={() => setInboxOpen(true)} />
           </div>
         )}
+        {user.role !== "admin" && <DeviceSetup />}
         {(notice || savedAt || error) && (
           <div className={error ? "banner error-banner" : "banner"} role={error ? "alert" : "status"}>
             {error || notice}
@@ -553,7 +621,7 @@ export default function App() {
             loading={loading}
           />
         )}{" "}
-        {visibleView === "workload" && <WorkloadView workers={data?.workload ?? []} />}{" "}
+        {visibleView === "workload" && <WorkloadView workers={data?.workload ?? []} onOpen={setSelected} />}{" "}
         {visibleView === "analytics" && <AnalyticsView api={api} role={user.role} revision={liveRevision} />}{" "}
         {visibleView === "employees" &&
           user.role === "admin" &&
@@ -568,7 +636,18 @@ export default function App() {
             <p>Загрузка данных сотрудников…</p>
           ))}
         {visibleView === "reference" && (
-          <ReferenceView role={user.role} catalog={data?.catalog ?? null} employees={data?.employees ?? []} />
+          <ReferenceView
+            role={user.role}
+            catalog={data?.catalog ?? null}
+            employees={data?.employees ?? []}
+            api={api}
+            onCatalogChange={refresh}
+            onEmployees={() => setView("employees")}
+            section={route.section}
+            onSectionChange={(section) => navigate(directoryUrl(section))}
+            directoryFilters={route.directoryFilters}
+            onDirectoryFiltersChange={(filters) => navigate(directoryUrl(route.section, filters), true)}
+          />
         )}
       </main>
       <nav
@@ -611,8 +690,8 @@ export default function App() {
           onReport={(id) => api.orderReport(id)}
           onDowntime={(id, input) => api.downtime(id, input)}
           onAssessRefusal={(id, eventId, input) => api.assessRefusal(id, eventId, input)}
-          onPhoto={async (id, kind, version, file) => {
-            await api.photo(id, kind, version, file);
+          onPhoto={async (id, kind, version, file, aiShareAllowed, capturedAt) => {
+            await api.photo(id, kind, version, file, aiShareAllowed, undefined, capturedAt);
             await refresh();
           }}
           onClose={() => setSelected(null)}

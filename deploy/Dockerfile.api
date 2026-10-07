@@ -1,0 +1,19 @@
+FROM ghcr.io/astral-sh/uv:0.9.18@sha256:5713fa8217f92b80223bc83aac7db36ec80a84437dbc0d04bbc659cae030d8c9 AS uv
+FROM python:3.13.11-slim-bookworm@sha256:20080e807bfc404f8450b185cf0fc95d553462673598549613735f70a5b4d5d0
+COPY --from=uv /uv /usr/local/bin/uv
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+WORKDIR /app
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --locked --no-dev --no-install-project --python /usr/local/bin/python
+COPY src ./src
+RUN uv sync --locked --no-dev --no-editable --python /usr/local/bin/python \
+    && groupadd --gid 10001 app && useradd --uid 10001 --gid app --no-create-home app \
+    && mkdir -p /app/var/photos && chown -R app:app /app/var
+COPY alembic.ini ./
+COPY migrations ./migrations
+COPY seeds ./seeds
+COPY deploy/container_entrypoint.py ./deploy/container_entrypoint.py
+ENV PATH="/app/.venv/bin:$PATH"
+USER 10001:10001
+ENTRYPOINT ["python", "deploy/container_entrypoint.py"]
+CMD ["python", "-m", "uvicorn", "naryadai.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=10.77.88.2", "--ws", "websockets-sansio", "--ws-max-size", "4096", "--no-access-log"]

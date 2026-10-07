@@ -1,12 +1,11 @@
 # Телефон через Cloudflare Tunnel
 
-Команды выполняются в **Ubuntu/WSL**, из корня проекта. Телефон может быть в другой
-Wi-Fi-сети или пользоваться мобильным интернетом: открывать порты Windows/роутера не нужно.
+Команды выполняются в **Linux/WSL или macOS**, из корня проекта. Телефон может быть в другой
+Wi-Fi-сети или пользоваться мобильным интернетом: открывать порты компьютера/роутера не нужно.
 
 ## Запуск в подготовленном проекте
 
 ```bash
-cd /home/zlhrs/Industry_Hackathon
 uv run --locked python scripts/dev_database.py start
 uv run --locked python scripts/phone_tunnel.py
 ```
@@ -49,9 +48,10 @@ uv run --locked alembic upgrade head
 cloudflared --version
 ```
 
-Если cloudflared отсутствует, установите его **в Ubuntu**, следуя
+Если cloudflared отсутствует, установите его для своей ОС, следуя
 [официальной инструкции Cloudflare](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/).
-В текущем WSL cloudflared уже установлен. Для подготовки PostgreSQL смотрите корневой README.
+Для подготовки PostgreSQL смотрите корневой README. На macOS установленные бинарники
+используются только для отдельного проектного кластера; при необходимости задайте `NARYADAI_PG_BIN`.
 Скрипт не устанавливает системные программы автоматически.
 
 ## Что проверить на телефоне

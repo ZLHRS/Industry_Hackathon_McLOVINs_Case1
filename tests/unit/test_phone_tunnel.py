@@ -64,13 +64,26 @@ def test_busy_port_fails_without_stopping_owner() -> None:
             pass
 
 
+def test_closed_http_connection_does_not_block_immediate_demo_restart() -> None:
+    with socket.socket() as server:
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("127.0.0.1", 0))
+        port = server.getsockname()[1]
+        server.listen()
+        with socket.create_connection(("127.0.0.1", port), timeout=1) as client:
+            connection, _ = server.accept()
+            connection.close()
+            assert client.recv(1) == b""
+    _MODULE.require_free_ports(port)
+
+
 @pytest.mark.parametrize("ports", [(8001, 8001), (0, 5174), (8001, 65536)])
 def test_invalid_ports_rejected(ports: tuple[int, int]) -> None:
     with pytest.raises(_MODULE.PhoneError):
         _MODULE.require_free_ports(*ports)
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Ubuntu/WSL process groups")
+@pytest.mark.skipif(sys.platform not in {"linux", "darwin"}, reason="POSIX process groups")
 def test_cleanup_terminates_owned_descendants_but_preserves_unrelated_process(
     tmp_path: Path,
 ) -> None:

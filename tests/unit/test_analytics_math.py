@@ -10,8 +10,14 @@ from pydantic import ValidationError
 from naryadai.analytics.contracts import AnalyticsQuery
 from naryadai.analytics.data import Snapshot
 from naryadai.analytics.history import parse_time, status_at, union_seconds
+from naryadai.analytics.insights import anomalies
 from naryadai.analytics.periods import resolve_period
-from naryadai.analytics.ratings import build_ratings, latest_score
+from naryadai.analytics.ratings import (
+    build_ratings,
+    final_submission_actor,
+    latest_score,
+    rework_actors,
+)
 from naryadai.domain.lifecycle import WorkOrderStatus as Status
 
 START = datetime(2026, 6, 1, tzinfo=UTC)
@@ -146,6 +152,122 @@ def test_final_review_link_is_authoritative_and_missing_evidence_stays_unknown()
     assert latest_score(order, data) is None
     order.closed_at = None
     assert latest_score(order, data) is None
+
+
+def test_reassignment_attributes_final_quality_and_rework_to_their_submission_authors():
+    first, replacement, peer, machine, fault = (uuid4() for _ in range(5))
+    master = uuid4()
+
+    def item(executor, *, number, reworked=False):
+        row = Obj(
+            id=uuid4(),
+            executor_id=executor,
+            equipment_id=machine,
+            fault_code_id=fault,
+            issued_at=START,
+            completed_at=START + timedelta(hours=2),
+            closed_at=START + timedelta(hours=3),
+            deadline=START + timedelta(hours=4),
+            attempt=2 if reworked else 1,
+            last_submission_version=2 if reworked else 1,
+            work_type=Obj(value="unplanned"),
+        )
+        if not reworked:
+            return row, []
+        return row, [
+            Obj(
+                action="complete",
+                actor_id=first,
+                occurred_at=START + timedelta(minutes=30),
+                sequence=1,
+                order_version=1,
+                details={"submission_version": 1},
+                to_status=Status.COMPLETED,
+            ),
+            Obj(
+                action="mark_rework",
+                actor_id=None,
+                occurred_at=START + timedelta(minutes=40),
+                sequence=2,
+                order_version=1,
+                details={"submission_version": 1},
+                to_status=Status.REWORK,
+            ),
+            Obj(
+                action="reassign",
+                actor_id=master,
+                occurred_at=START + timedelta(minutes=50),
+                sequence=3,
+                order_version=1,
+                details={"previous_executor_id": str(first), "executor_id": str(replacement)},
+                to_status=Status.ISSUED,
+            ),
+            Obj(
+                action="complete",
+                actor_id=replacement,
+                occurred_at=START + timedelta(hours=1),
+                sequence=4,
+                order_version=2,
+                details={"submission_version": 2},
+                to_status=Status.COMPLETED,
+            ),
+            Obj(
+                action="close",
+                actor_id=master,
+                occurred_at=START + timedelta(hours=3),
+                sequence=5,
+                order_version=2,
+                details={"submission_version": 2},
+                to_status=Status.CLOSED,
+            ),
+        ]
+
+    replacement_rows = []
+    events = {}
+    for index in range(5):
+        row, row_events = item(replacement, number=f"R{index}", reworked=True)
+        replacement_rows.append(row)
+        events[row.id] = row_events
+    reassigned, reassigned_events = replacement_rows[0], events[replacement_rows[0].id]
+    peer_rows = [item(peer, number=f"P{index}")[0] for index in range(5)]
+    rows = [*replacement_rows, *peer_rows]
+    data = Snapshot(
+        rows,
+        events,
+        [],
+        [],
+        {
+            first: Obj(display_name="First", brigade_id=None),
+            replacement: Obj(display_name="Replacement", brigade_id=None),
+            peer: Obj(display_name="Peer", brigade_id=None),
+        },
+        {machine: Obj(name="Pump", equipment_type="pump")},
+        {},
+        {},
+        {fault: Obj(code="F", name="Fault")},
+        {(fault, "pump"): 60},
+    )
+
+    assert final_submission_actor(reassigned, data) == replacement
+    assert rework_actors(reassigned, reassigned_events, NOW) == {first}
+    replacement_rating = next(
+        rating
+        for rating in build_ratings(rows, data, START, END, NOW).employees
+        if rating.subject_id == replacement
+    )
+    first_rating = next(
+        rating
+        for rating in build_ratings(rows, data, START, END, NOW).employees
+        if rating.subject_id == first
+    )
+    assert first_rating.sample_size == 5
+    assert first_rating.components["rework"].numerator == 5
+    assert first_rating.components["rework"].denominator == 5
+    assert first_rating.components["rework"].value == 0
+    assert replacement_rating.components["rework"].value == 1
+    signals = anomalies(rows, data, START, END, NOW)
+    concentration = [item for item in signals if item.family == "rework_concentration"]
+    assert [item.evidence["executor_id"] for item in concentration] == [str(first)]
 
 
 @pytest.mark.parametrize(

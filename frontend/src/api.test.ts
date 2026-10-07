@@ -34,6 +34,48 @@ const input: CreateOrder = {
 };
 const success = () =>
   new Response(JSON.stringify({ order_id: "order", version: 2, status: "issued" }), { status: 200 });
+
+function jpegWithExifDate(date: string, timezone: string) {
+  const dateBytes = new TextEncoder().encode(`${date}\0`);
+  const timezoneBytes = new TextEncoder().encode(`${timezone}\0`);
+  const tiff = new Uint8Array(56 + dateBytes.length + timezoneBytes.length);
+  const view = new DataView(tiff.buffer);
+  tiff.set([0x49, 0x49]);
+  view.setUint16(2, 42, true);
+  view.setUint32(4, 8, true);
+  view.setUint16(8, 1, true);
+  view.setUint16(10, 0x8769, true);
+  view.setUint16(12, 4, true);
+  view.setUint32(14, 1, true);
+  view.setUint32(18, 26, true);
+  view.setUint16(26, 2, true);
+  view.setUint16(28, 0x9003, true);
+  view.setUint16(30, 2, true);
+  view.setUint32(32, dateBytes.length, true);
+  view.setUint32(36, 56, true);
+  view.setUint16(40, 0x9011, true);
+  view.setUint16(42, 2, true);
+  view.setUint32(44, timezoneBytes.length, true);
+  view.setUint32(48, 56 + dateBytes.length, true);
+  tiff.set(dateBytes, 56);
+  tiff.set(timezoneBytes, 56 + dateBytes.length);
+  const app1Length = tiff.length + 8;
+  return new Uint8Array([
+    0xff,
+    0xd8,
+    0xff,
+    0xe1,
+    app1Length >> 8,
+    app1Length & 0xff,
+    0x45,
+    0x78,
+    0x69,
+    0x66,
+    0,
+    0,
+    ...tiff,
+  ]);
+}
 beforeEach(() => {
   vi.stubGlobal("sessionStorage", new MemoryStorage());
   clearMutationKeys();
@@ -157,6 +199,51 @@ describe("central authentication and private photo boundaries", () => {
       ApiError,
     );
     expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("keeps a photo upload available when a JPEG contains truncated EXIF metadata", async () => {
+    const fetcher = vi.fn(async () => success());
+    vi.stubGlobal("fetch", fetcher);
+    const corruptedExif = new File(
+      [new Uint8Array([0xff, 0xd8, 0xff, 0xe1, 0x00, 0x08, 0x45, 0x78, 0x69, 0x66, 0x00, 0x00])],
+      "camera.jpg",
+      { type: "image/jpeg" },
+    );
+    await new Api(() => "session").photo("order", "before", 1, corruptedExif);
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(
+      "/api/v1/work-orders/order/photos?kind=before&expected_version=1&ai_share_allowed=false",
+    );
+    expect(init.body).toBe(corruptedExif);
+  });
+
+  it("keeps only a valid EXIF timestamp with a declared offset", async () => {
+    const fetcher = vi.fn(async () => success());
+    vi.stubGlobal("fetch", fetcher);
+    const valid = new File([jpegWithExifDate("2026:10:07 14:05:06", "+06:00")], "valid.jpg", {
+      type: "image/jpeg",
+    });
+    const malformed = new File([jpegWithExifDate("2026:99:07 14:05:06", "+99:99")], "bad.jpg", {
+      type: "image/jpeg",
+    });
+    const api = new Api(() => "session");
+    await api.photo("valid", "before", 1, valid);
+    await api.photo("malformed", "before", 1, malformed);
+    const [validUrl] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    const [malformedUrl] = fetcher.mock.calls[1] as unknown as [string, RequestInit];
+    expect(new URL(validUrl, "https://example.test").searchParams.get("captured_at")).toBe(
+      "2026-10-07T14:05:06+06:00",
+    );
+    expect(new URL(malformedUrl, "https://example.test").searchParams.has("captured_at")).toBe(false);
+  });
+
+  it("keeps external AI image sharing opt-in for each upload", async () => {
+    const fetcher = vi.fn(async () => success());
+    vi.stubGlobal("fetch", fetcher);
+    const photo = new File([new Uint8Array([1, 2, 3])], "checked.jpg", { type: "image/jpeg" });
+    await new Api(() => "session").photo("order", "after", 3, photo, true);
+    const [url] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(new URL(url, "https://example.test").searchParams.get("ai_share_allowed")).toBe("true");
   });
 });
 

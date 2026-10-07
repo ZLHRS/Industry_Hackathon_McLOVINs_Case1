@@ -17,6 +17,28 @@
 .order-next-step button {
   flex-shrink: 0;
 }
+.order-detail .facts > div {
+  min-width: 0;
+}
+.order-detail .facts dd {
+  overflow-wrap: anywhere;
+}
+.order-comment {
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line, #d8d5ce);
+  border-radius: 10px;
+  background: #f7faf9;
+}
+.order-comment h3,
+.order-comment p {
+  margin: 0;
+}
+.order-comment p {
+  margin-top: 0.45rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
 .secondary-action {
   border-top: 1px solid #d8d5ce;
   padding: 0.7rem 0;
@@ -100,6 +122,33 @@
 #executor-actions {
   scroll-margin-top: 5rem;
 }
+.work-progress,
+.action-feedback {
+  padding: 1rem;
+  border: 1px solid #b8d7cf;
+  border-radius: 12px;
+  background: #edf7f3;
+  scroll-margin-top: 7rem;
+}
+.work-progress h3,
+.work-progress p,
+.action-feedback p {
+  margin: 0 0 0.8rem;
+}
+.work-progress p,
+.action-feedback p {
+  line-height: 1.5;
+}
+.action-feedback {
+  background: #fff8e8;
+  border-color: #e6d19c;
+}
+#completion-form {
+  scroll-margin-top: 7rem;
+}
+#action-error {
+  scroll-margin-top: 7rem;
+}
 @media (max-width: 560px) {
   .order-next-step {
     flex-direction: column;
@@ -110,4 +159,136 @@
 .master-panel-body {
   display: grid;
   gap: 1rem;
+}
+
+.photo-upload-panel {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.85rem;
+  border: 1px solid #d8d5ce;
+  border-radius: 9px;
+  background: #fff;
+}
+.photo-upload-panel > label:first-child {
+  gap: 0.5rem;
+}
+.photo-upload-preview {
+  display: grid;
+  grid-template-columns: 5.25rem minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+  min-width: 0;
+}
+.photo-upload-preview img {
+  width: 5.25rem;
+  height: 4.2rem;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #edf0ed;
+}
+.photo-upload-preview div {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.photo-upload-preview strong,
+.photo-upload-preview small,
+.photo-privacy-note {
+  overflow-wrap: anywhere;
+}
+.photo-ai-consent {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  color: #34393b;
+  font-size: 0.83rem;
+  line-height: 1.4;
+}
+.photo-ai-consent input {
+  width: 1.1rem;
+  min-height: 1.1rem;
+  margin-top: 0.12rem;
+}
+.photo-privacy-note {
+  color: #596261;
+  font-size: 0.79rem;
+  line-height: 1.4;
+}
+.photo-upload-panel .secondary {
+  justify-self: start;
+}
+.photo-redaction-stage {
+  position: relative;
+  width: min(100%, 28rem);
+  overflow: hidden;
+  border: 1px solid #cfd5d3;
+  border-radius: 7px;
+  background: #edf0ed;
+  line-height: 0;
+}
+.photo-redaction-stage.masking {
+  cursor: crosshair;
+  touch-action: none;
+}
+.photo-redaction-stage img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.photo-redaction-box {
+  position: absolute;
+  display: block;
+  border: 1px solid #fff;
+  background: #000;
+  opacity: 1;
+  pointer-events: none;
+}
+.photo-redaction-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.photo-redaction-tools .primary,
+.photo-redaction-tools .secondary,
+.photo-redaction-tools .text-button {
+  min-height: 40px;
+}
+.photo-manual-mask {
+  border-top: 1px solid #d8d5ce;
+  padding-top: 0.65rem;
+}
+.photo-manual-mask summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.photo-manual-mask p {
+  color: #596261;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+.photo-manual-mask > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+.photo-manual-mask input {
+  min-height: 40px;
+  padding: 0.45rem;
+}
+@media (max-width: 560px) {
+  .photo-upload-panel .secondary {
+    width: 100%;
+  }
+  .photo-redaction-tools {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .photo-redaction-tools .primary,
+  .photo-redaction-tools .secondary,
+  .photo-redaction-tools .text-button {
+    width: 100%;
+  }
+  .photo-manual-mask > div {
+    grid-template-columns: 1fr 1fr;
+  }
 }

@@ -1,5 +1,5 @@
 import { readableLimitation } from "../lib/presentationText";
-import type { AiJob, Review, ReviewCheckStatus, ReviewReport } from "../types";
+import type { AiJob, ExecutorFeedback, Review, ReviewCheckStatus, ReviewReport } from "../types";
 
 const local = (value: string) =>
   new Intl.DateTimeFormat("ru-RU", {
@@ -40,11 +40,24 @@ function minutes(value: number | null | undefined) {
   return hours ? `${hours} ч ${number.format(remainder)} мин` : `${number.format(remainder)} мин`;
 }
 
+function timingComparison(feedback: ExecutorFeedback) {
+  const difference = feedback.timing.difference_minutes;
+  const percent = feedback.timing.percent_of_norm;
+  if (difference === null || difference === undefined || percent === null || percent === undefined)
+    return "Сравнение с нормой пока недоступно.";
+  const roundedPercent = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(percent);
+  if (difference === 0) return `Точно по норме · ${roundedPercent}% нормы.`;
+  const delta = minutes(Math.abs(difference));
+  return difference > 0
+    ? `Дольше нормы на ${delta} · ${roundedPercent}% нормы.`
+    : `Быстрее нормы на ${delta} · ${roundedPercent}% нормы.`;
+}
+
 function ReviewSummary({ review }: { review: Review }) {
   const source = review.report?.source;
   return (
     <div className="review-summary">
-      <strong>{verdictLabels[review.verdict ?? ""] || "Вердикт не сформирован"}</strong>
+      <strong>{verdictLabels[review.verdict ?? ""] || "Предварительный вывод не сформирован"}</strong>
       <span>{source ? sourceLabels[source] : "Архивная проверка"}</span>
       <small>{local(review.created_at)}</small>
     </div>
@@ -64,10 +77,14 @@ export function AIReviewReport({
   review,
   aiJob,
   attempt,
+  audience = "reviewer",
+  decisionResolved = false,
 }: {
   review?: Review;
   aiJob?: AiJob | null;
   attempt?: number;
+  audience?: "executor" | "reviewer";
+  decisionResolved?: false | "closed" | "cancelled";
 }) {
   if (!review) {
     return (
@@ -82,7 +99,11 @@ export function AIReviewReport({
         {aiJob ? (
           <JobState job={aiJob} />
         ) : (
-          <p className="muted">Отчёт для этой попытки ещё не сформирован.</p>
+          <p className="muted">
+            {audience === "executor"
+              ? "Итог по вашей сдаче ещё не сформирован. Когда проверка завершится, здесь появятся результат и время относительно нормы."
+              : "Отчёт для этой попытки ещё не сформирован."}
+          </p>
         )}
       </section>
     );
@@ -97,16 +118,33 @@ export function AIReviewReport({
       <div className="ai-review-heading">
         <div>
           <p className="eyebrow">Автоматическая проверка{attempt ? ` · попытка ремонта ${attempt}` : ""}</p>
-          <h3>{verdictLabels[review.verdict ?? ""] || "Вердикт не сформирован"}</h3>
+          <h3>{verdictLabels[review.verdict ?? ""] || "Предварительный вывод не сформирован"}</h3>
         </div>
-        <span className={`review-badge ${needsAttention ? "warning" : "pass"}`}>
-          {review.needs_master_review ? "Нужно решение мастера" : "Готово к решению мастера"}
+        <span className={`review-badge ${!decisionResolved && needsAttention ? "warning" : "pass"}`}>
+          {decisionResolved
+            ? decisionResolved === "cancelled"
+              ? "Наряд отменён"
+              : "Решение мастера принято"
+            : review.needs_master_review
+              ? "Ожидает решения мастера"
+              : "Рекомендация готова"}
         </span>
       </div>
+      {decisionResolved && (
+        <p className="muted">
+          {decisionResolved === "cancelled" ? "Наряд отменён." : "Наряд закрыт."} Ниже сохранён
+          предварительный вывод проверки на момент сдачи.
+        </p>
+      )}
+      {audience === "executor" && (
+        <p className="muted review-outcome-intro">
+          Это предварительный результат по вашей сдаче. Решение о закрытии или доработке принимает мастер.
+        </p>
+      )}
       <p className="review-explanation">{review.explanation || "Пояснение отсутствует."}</p>
       <div className="review-meta">
         <span>{report.source ? sourceLabels[report.source] : "Архивная проверка"}</span>
-        {typeof review.score === "number" && <span>Оценка проверки: {review.score}/5</span>}
+        {typeof review.score === "number" && <span>Предварительная оценка ИИ: {review.score}/5</span>}
         {typeof review.master_score === "number" && <span>Оценка мастера: {review.master_score}/5</span>}
       </div>
       {checks.length > 0 ? (
@@ -156,7 +194,13 @@ export function AIReviewReport({
   );
 }
 
-export function ReviewHistory({ reviews }: { reviews: Review[] }) {
+export function ReviewHistory({
+  reviews,
+  audience = "reviewer",
+}: {
+  reviews: Review[];
+  audience?: "executor" | "reviewer";
+}) {
   const older = reviews.filter((review) => !review.is_current);
   if (!older.length) return null;
   return (
@@ -166,9 +210,147 @@ export function ReviewHistory({ reviews }: { reviews: Review[] }) {
         <details className="review-history-entry" key={review.id}>
           <summary>Проверка от {local(review.created_at)}</summary>
           <ReviewSummary review={review} />
-          <AIReviewReport review={review} />
+          <AIReviewReport review={review} audience={audience} />
         </details>
       ))}
     </details>
+  );
+}
+
+function ExecutorFeedbackEntry({
+  feedback,
+  status,
+  attempt,
+}: {
+  feedback: ExecutorFeedback;
+  status?: string;
+  attempt?: number;
+}) {
+  const strongPoints = feedback.recommendations.filter((item) => item.status === "pass");
+  const improve = feedback.recommendations.filter((item) => item.status !== "pass");
+  const historical =
+    !feedback.is_current ||
+    (typeof feedback.attempt === "number" && typeof attempt === "number" && feedback.attempt < attempt);
+  const decided = status === "closed" || status === "cancelled" || status === "rework";
+  const badge = historical
+    ? "Предыдущая сдача"
+    : status === "closed"
+      ? "Работа принята мастером"
+      : status === "cancelled"
+        ? "Наряд отменён"
+        : status === "rework"
+          ? "Возвращено на доработку"
+          : "Ожидает решения мастера";
+  return (
+    <section className="ai-review-report executor-review" aria-label="Результат вашей сдачи">
+      <div className="ai-review-heading">
+        <div>
+          <p className="eyebrow">РЕЗУЛЬТАТ ВАШЕЙ СДАЧИ · ПОПЫТКА {feedback.attempt ?? "—"}</p>
+          <h3>{verdictLabels[feedback.verdict ?? ""] || "Итог проверки"}</h3>
+        </div>
+        <span className={`review-badge ${decided || historical ? "pass" : "warning"}`}>{badge}</span>
+      </div>
+      <div className="review-meta executor-review-score">
+        <span>
+          Итоговая оценка:{" "}
+          {typeof feedback.effective_score === "number" ? `${feedback.effective_score}/5` : "—"}
+        </span>
+        {typeof feedback.score === "number" && <span>Предварительная оценка ИИ: {feedback.score}/5</span>}
+        {typeof feedback.master_score === "number" && <span>Оценка мастера: {feedback.master_score}/5</span>}
+      </div>
+      <dl className="review-timing">
+        <div>
+          <dt>Активная работа</dt>
+          <dd>{minutes(feedback.timing.active_minutes)}</dd>
+        </div>
+        <div>
+          <dt>Паузы</dt>
+          <dd>{minutes(feedback.timing.paused_minutes)}</dd>
+        </div>
+        <div>
+          <dt>Норма</dt>
+          <dd>{minutes(feedback.timing.norm_minutes)}</dd>
+        </div>
+        <div>
+          <dt>Относительно нормы</dt>
+          <dd>{timingComparison(feedback)}</dd>
+        </div>
+      </dl>
+      <div className="executor-review-notes">
+        <section>
+          <h4>Что получилось</h4>
+          {strongPoints.length ? (
+            <ul className="review-checks">
+              {strongPoints.map((item) => (
+                <li key={`${feedback.submission_version}-${item.title}`} className="review-check pass">
+                  <strong>{item.title}</strong>
+                  <small>{item.detail}</small>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">Проверка не выделила отдельных сильных сторон.</p>
+          )}
+        </section>
+        <section>
+          <h4>Что улучшить</h4>
+          {improve.length ? (
+            <ul className="review-checks">
+              {improve.map((item) => (
+                <li
+                  key={`${feedback.submission_version}-${item.title}`}
+                  className={`review-check ${item.status}`}
+                >
+                  <strong>{item.title}</strong>
+                  <small>{item.detail}</small>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">Замечаний по этой сдаче нет.</p>
+          )}
+        </section>
+      </div>
+      <p className="muted">
+        Обновлено: {local(feedback.reviewed_at)}. Закрытие или возврат в доработку решает мастер.
+      </p>
+    </section>
+  );
+}
+
+export function ExecutorFeedbackReport({
+  feedback,
+  status,
+  attempt,
+}: {
+  feedback: ExecutorFeedback[];
+  status: string;
+  attempt: number;
+}) {
+  const current = feedback.find((item) => item.is_current) ?? feedback.at(-1);
+  if (!current) return null;
+  const previous = feedback.filter((item) => item !== current);
+  return (
+    <>
+      {!feedback.some((item) => item.is_current) && (status === "completed" || status === "ai_review") && (
+        <p className="notice" role="status">
+          Новая сдача проверяется. Ниже показан результат предыдущей попытки.
+        </p>
+      )}
+      <ExecutorFeedbackEntry feedback={current} status={status} attempt={attempt} />
+      {previous.length > 0 && (
+        <details className="review-history">
+          <summary>Предыдущие результаты ({previous.length})</summary>
+          {previous.map((item) => (
+            <details className="review-history-entry" key={`${item.submission_version}-${item.attempt}`}>
+              <summary>
+                Попытка {item.attempt ?? "—"} · {local(item.reviewed_at)}
+              </summary>
+              <ExecutorFeedbackEntry feedback={{ ...item, is_current: false }} />
+            </details>
+          ))}
+        </details>
+      )}
+    </>
   );
 }

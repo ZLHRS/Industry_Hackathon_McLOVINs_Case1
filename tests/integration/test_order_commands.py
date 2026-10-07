@@ -546,10 +546,16 @@ async def test_review_close_and_override_close_paths(database) -> None:
             action="override_close",
             expected_version=uncertain["version"],
             reason="Master validated the physical repair.",
+            master_score=4,
         ),
         "override-key-001",
     )
     assert overridden["status"] == WorkOrderStatus.CLOSED.value
+    async with database.sessions() as session:
+        review = await session.scalar(
+            select(AIReview).where(AIReview.work_order_id == uncertain_id)
+        )
+        assert review is not None and review.score is None and review.master_score == 4
 
 
 async def test_create_and_completion_validation_roll_back(database) -> None:

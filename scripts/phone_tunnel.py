@@ -1,6 +1,6 @@
 """Expose a local PWA through an isolated, temporary Cloudflare Quick Tunnel.
 
-Run with uv from Ubuntu/WSL. Uses existing data/settings; never seeds or migrates.
+Run with uv from Linux/WSL or macOS. Uses existing data/settings; never seeds or migrates.
 """
 
 from __future__ import annotations
@@ -60,6 +60,9 @@ def require_free_ports(*ports: int) -> None:
         raise PhoneError("Use distinct ports between 1024 and 65535")
     for port in ports:
         with socket.socket() as probe:
+            # Closed HTTP connections can remain in TIME_WAIT after a clean restart.
+            # Reuse that state, while an existing listener still makes bind fail.
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 probe.bind(("127.0.0.1", port))
             except OSError:
@@ -141,8 +144,8 @@ def wait_tunnel(processes: Processes) -> str:
 
 
 def run(api_port: int, web_port: int, *, worker: bool) -> None:
-    if sys.platform != "linux":
-        raise PhoneError("Run this command inside Ubuntu/WSL")
+    if sys.platform not in {"linux", "darwin"}:
+        raise PhoneError("Run this command on Linux/WSL or macOS")
     cloudflared = shutil.which("cloudflared")
     if cloudflared is None:
         raise PhoneError("cloudflared is missing; see docs/phone-tunnel.md")

@@ -3,8 +3,8 @@
   "short_name": "ТехНаряд",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f4f2ed",
-  "theme_color": "#25282a",
+  "background_color": "#eef2f1",
+  "theme_color": "#172222",
   "lang": "ru",
   "icons": [
     {

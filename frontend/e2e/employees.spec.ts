@@ -63,7 +63,12 @@ test("administrator creates, scopes, resets and disables an employee", async ({ 
   await row.getByRole("button", { name: "Настроить" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Сбросить пароль", exact: true }).click();
   dialog = page.getByRole("dialog");
+  await page.screenshot({ path: info.outputPath("password-reset-desktop.png") });
   await dialog.getByLabel("Новый пароль", { exact: true }).fill(next);
+  await dialog.getByLabel("Повторите пароль", { exact: true }).fill("несовпадающий-пароль");
+  await dialog.getByRole("button", { name: "Сохранить пароль", exact: true }).click();
+  await expect(dialog.getByText("Пароли не совпадают. Проверьте оба поля.")).toBeVisible();
+  await dialog.getByLabel("Повторите пароль", { exact: true }).fill(next);
   await dialog.getByRole("button", { name: "Сохранить пароль", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(
@@ -82,6 +87,10 @@ test("administrator creates, scopes, resets and disables an employee", async ({ 
   ).toBe(401);
   await page.screenshot({ path: info.outputPath("employees-desktop.png") });
   await page.setViewportSize({ width: 390, height: 844 });
+  await row.getByRole("button", { name: "Настроить" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Сбросить пароль", exact: true }).click();
+  await page.screenshot({ path: info.outputPath("password-reset-mobile.png") });
+  await page.getByRole("dialog").getByRole("button", { name: "Закрыть", exact: true }).click();
   await row.getByRole("button", { name: "Настроить" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.screenshot({ path: info.outputPath("employee-access-mobile.png") });
@@ -128,8 +137,10 @@ test("administrator cannot disable self and own password change returns to login
   await expect(dialog.getByRole("button", { name: "Сохранить доступ", exact: true })).toBeDisabled();
   await expect(dialog.getByRole("button", { name: "Отключить доступ", exact: true })).toBeDisabled();
   await dialog.getByRole("button", { name: "Сбросить пароль", exact: true }).click();
-  await page.getByRole("dialog").getByLabel("Новый пароль", { exact: true }).fill(after);
-  await page.getByRole("dialog").getByRole("button", { name: "Сохранить пароль", exact: true }).click();
+  const passwordDialog = page.getByRole("dialog");
+  await passwordDialog.getByLabel("Новый пароль", { exact: true }).fill(after);
+  await passwordDialog.getByLabel("Повторите пароль", { exact: true }).fill(after);
+  await passwordDialog.getByRole("button", { name: "Сохранить пароль", exact: true }).click();
   await expect(page.getByRole("button", { name: "Войти", exact: true })).toBeVisible();
   expect((await request.post("/api/v1/auth/login", { data: { login: account, secret } })).status()).toBe(401);
   await signIn(page, account, after);

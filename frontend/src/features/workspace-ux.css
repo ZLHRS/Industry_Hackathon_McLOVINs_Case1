@@ -25,6 +25,22 @@
 .orders-empty .secondary {
   margin-top: 0.25rem;
 }
+.deadline-presets {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: -0.35rem;
+}
+.deadline-presets > span {
+  flex-basis: 100%;
+  color: var(--muted-ink, #686d70);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.deadline-presets .secondary {
+  min-height: 40px;
+}
 @media (max-width: 820px) {
   .orders-filter-actions {
     margin-bottom: 0.65rem;

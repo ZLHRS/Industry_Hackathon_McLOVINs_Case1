@@ -13,7 +13,7 @@ from .aggregates import material_rows
 from .contracts import AnomalyView
 from .data import Snapshot
 from .history import within
-from .ratings import was_reworked
+from .ratings import final_submission_actor, rework_actors
 
 
 def anomalies(
@@ -106,19 +106,34 @@ def anomalies(
                 ),
             )
         )
-    cohort = [o for o in orders if within(o.completed_at, start, end)]
-    grouped: dict[UUID, list[WorkOrder]] = defaultdict(list)
-    for order in cohort:
-        grouped[order.executor_id].append(order)
+    # Each row is one attributable order outcome for a worker.  A returned
+    # submission remains with its author even when a reassigned executor later
+    # supplies the final closure.
+    cohort: list[tuple[WorkOrder, UUID, bool]] = []
+    for order in orders:
+        if not within(order.completed_at, start, end):
+            continue
+        events = data.events.get(order.id, [])
+        if not events and order.attempt > 1:
+            # The aggregate attempt counter cannot establish which worker's
+            # submission was returned, so it cannot establish a cohort outcome.
+            continue
+        rework_actor_set = rework_actors(order, events, now)
+        actor = final_submission_actor(order, data)
+        if actor is not None:
+            cohort.append((order, actor, actor in rework_actor_set))
+        for rework_actor in rework_actor_set - ({actor} if actor is not None else set()):
+            cohort.append((order, rework_actor, True))
+    grouped: dict[UUID, list[tuple[WorkOrder, bool]]] = defaultdict(list)
+    for cohort_order, cohort_actor, cohort_reworked in cohort:
+        grouped[cohort_actor].append((cohort_order, cohort_reworked))
     overall = (
-        sum(was_reworked(o, data.events.get(o.id, []), now) for o in cohort) / len(cohort)
-        if cohort
-        else 0
+        sum(cohort_reworked for _, _, cohort_reworked in cohort) / len(cohort) if cohort else 0
     )
-    for person, rows in sorted(grouped.items(), key=lambda r: str(r[0])):
-        failed = [o for o in rows if was_reworked(o, data.events.get(o.id, []), now)]
-        rate = len(failed) / len(rows)
-        if len(rows) >= 5 and len(failed) >= 2 and rate >= 2 * overall:
+    for person, person_rows in sorted(grouped.items(), key=lambda r: str(r[0])):
+        failed = [order for order, reworked in person_rows if reworked]
+        rate = len(failed) / len(person_rows)
+        if len(person_rows) >= 5 and len(failed) >= 2 and rate >= 2 * overall:
             output.append(
                 AnomalyView(
                     family="rework_concentration",
@@ -130,14 +145,15 @@ def anomalies(
                     evidence={
                         "order_ids": [str(o.id) for o in failed],
                         "count": len(failed),
-                        "denominator": len(rows),
+                        "denominator": len(person_rows),
                         "rate": round(rate, 4),
                         "baseline_rate": round(overall, 4),
                         "executor_id": str(person),
                     },
                     formula=(
                         "Не менее 5 сдававшихся нарядов и 2 доработок; доля доработок "
-                        "минимум вдвое выше общей в выборке. Это не оценка вины."
+                        "минимум вдвое выше общей в выборке. Сдача до переназначения "
+                        "относится к её автору. Это не оценка вины."
                     ),
                 )
             )

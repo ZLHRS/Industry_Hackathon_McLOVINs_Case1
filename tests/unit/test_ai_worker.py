@@ -72,11 +72,37 @@ async def test_ai_database_error_is_retried_without_logging_payload(caplog):
 
 
 @pytest.mark.asyncio
+async def test_ai_adapter_error_is_isolated_from_worker_task_group(caplog):
+    recovered = asyncio.Event()
+    calls = 0
+
+    async def review(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("private photo storage failure")
+        recovered.set()
+        return 0
+
+    task = asyncio.create_task(
+        worker._ai_loop(object(), Settings(worker_interval_seconds=0.1), review)
+    )
+    try:
+        await asyncio.wait_for(recovered.wait(), 1)
+        assert calls == 2
+        assert "private photo storage failure" not in caplog.text
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("vision", [False, True])
 async def test_review_pass_builds_bounded_configuration(monkeypatch, tmp_path, vision):
     async def process(database, **kwargs):
         assert kwargs["limit"] == 1
-        assert kwargs["config"].model == "gpt-6.1-sol"
+        assert kwargs["config"].model == "gpt-5.4"
         assert kwargs["config"].reasoning_effort == "medium"
         assert kwargs["config"].max_output_tokens == 8192
         assert kwargs["lease_seconds"] > kwargs["config"].total_timeout_seconds

@@ -1,0 +1,63 @@
+{
+  "status": "PASS",
+  "created_at": "2026-10-07T23:48:37.374360+00:00",
+  "production_modified": false,
+  "external_ai_or_push": false,
+  "backup": "var/backups/20261007T233952Z",
+  "images": {
+    "api": "sha256:bc4367deaf3506e20d1d72fdd382ab65c74fb12d8c10a6bd62ae658e82720a40",
+    "web": "sha256:a0c4d73ba7d8bc5e45da264e98d2253bc8283e4b7f595d1a3f8f4e15a28ebc0a",
+    "database": "65b16a8b326e0cfbdf33fa7e783f2a0cb352a61448616ccccfd616ef42aa0f65"
+  },
+  "steps": {
+    "photo_integrity": {
+      "archive_files": 2,
+      "verified_references": 2,
+      "unreferenced_files": 0
+    },
+    "ready": {
+      "ready": true
+    },
+    "baseline": {
+      "login": "PASS",
+      "frontend": "PASS",
+      "manifest": "PASS",
+      "anonymous_denied": true,
+      "write_read": "PASS",
+      "authenticated_photo_hashes_checked": 2
+    },
+    "api_restart": {
+      "session_survived": true,
+      "idempotent_retry": true,
+      "single_issue_event": true
+    },
+    "database_restart": {
+      "session_survived": true,
+      "idempotent_retry": true,
+      "single_issue_event": true
+    },
+    "worker_restart": {
+      "durable_outbox_drained": true,
+      "external_delivery_disabled": true
+    },
+    "load": {
+      "concurrency": 20,
+      "requests": 120,
+      "errors": 0,
+      "elapsed_seconds": 3.177,
+      "requests_per_second": 37.77,
+      "p95_ms": 1468.74,
+      "max_ms": 1884.15,
+      "budget_p95_ms": 5000,
+      "scope": "Local restored snapshot, authenticated mixed reads; not an industrial scale guarantee.",
+      "status": "PASS"
+    }
+  },
+  "restored_counts": [
+    "events|3748",
+    "materials|1082",
+    "orders|603",
+    "photos|2"
+  ],
+  "disposable_resources_removed": true
+}

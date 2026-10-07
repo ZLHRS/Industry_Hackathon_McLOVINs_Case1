@@ -1,0 +1,29 @@
+[
+  {
+    "name": "master",
+    "width": 1440,
+    "height": 1000,
+    "wsReady": true,
+    "secure": true,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "name": "executor",
+    "width": 390,
+    "height": 844,
+    "wsReady": true,
+    "secure": true,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "name": "manager",
+    "width": 1440,
+    "height": 1000,
+    "wsReady": true,
+    "secure": true,
+    "overflow": false,
+    "errors": []
+  }
+]

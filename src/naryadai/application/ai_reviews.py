@@ -6,10 +6,12 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from naryadai.ai import (
     OpenAIReviewConfig,
@@ -42,6 +44,9 @@ from naryadai.infrastructure.models import (
 from naryadai.infrastructure.photo_store import PhotoStore, PhotoStoreError
 
 Analyzer = Callable[[ReviewInput, OpenAIReviewConfig], Awaitable[ReviewResult]]
+_MATERIAL_HISTORY_LOOKBACK = timedelta(days=365)
+_MATERIAL_HISTORY_SAMPLE_LIMIT = 50
+_MATERIAL_HISTORY_MIN_SAMPLES = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,9 +125,62 @@ def _timing(order: WorkOrder, events: list[WorkOrderEvent]) -> tuple[float, floa
     return active, paused, (order.completed_at - start).total_seconds() / 60
 
 
+def _median(values: list[Decimal]) -> Decimal:
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return (ordered[middle - 1] + ordered[middle]) / 2
+
+
+async def _material_baselines(
+    session: AsyncSession,
+    *,
+    order: WorkOrder,
+    equipment: Equipment,
+    materials: list[tuple[MaterialUsage, Material]],
+) -> dict[UUID, tuple[str, int]]:
+    """Return bounded, pre-submission peer history; it is never an approved norm."""
+    assert order.completed_at is not None
+    submission_at = order.completed_at
+    earliest_closed_at = submission_at - _MATERIAL_HISTORY_LOOKBACK
+    baselines: dict[UUID, tuple[str, int]] = {}
+    historical_material = aliased(Material)
+    for _usage, material in materials:
+        quantities = list(
+            (
+                await session.scalars(
+                    select(MaterialUsage.quantity)
+                    .join(WorkOrder, WorkOrder.id == MaterialUsage.work_order_id)
+                    .join(Equipment, Equipment.id == WorkOrder.equipment_id)
+                    .join(historical_material, historical_material.id == MaterialUsage.material_id)
+                    .where(
+                        WorkOrder.id != order.id,
+                        WorkOrder.status == WorkOrderStatus.CLOSED,
+                        WorkOrder.is_synthetic.is_(False),
+                        WorkOrder.fault_code_id == order.fault_code_id,
+                        WorkOrder.closed_at.is_not(None),
+                        WorkOrder.closed_at >= earliest_closed_at,
+                        WorkOrder.closed_at <= submission_at,
+                        WorkOrder.last_submission_version.is_not(None),
+                        MaterialUsage.submission_version == WorkOrder.last_submission_version,
+                        Equipment.equipment_type == equipment.equipment_type,
+                        MaterialUsage.material_id == material.id,
+                        historical_material.unit == material.unit,
+                    )
+                    .order_by(WorkOrder.closed_at.desc(), MaterialUsage.id.desc())
+                    .limit(_MATERIAL_HISTORY_SAMPLE_LIMIT)
+                )
+            ).all()
+        )
+        if len(quantities) >= _MATERIAL_HISTORY_MIN_SAMPLES:
+            baselines[material.id] = (format(_median(quantities), "f"), len(quantities))
+    return baselines
+
+
 async def _input(
     session: AsyncSession, claim: _Claim
-) -> tuple[ReviewInput, tuple[str, ...]] | None:
+) -> tuple[ReviewInput, tuple[str | None, ...]] | None:
     order = await session.get(WorkOrder, claim.order_id)
     if (
         order is None
@@ -140,7 +198,7 @@ async def _input(
             TimeNorm.equipment_type == equipment.equipment_type,
         )
     )
-    materials = (
+    material_rows = (
         await session.execute(
             select(MaterialUsage, Material)
             .join(Material, Material.id == MaterialUsage.material_id)
@@ -151,6 +209,12 @@ async def _input(
             .order_by(MaterialUsage.id)
         )
     ).all()
+    materials: list[tuple[MaterialUsage, Material]] = [
+        (usage, material) for usage, material in material_rows
+    ]
+    baselines = await _material_baselines(
+        session, order=order, equipment=equipment, materials=materials
+    )
     photos = list(
         (
             await session.scalars(
@@ -200,7 +264,13 @@ async def _input(
         equipment_type=equipment.equipment_type,
         fault_name=fault.name if fault else "Шифр неисправности отсутствует",
         materials=tuple(
-            ReviewMaterial(name=material.name, unit=material.unit, quantity=str(usage.quantity))
+            ReviewMaterial(
+                name=material.name,
+                unit=material.unit,
+                quantity=str(usage.quantity),
+                historical_median_quantity=baselines.get(material.id, (None, None))[0],
+                historical_sample_count=baselines.get(material.id, (None, None))[1],
+            )
             for usage, material in materials
         ),
         no_materials_reason=order.no_materials_reason,
@@ -212,6 +282,7 @@ async def _input(
         completed_at=order.completed_at,
         attempt_started_at=order.started_at,
         known_identifiers=tuple(identities),
+        work_type=order.work_type.value,
         photos=tuple(
             ReviewPhoto(
                 kind=photo.kind.value,
@@ -222,25 +293,35 @@ async def _input(
             )
             for photo in photos
         ),
-    ), tuple(photo.storage_key for photo in photos)
+    ), tuple(photo.storage_key if photo.ai_share_allowed else None for photo in photos)
 
 
 async def _images(
     evidence: ReviewInput,
-    keys: tuple[str, ...],
+    keys: tuple[str | None, ...],
     store: PhotoStore | None,
     config: OpenAIReviewConfig,
 ) -> ReviewInput:
     if not config.vision_enabled or config.api_key is None or store is None:
         return evidence
     # At least one image from each side precedes optional extra views.
-    before = [i for i, p in enumerate(evidence.photos) if p.kind == "before"]
-    after = [i for i, p in enumerate(evidence.photos) if p.kind == "after"]
+    before = [
+        i
+        for i, photo in enumerate(evidence.photos)
+        if photo.kind == "before" and keys[i] is not None
+    ]
+    after = [
+        i
+        for i, photo in enumerate(evidence.photos)
+        if photo.kind == "after" and keys[i] is not None
+    ]
     candidates = (before[:1] + after[:1] + after[1:] + before[1:])[: config.max_images]
     photos = list(evidence.photos)
     for index in candidates:
+        key = keys[index]
+        assert key is not None
         try:
-            content = await asyncio.to_thread(store.read, keys[index])
+            content = await asyncio.to_thread(store.read, key)
         except (PhotoStoreError, OSError):
             continue  # The analyzer explicitly sees unavailable visual evidence.
         photos[index] = replace(photos[index], image_bytes=content)

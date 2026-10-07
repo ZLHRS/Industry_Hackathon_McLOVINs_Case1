@@ -1,9 +1,11 @@
 import "./order-ux.css";
-import { canReviewRepair, roleLabels } from "../lib/roleAccess";
-import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { ApiError } from "../api";
+import { canReviewRepair, canViewRepairOutcome, roleLabels } from "../lib/roleAccess";
+import { FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
+import { ApiError, capturePhotoTime } from "../api";
+import { OfflineStorageError } from "../lib/offline";
+import { blackenPixels, normalizeRedaction, type RedactionRect } from "../lib/photoRedaction";
 import { Dialog } from "../components/Dialog";
-import { AIReviewReport, ReviewHistory } from "./AIReviewReport";
+import { AIReviewReport, ExecutorFeedbackReport, ReviewHistory } from "./AIReviewReport";
 import { masterDecisionPayload, validateMasterDecision, type MasterDecision } from "./aiReview";
 import type { ActionRequest, Catalog, EventItem, OrderDetail, Role, Workload } from "../types";
 
@@ -26,6 +28,44 @@ const ruPriority: Record<string, string> = {
   normal: "Обычный",
   planned: "Плановый",
 };
+const ruWorkType: Record<string, string> = {
+  planned: "Плановый",
+  unplanned: "Внеплановый",
+};
+const actionLabels: Record<string, string> = {
+  issue: "Наряд выдан",
+  accept: "Наряд принят",
+  queue: "Добавлен в очередь",
+  reject: "Отказ от наряда",
+  start: "Работа начата",
+  resume: "Работа возобновлена",
+  pause: "Работа приостановлена",
+  complete: "Работа сдана",
+  start_ai_review: "Проверка начата",
+  request_rework: "Возврат на доработку",
+  mark_rework: "Доработка назначена",
+  close: "Наряд закрыт",
+  override_close: "Наряд закрыт вручную",
+  cancel: "Наряд отменён",
+  change_priority: "Приоритет изменён",
+  reassign: "Исполнитель переназначен",
+  comment: "Комментарий",
+  record_downtime: "Простой",
+  adjudicate_refusal: "Оценка отказа",
+};
+const eventComment = (event: EventItem) => {
+  const value = event.details.comment;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+};
+const confirmedActionStatuses: Record<string, string[]> = {
+  accept: ["accepted"],
+  queue: ["queued"],
+  reject: ["rejected"],
+  start: ["in_progress"],
+  resume: ["in_progress"],
+  pause: ["paused"],
+  complete: ["completed", "ai_review", "closed"],
+};
 const local = (value: string | null) =>
   value
     ? new Intl.DateTimeFormat("ru-RU", {
@@ -36,6 +76,7 @@ const local = (value: string | null) =>
     : "—";
 export { ruStatus, ruPriority, local };
 
+export type ActionOutcome = { state: "confirmed" | "pending" | "blocked"; message?: string };
 type Props = {
   id: string;
   role: Role;
@@ -43,8 +84,15 @@ type Props = {
   catalog: Catalog;
   workers: Workload[];
   load: (id: string) => Promise<{ detail: OrderDetail; events: EventItem[] }>;
-  onAction: (id: string, request: ActionRequest, queue?: boolean) => Promise<void>;
-  onPhoto: (id: string, kind: "before" | "after", version: number, file: File) => Promise<void>;
+  onAction: (id: string, request: ActionRequest, queue?: boolean) => Promise<ActionOutcome>;
+  onPhoto: (
+    id: string,
+    kind: "before" | "after",
+    version: number,
+    file: File,
+    aiShareAllowed: boolean,
+    capturedAt?: string,
+  ) => Promise<void>;
   photoUrl: (path: string) => Promise<string>;
   onReport: (id: string) => Promise<{ blob: Blob; filename: string }>;
   onDowntime: (
@@ -85,6 +133,9 @@ export function OrderDetailDialog({
   const [events, setEvents] = useState<EventItem[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<ActionOutcome>();
+  const [requestedAction, setRequestedAction] = useState("");
+  const startRequested = useRef(false);
   const [reportExporting, setReportExporting] = useState(false);
   const [downtime, setDowntime] = useState({ started_at: "", ended_at: "", reason: "" });
   const [refusal, setRefusal] = useState({ event_id: "", justified: "true", reason: "" });
@@ -97,7 +148,6 @@ export function OrderDetailDialog({
   const [cancelReason, setCancelReason] = useState("");
   const [cancelConfirmed, setCancelConfirmed] = useState(false);
   const [masterScore, setMasterScore] = useState("");
-  const [photo, setPhoto] = useState<File>();
   const [materials, setMaterials] = useState<{ material_id: string; quantity: string }[]>([
     { material_id: "", quantity: "" },
   ]);
@@ -137,12 +187,32 @@ export function OrderDetailDialog({
       refreshGeneration.current += 1;
     };
   }, [refresh, revision]);
+  useEffect(() => {
+    if (busy) return;
+    const started = startRequested.current && detail?.status === "in_progress";
+    if (started) startRequested.current = false;
+    const target = started ? "work-progress" : error ? "action-error" : feedback ? "action-feedback" : null;
+    if (!target) return;
+    const frame = requestAnimationFrame(() => {
+      const element = document.getElementById(target);
+      element?.scrollIntoView({ block: "start" });
+      element?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [busy, detail?.status, feedback, error]);
   async function act(action: string, extra: Record<string, unknown> = {}, queue = false) {
     if (!detail) return;
     setBusy(true);
     setError("");
+    setFeedback(undefined);
+    setRequestedAction(action);
+    startRequested.current = action === "start" || action === "resume";
     try {
-      await onAction(id, { action, expected_version: detail.version, ...extra }, queue);
+      const outcome = await onAction(id, { action, expected_version: detail.version, ...extra }, queue);
+      if (outcome.state !== "confirmed") {
+        setFeedback(outcome);
+        if (outcome.state === "blocked") startRequested.current = false;
+      }
       await refresh();
       setReason("");
       setComment("");
@@ -154,13 +224,16 @@ export function OrderDetailDialog({
       setCancelConfirmed(false);
       setMasterScore("");
     } catch (caught) {
+      startRequested.current = false;
       const failure = caught as ApiError;
       setError(
-        failure.status === 409
-          ? "Наряд изменился. Проверьте обновлённые данные и повторите действие."
-          : failure.status === 401
-            ? "Сессия завершена."
-            : "Действие не выполнено.",
+        caught instanceof OfflineStorageError
+          ? caught.message
+          : failure.status === 409
+            ? "Наряд изменился. Проверьте обновлённые данные и повторите действие."
+            : failure.status === 401
+              ? "Сессия завершена."
+              : "Действие не выполнено.",
       );
     } finally {
       setBusy(false);
@@ -262,16 +335,20 @@ export function OrderDetailDialog({
       setBusy(false);
     }
   }
-  async function upload(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file || !detail) return;
-    setPhoto(file);
+  async function upload(file: File, aiShareAllowed: boolean, capturedAt?: string) {
+    if (!detail) return;
     setBusy(true);
+    setError("");
     try {
-      await onPhoto(id, role === "master" ? "before" : "after", detail.version, file);
+      await onPhoto(
+        id,
+        role === "master" ? "before" : "after",
+        detail.version,
+        file,
+        aiShareAllowed,
+        capturedAt,
+      );
       await refresh();
-    } catch {
-      setError("Фото не загружено. Проверьте тип, размер и доступ.");
     } finally {
       setBusy(false);
     }
@@ -283,8 +360,10 @@ export function OrderDetailDialog({
       </Dialog>
     );
   const machine = catalog.equipment.find((item) => item.id === detail.equipment_id);
+  const area = catalog.areas.find((item) => item.id === detail.area_id);
   const canExecutor = role === "executor" && detail.executor_id === currentUserId;
   const detailedReview = canReviewRepair(role);
+  const canViewOutcome = canViewRepairOutcome(role) && (!canExecutor || detail.executor_id === currentUserId);
   const masterOwns = role === "master" && detail.master_id === currentUserId;
   const rejections = events.filter((item) => item.action === "reject");
   const latestDowntime = [...events].reverse().find((item) => item.action === "record_downtime");
@@ -292,13 +371,18 @@ export function OrderDetailDialog({
   const currentMaterials = detail.materials.filter(
     (item) => item.submission_version === detail.last_submission_version,
   );
+  const hasAiScore =
+    typeof currentReview?.score === "number" &&
+    Number.isInteger(currentReview.score) &&
+    currentReview.score >= 1 &&
+    currentReview.score <= 5;
   const canClose =
     detail.status === "ai_review" &&
     currentReview &&
-    !currentReview.needs_master_review &&
+    hasAiScore &&
     ["accepted", "accepted_with_remarks"].includes(currentReview.verdict ?? "");
   const canOverride =
-    (detail.status === "ai_review" && currentReview?.needs_master_review) ||
+    (detail.status === "ai_review" && currentReview?.needs_master_review && !canClose) ||
     (detail.status === "rework" && currentReview?.verdict === "rework_required");
   const masterScoreRequiresReason = masterScore.trim().length > 0 && reason.trim().length < 3;
   const executorNext: Partial<Record<OrderDetail["status"], string>> = {
@@ -380,6 +464,14 @@ export function OrderDetailDialog({
             <dd>{machine ? `${machine.inventory_number} · ${machine.name}` : detail.equipment_id}</dd>
           </div>
           <div>
+            <dt>Участок</dt>
+            <dd>{area ? `${area.code} · ${area.name}` : detail.area_id}</dd>
+          </div>
+          <div>
+            <dt>Вид работ</dt>
+            <dd>{ruWorkType[detail.work_type] ?? detail.work_type}</dd>
+          </div>
+          <div>
             <dt>Срок</dt>
             <dd className={detail.overdue ? "danger-text" : ""}>{local(detail.deadline)}</dd>
           </div>
@@ -391,7 +483,47 @@ export function OrderDetailDialog({
             <dt>Попытка ремонта</dt>
             <dd>{detail.attempt}</dd>
           </div>
+          <div>
+            <dt>Выдан</dt>
+            <dd>{local(detail.issued_at)}</dd>
+          </div>
+          {detail.started_at && (
+            <div>
+              <dt>Начат</dt>
+              <dd>{local(detail.started_at)}</dd>
+            </div>
+          )}
+          {detail.completed_at && (
+            <div>
+              <dt>Сдан</dt>
+              <dd>{local(detail.completed_at)}</dd>
+            </div>
+          )}
+          {detail.closed_at && (
+            <div>
+              <dt>Закрыт</dt>
+              <dd>{local(detail.closed_at)}</dd>
+            </div>
+          )}
+          {detail.master_name && (
+            <div>
+              <dt>Мастер</dt>
+              <dd>{detail.master_name}</dd>
+            </div>
+          )}
+          {detail.executor_name && (
+            <div>
+              <dt>Исполнитель</dt>
+              <dd>{detail.executor_name}</dd>
+            </div>
+          )}
         </dl>
+        {detail.comment?.trim() && (
+          <section className="order-comment">
+            <h3>Последний комментарий</h3>
+            <p>{detail.comment}</p>
+          </section>
+        )}
         {detail.last_submission_version !== null && detail.work_description && (
           <section className="repair-submission">
             <h3>Отчёт исполнителя</h3>
@@ -403,10 +535,26 @@ export function OrderDetailDialog({
             {detail.no_materials_reason && <p>Без расхода материалов: {detail.no_materials_reason}</p>}
           </section>
         )}
-        {detailedReview &&
+        {canExecutor && detail.executor_feedback && detail.executor_feedback.length > 0 ? (
+          <ExecutorFeedbackReport
+            feedback={detail.executor_feedback}
+            status={detail.status}
+            attempt={detail.attempt}
+          />
+        ) : (
+          canViewOutcome &&
           (currentReview || detail.ai_job || detail.reviews.length > 0 || detail.status === "completed") && (
-            <AIReviewReport review={currentReview} aiJob={detail.ai_job} attempt={detail.attempt} />
-          )}
+            <AIReviewReport
+              review={currentReview}
+              aiJob={detail.ai_job}
+              attempt={detail.attempt}
+              audience={canExecutor ? "executor" : "reviewer"}
+              decisionResolved={
+                detail.status === "closed" || detail.status === "cancelled" ? detail.status : false
+              }
+            />
+          )
+        )}
         {canExecutor && detail.status === "rework" && (
           <section className="action-block">
             <h3>Что исправить</h3>
@@ -417,7 +565,7 @@ export function OrderDetailDialog({
           </section>
         )}
         {error && (
-          <p className="error" role="alert">
+          <p className="error" role="alert" id="action-error" tabIndex={-1}>
             {error}
           </p>
         )}
@@ -425,6 +573,46 @@ export function OrderDetailDialog({
           ["issued", "accepted", "queued", "in_progress", "paused", "rework"].includes(detail.status) && (
             <section className="action-block" id="executor-actions" tabIndex={-1}>
               <h3>Действия исполнителя</h3>
+              {feedback &&
+                !(
+                  feedback.state === "pending" &&
+                  (confirmedActionStatuses[requestedAction] ?? []).includes(detail.status)
+                ) && (
+                  <div id="action-feedback" className="action-feedback" role="status" tabIndex={-1}>
+                    <strong>
+                      {feedback.state === "blocked" ? "Действие не выполнено" : "Ожидаем подтверждения"}
+                    </strong>
+                    <p>{feedback.message}</p>
+                    <button type="button" className="secondary" onClick={onClose}>
+                      К очереди отправки
+                    </button>
+                  </div>
+                )}
+              {detail.status === "in_progress" && (
+                <section
+                  id="work-progress"
+                  className="work-progress"
+                  tabIndex={-1}
+                  aria-label="Работа начата"
+                >
+                  <h3>Работа начата</h3>
+                  <p>
+                    Наряд в работе. Выполните задание, затем добавьте фото, опишите результат и сдайте работу
+                    мастеру.
+                  </p>
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => {
+                      const form = document.getElementById("completion-form");
+                      form?.scrollIntoView({ block: "start" });
+                      form?.focus({ preventScroll: true });
+                    }}
+                  >
+                    Заполнить отчёт
+                  </button>
+                </section>
+              )}
               <div className="action-row">
                 {detail.status === "issued" && (
                   <>
@@ -438,7 +626,7 @@ export function OrderDetailDialog({
                 )}
                 {["accepted", "queued", "rework"].includes(detail.status) && (
                   <button className="primary" disabled={busy} onClick={() => void act("start", {}, true)}>
-                    Начать работу
+                    {busy ? "Начинаем…" : "Начать работу"}
                   </button>
                 )}
                 {detail.status === "paused" && (
@@ -494,21 +682,21 @@ export function OrderDetailDialog({
                 </details>
               )}
               {["in_progress", "paused"].includes(detail.status) && (
-                <label className="file-input">
-                  Фото после
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    onChange={upload}
-                    disabled={busy}
-                  />
-                  <span>{photo?.name || "Выбрать файл"}</span>
-                </label>
+                <PhotoUploadPanel
+                  label="Фото после"
+                  busy={busy}
+                  onUpload={(file, aiShareAllowed, capturedAt) => upload(file, aiShareAllowed, capturedAt)}
+                />
               )}
             </section>
           )}
         {canExecutor && ["in_progress", "paused"].includes(detail.status) && (
-          <form className="action-block" onSubmit={(e) => void submitCompletion(e)}>
+          <form
+            className="action-block"
+            id="completion-form"
+            tabIndex={-1}
+            onSubmit={(e) => void submitCompletion(e)}
+          >
             <h3>Сдать работу</h3>
             <label>
               Что выполнено
@@ -760,7 +948,11 @@ export function OrderDetailDialog({
             </p>
             {(detail.status === "ai_review" || canOverride) && (
               <section className="master-action-panel">
-                <h4>Решение по проверке</h4>
+                <h4>Решение мастера</h4>
+                <p className="muted">
+                  Вывод и оценка ИИ предварительные. Закрытие или возврат — решение мастера; итоговая оценка
+                  берётся из вашей оценки либо из действительной рекомендации ИИ.
+                </p>
                 <label>
                   Причина решения
                   <textarea
@@ -804,7 +996,9 @@ export function OrderDetailDialog({
                           disabled={busy || masterScoreRequiresReason}
                           onClick={() => void decideMaster("close")}
                         >
-                          Закрыть наряд
+                          {masterScore.trim()
+                            ? "Закрыть с оценкой мастера"
+                            : "Принять рекомендацию ИИ и закрыть"}
                         </button>
                       )}
                     </>
@@ -825,16 +1019,14 @@ export function OrderDetailDialog({
             {detail.status === "issued" && (
               <section className="master-action-panel">
                 <h4>Фото до ремонта</h4>
-                <p className="muted">Добавьте исходное состояние оборудования до начала работ.</p>
-                <label>
-                  Фотография
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    onChange={upload}
-                    disabled={busy}
-                  />
-                </label>
+                <p className="muted">
+                  Необязательно. Добавьте исходное состояние оборудования до начала работ.
+                </p>
+                <PhotoUploadPanel
+                  label="Фотография"
+                  busy={busy}
+                  onUpload={(file, aiShareAllowed, capturedAt) => upload(file, aiShareAllowed, capturedAt)}
+                />
               </section>
             )}
             <details className="master-action-panel">
@@ -992,7 +1184,7 @@ export function OrderDetailDialog({
             <p className="muted">Материалы не зафиксированы.</p>
           )}
           <PhotoGallery photos={detail.photos} getUrl={photoUrl} attempt={detail.attempt} />
-          {detailedReview && <ReviewHistory reviews={detail.reviews} />}
+          {!canExecutor && canViewOutcome && <ReviewHistory reviews={detail.reviews} audience="reviewer" />}
         </section>
         <section>
           <h3>Журнал</h3>
@@ -1002,7 +1194,7 @@ export function OrderDetailDialog({
               {events
                 .filter(
                   (item) =>
-                    detailedReview ||
+                    canViewOutcome ||
                     ![
                       "start_ai_review",
                       "record_ai_assessment",
@@ -1011,37 +1203,314 @@ export function OrderDetailDialog({
                       "adjudicate_refusal",
                     ].includes(item.action),
                 )
-                .map((item) => (
-                  <li key={item.id}>
-                    <strong>{ruStatus[item.to_status] || item.to_status}</strong>
-                    <span>
-                      {local(item.occurred_at)} ·{" "}
-                      {roleLabels[item.actor_role as keyof typeof roleLabels] ?? "Сотрудник"}
-                    </span>
-                    {item.reason && <small>{item.reason}</small>}
-                    {item.action === "record_downtime" && (
-                      <small>
-                        <strong>
-                          {item.details.void === true ? "Простой аннулирован" : "Простой зафиксирован"}
-                        </strong>
-                        {item.details.started_at ? `: с ${local(String(item.details.started_at))}` : ""}
-                        {item.details.ended_at ? ` по ${local(String(item.details.ended_at))}` : ""}
-                      </small>
-                    )}
-                    {item.action === "adjudicate_refusal" && (
-                      <small>
-                        <strong>
-                          Отказ: {item.details.justified === true ? "обоснован" : "необоснован"}
-                        </strong>
-                      </small>
-                    )}
-                  </li>
-                ))}
+                .map((item) => {
+                  const comment = eventComment(item);
+                  return (
+                    <li key={item.id}>
+                      <strong>
+                        {actionLabels[item.action] ?? ruStatus[item.to_status] ?? item.to_status}
+                      </strong>
+                      <span>
+                        {local(item.occurred_at)} ·{" "}
+                        {item.actor_display_name ??
+                          item.actor_name ??
+                          roleLabels[item.actor_role as keyof typeof roleLabels] ??
+                          "Сотрудник"}
+                      </span>
+                      {item.reason && <small>{item.reason}</small>}
+                      {comment && <small>{comment}</small>}
+                      {item.action === "record_downtime" && (
+                        <small>
+                          <strong>
+                            {item.details.void === true ? "Простой аннулирован" : "Простой зафиксирован"}
+                          </strong>
+                          {item.details.started_at ? `: с ${local(String(item.details.started_at))}` : ""}
+                          {item.details.ended_at ? ` по ${local(String(item.details.ended_at))}` : ""}
+                        </small>
+                      )}
+                      {item.action === "adjudicate_refusal" && (
+                        <small>
+                          <strong>
+                            Отказ: {item.details.justified === true ? "обоснован" : "необоснован"}
+                          </strong>
+                        </small>
+                      )}
+                    </li>
+                  );
+                })}
             </ol>
           </details>
         </section>
       </div>
     </Dialog>
+  );
+}
+
+function PhotoUploadPanel({
+  label,
+  busy,
+  onUpload,
+}: {
+  label: string;
+  busy: boolean;
+  onUpload: (file: File, aiShareAllowed: boolean, capturedAt?: string) => Promise<void>;
+}) {
+  const inputId = useId();
+  const previewRef = useRef<HTMLDivElement>(null);
+  const [selected, setSelected] = useState<File>();
+  const [preview, setPreview] = useState<string>();
+  const [redactions, setRedactions] = useState<RedactionRect[]>([]);
+  const [draft, setDraft] = useState<RedactionRect>();
+  const [dragStart, setDragStart] = useState<{ x: number; y: number }>();
+  const [maskMode, setMaskMode] = useState(false);
+  const [manual, setManual] = useState({ x: "", y: "", width: "", height: "" });
+  const [aiShareAllowed, setAiShareAllowed] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(
+    () => () => {
+      if (preview) URL.revokeObjectURL(preview);
+    },
+    [preview],
+  );
+
+  function select(file: File | undefined) {
+    if (preview) URL.revokeObjectURL(preview);
+    setSelected(file);
+    setPreview(file ? URL.createObjectURL(file) : undefined);
+    setRedactions([]);
+    setDraft(undefined);
+    setDragStart(undefined);
+    setMaskMode(false);
+    setManual({ x: "", y: "", width: "", height: "" });
+    setAiShareAllowed(false);
+    setError("");
+  }
+
+  function point(event: React.PointerEvent<HTMLDivElement>) {
+    const bounds = previewRef.current?.getBoundingClientRect();
+    if (!bounds) return null;
+    return {
+      x: (event.clientX - bounds.left) / bounds.width,
+      y: (event.clientY - bounds.top) / bounds.height,
+    };
+  }
+
+  function beginMask(event: React.PointerEvent<HTMLDivElement>) {
+    if (!maskMode) return;
+    const start = point(event);
+    if (!start) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDragStart(start);
+    setDraft(undefined);
+  }
+
+  function drawMask(event: React.PointerEvent<HTMLDivElement>) {
+    if (!dragStart) return;
+    const next = point(event);
+    if (next) setDraft(normalizeRedaction(dragStart, next) ?? undefined);
+  }
+
+  function finishMask(event: React.PointerEvent<HTMLDivElement>) {
+    if (!dragStart) return;
+    const end = point(event);
+    const next = end ? normalizeRedaction(dragStart, end) : null;
+    if (next) setRedactions((current) => [...current, next]);
+    setDragStart(undefined);
+    setDraft(undefined);
+  }
+
+  function addManualMask() {
+    const x = Number(manual.x) / 100;
+    const y = Number(manual.y) / 100;
+    const width = Number(manual.width) / 100;
+    const height = Number(manual.height) / 100;
+    if (![x, y, width, height].every(Number.isFinite)) return;
+    const next = normalizeRedaction({ x, y }, { x: x + width, y: y + height });
+    if (!next) return;
+    setRedactions((current) => [...current, next]);
+    setManual({ x: "", y: "", width: "", height: "" });
+  }
+
+  async function flattenedPhoto(file: File) {
+    if (!redactions.length) return file;
+    // Never upload the original if a requested privacy operation cannot be performed.
+    if (typeof createImageBitmap !== "function") throw new Error("redaction_unavailable");
+    const bitmap = await createImageBitmap(file);
+    try {
+      const canvas = document.createElement("canvas");
+      const scale = Math.min(1, 2048 / Math.max(bitmap.width, bitmap.height));
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("canvas_unavailable");
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const frame = context.getImageData(0, 0, canvas.width, canvas.height);
+      blackenPixels(frame.data, canvas.width, canvas.height, redactions);
+      context.putImageData(frame, 0, 0);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+      if (!blob) throw new Error("redaction_failed");
+      return new File([blob], file.name.replace(/\.[^.]+$/, "") + "-redacted.jpg", {
+        type: "image/jpeg",
+        lastModified: file.lastModified,
+      });
+    } finally {
+      bitmap.close();
+    }
+  }
+
+  async function send() {
+    if (!selected) return;
+    setUploading(true);
+    setError("");
+    try {
+      const [capturedAt, upload] = await Promise.all([capturePhotoTime(selected), flattenedPhoto(selected)]);
+      await onUpload(upload, aiShareAllowed, capturedAt);
+      select(undefined);
+    } catch {
+      setError("Фото не загружено. Проверьте тип, размер, соединение и доступ.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <section className="photo-upload-panel" aria-label="Подготовка загрузки фото">
+      <label htmlFor={inputId}>
+        {label}
+        <input
+          id={inputId}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          capture="environment"
+          disabled={busy || uploading}
+          onChange={(event) => select(event.target.files?.[0])}
+        />
+      </label>
+      {selected && (
+        <div className="photo-upload-preview">
+          {preview && <img src={preview} alt={`Предпросмотр: ${selected.name}`} />}
+          <div>
+            <strong>{selected.name}</strong>
+            <small>
+              {new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 }).format(
+                selected.size / 1024 / 1024,
+              )}{" "}
+              МБ
+            </small>
+          </div>
+        </div>
+      )}
+      {selected && preview && (
+        <>
+          <div
+            className={`photo-redaction-stage ${maskMode ? "masking" : ""}`}
+            ref={previewRef}
+            onPointerDown={beginMask}
+            onPointerMove={drawMask}
+            onPointerUp={finishMask}
+            onPointerCancel={finishMask}
+            aria-label={
+              maskMode ? "Проведите по фотографии, чтобы скрыть участок" : "Предпросмотр для скрытия участков"
+            }
+            role={maskMode ? "application" : undefined}
+          >
+            <img src={preview} alt="Предпросмотр для ручного скрытия данных" />
+            {[...redactions, ...(draft ? [draft] : [])].map((redaction, index) => (
+              <span
+                className="photo-redaction-box"
+                key={`${redaction.left}-${redaction.top}-${index}`}
+                style={{
+                  left: `${redaction.left * 100}%`,
+                  top: `${redaction.top * 100}%`,
+                  width: `${(redaction.right - redaction.left) * 100}%`,
+                  height: `${(redaction.bottom - redaction.top) * 100}%`,
+                }}
+              />
+            ))}
+          </div>
+          <div className="photo-redaction-tools">
+            <button
+              type="button"
+              className={maskMode ? "primary" : "secondary"}
+              aria-pressed={maskMode}
+              disabled={busy || uploading}
+              onClick={() => setMaskMode((active) => !active)}
+            >
+              {maskMode ? "Завершить скрытие" : "Скрыть личные данные"}
+            </button>
+            <button
+              type="button"
+              className="text-button"
+              disabled={!redactions.length || busy || uploading}
+              onClick={() => setRedactions((current) => current.slice(0, -1))}
+            >
+              Отменить последнее
+            </button>
+            <button
+              type="button"
+              className="text-button"
+              disabled={!redactions.length || busy || uploading}
+              onClick={() => setRedactions([])}
+            >
+              Очистить скрытия
+            </button>
+          </div>
+          <p className="photo-privacy-note">
+            Скрытие ручное: проведите по участку на фото. После загрузки будет сохранён JPEG с чёрными
+            прямоугольниками, исходный файл не отправляется.
+          </p>
+          <details className="photo-manual-mask">
+            <summary>Ввести область скрытия точно</summary>
+            <p>Координаты в процентах от левого верхнего угла изображения.</p>
+            <div>
+              {(["x", "y", "width", "height"] as const).map((field) => (
+                <label key={field}>
+                  {{ x: "X", y: "Y", width: "Ширина", height: "Высота" }[field]}, %
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    inputMode="decimal"
+                    value={manual[field]}
+                    disabled={busy || uploading}
+                    onChange={(event) =>
+                      setManual((current) => ({ ...current, [field]: event.target.value }))
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+            <button type="button" className="secondary" disabled={busy || uploading} onClick={addManualMask}>
+              Добавить область
+            </button>
+          </details>
+        </>
+      )}
+      <label className="check photo-ai-consent">
+        <input
+          type="checkbox"
+          checked={aiShareAllowed}
+          disabled={!selected || busy || uploading}
+          onChange={(event) => setAiShareAllowed(event.target.checked)}
+        />{" "}
+        На фото только оборудование, личные и конфиденциальные данные скрыты. Разрешить анализ ИИ.
+      </label>
+      <small className="photo-privacy-note">
+        Без этой отметки фото сохранится во внутреннем наряде и не будет передано внешнему ИИ. Отметка не
+        заменяет проверку кадра человеком.
+      </small>
+      {error && <p className="error">{error}</p>}
+      <button
+        type="button"
+        className="secondary"
+        disabled={!selected || busy || uploading}
+        onClick={() => void send()}
+      >
+        {uploading ? "Загружаем…" : "Загрузить фото"}
+      </button>
+    </section>
   );
 }
 

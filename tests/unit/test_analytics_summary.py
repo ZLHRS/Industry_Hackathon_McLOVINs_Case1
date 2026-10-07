@@ -97,7 +97,7 @@ async def test_grounded_model_selection_renders_only_server_facts(
     result = await summary.summarize_analytics(_report(), _config())
 
     assert result.source == "openai"
-    assert result.model == "gpt-6.1-sol"
+    assert result.model == "gpt-5.4"
     assert result.evidence_ids == ["anomalies_high", "overdue_orders"]
     assert "Аномалий уровня «высокий»: 1." in result.text
     assert "Просроченных нарядов: 3." in result.text

@@ -1,18 +1,138 @@
+name: technaryad
+
+x-runtime: &runtime
+  image: technaryad-api:local
+  build:
+    context: .
+    dockerfile: deploy/Dockerfile.api
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  secrets:
+    - app_password
+  volumes:
+    - photos:/app/var/photos
+  environment: &app-environment
+    NARYADAI_ENVIRONMENT: production
+    NARYADAI_ALLOWED_HOSTS: '${NARYADAI_ALLOWED_HOSTS:-["localhost","127.0.0.1"]}'
+    NARYADAI_CORS_ORIGINS: '${NARYADAI_CORS_ORIGINS:-[]}'
+    NARYADAI_PHOTO_ROOT: /app/var/photos
+
 services:
   postgres:
-    image: postgres:16.15
+    image: postgres:16.15@sha256:65b16a8b326e0cfbdf33fa7e783f2a0cb352a61448616ccccfd616ef42aa0f65
+    restart: unless-stopped
+    networks: [backend]
     environment:
       POSTGRES_DB: naryadai
       POSTGRES_USER: naryadai
-      POSTGRES_PASSWORD: ${NARYADAI_POSTGRES_PASSWORD:?Set NARYADAI_POSTGRES_PASSWORD}
-    ports:
-      - "127.0.0.1:55432:5432"
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+      - app_password
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./deploy/init-database.sql:/docker-entrypoint-initdb.d/10-app.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U naryadai -d naryadai"]
-      interval: 5s
+      interval: 3s
       timeout: 3s
-      retries: 10
+      retries: 20
+  migrate:
+    <<: *runtime
+    networks: [backend]
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+  api:
+    <<: *runtime
+    networks:
+      backend:
+      proxy:
+        ipv4_address: 10.77.88.3
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+  worker:
+    <<: *runtime
+    networks: [backend]
+    restart: unless-stopped
+    command: ["python", "-m", "naryadai.worker"]
+    depends_on:
+      api:
+        condition: service_healthy
+  web:
+    networks:
+      proxy:
+        ipv4_address: 10.77.88.2
+      tunnel:
+    image: technaryad-web:local
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
+    restart: unless-stopped
+    environment:
+      NARYADAI_SITE_ADDRESS: ${NARYADAI_SITE_ADDRESS:-http://:80}
+    ports:
+      - "${NARYADAI_BIND:-127.0.0.1}:${NARYADAI_HTTP_PORT:-8080}:80"
+      - "${NARYADAI_BIND:-127.0.0.1}:${NARYADAI_HTTPS_PORT:-8443}:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+  seed:
+    <<: *runtime
+    profiles: ["demo"]
+    # Seed safeguards deliberately require loopback and a non-production environment.
+    network_mode: service:postgres
+    environment:
+      <<: *app-environment
+      NARYADAI_ENVIRONMENT: development
+      NARYADAI_DB_HOST: 127.0.0.1
+      NARYADAI_CONTAINER_SEED: "1"
+    secrets:
+      - app_password
+      - demo_password
+    volumes:
+      - demo_output:/app/var
+    command: ["python", "-m", "seeds.industrial", "apply"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+secrets:
+  postgres_password:
+    file: ./var/docker/secrets/postgres_password
+  app_password:
+    file: ./var/docker/secrets/app_password
+  demo_password:
+    file: ./var/docker/secrets/demo_password
 volumes:
   postgres_data:
+  photos:
+  caddy_data:
+  caddy_config:
+  demo_output:
+
+networks:
+  backend:
+  proxy:
+    ipam:
+      config:
+        - subnet: 10.77.88.0/24
+  tunnel:

@@ -10,8 +10,9 @@ import pytest
 from PIL import Image
 from pydantic import SecretStr
 
-from naryadai.ai import ReviewResult
+from naryadai.ai import ReviewResult, manual_review_result
 from naryadai.config import Settings
+from naryadai.domain.lifecycle import AiAssessment
 
 SCRIPT = Path(__file__).parents[2] / "scripts" / "eval_ai.py"
 SPEC = importlib.util.spec_from_file_location("eval_ai", SCRIPT)
@@ -42,15 +43,15 @@ async def test_dry_run_never_calls_analyzer_and_writes_unexecuted_result(tmp_pat
         calls += 1
         raise AssertionError("dry run must not call the provider")
 
-    code, report, path = await ai_eval.run_evaluation(
-        output_root=tmp_path,
-        analyzer=analyzer,
-    )
+    code, report, path = await ai_eval.run_evaluation(output_root=tmp_path, analyzer=analyzer)
 
     assert code == 0
     assert calls == 0
     assert report["executed"] is False
     assert report["stop_reason"] == "dry_run"
+    assert report["fixture_source"] == (
+        "generated in scripts/eval_ai.py; no seed or user photos are used"
+    )
     assert json.loads(path.read_text(encoding="utf-8"))["executed"] is False
 
 
@@ -99,32 +100,78 @@ async def test_quota_error_aborts_after_one_synthetic_call(tmp_path: Path) -> No
     assert len(report["cases"]) == 1
 
 
-def test_grade_rejects_accepted_advisory_for_negative_case_even_when_manual() -> None:
+def test_grade_rejects_accepted_result_for_rework_case() -> None:
     case = next(case for case in ai_eval.build_cases() if case.name == "not_repaired")
     result = ReviewResult(
-        verdict=None,
-        score=None,
+        verdict=AiAssessment.ACCEPTED,
+        score=5,
         needs_master_review=True,
-        explanation="Решение оставлено мастеру. Рекомендация модели: Принято. Всё хорошо.",
-        model_name="gpt-6.1-sol",
+        explanation="Рекомендация модели: Принято.",
+        model_name="gpt-5.4",
         report=_report(
-            [{"code": "semantic_review", "title": "semantic", "status": "unknown", "detail": "x"}]
+            [
+                {"code": "photo_pairs", "status": "fail", "detail": "missing"},
+                {"code": "semantic_review", "status": "pass", "detail": "wrong"},
+            ]
         ),
     )
 
-    grade = ai_eval.grade_case(case, result, "gpt-6.1-sol")
+    grade = ai_eval.grade_case(case, result, "gpt-5.4")
 
-    assert grade["manual_safety_ok"] is True
-    assert grade["semantic_ok"] is False
+    assert grade["actual_outcome"] == "accepted"
+    assert grade["outcome_ok"] is False
     assert grade["passed"] is False
 
 
-def test_generated_vision_cases_are_distinct_clear_synthetic_jpegs() -> None:
-    vision_cases = [case for case in ai_eval.build_cases() if case.vision]
+def test_grade_accepts_exact_positive_preliminary_result() -> None:
+    source = next(
+        case for case in ai_eval.build_cases() if case.name == "complete_guard_installation"
+    )
+    case = ai_eval.EvalCase(
+        "unit_accepted",
+        source.review,
+        "accepted",
+        (("photo_pairs", "pass"), ("same_equipment", "pass")),
+        "calibration",
+    )
+    result = ReviewResult(
+        verdict=AiAssessment.ACCEPTED,
+        score=5,
+        needs_master_review=True,
+        explanation="Рекомендация модели: Принято.",
+        model_name="gpt-5.4",
+        report=_report(
+            [
+                {"code": "photo_pairs", "status": "pass", "detail": "after"},
+                {"code": "same_equipment", "status": "pass", "detail": "same"},
+                {"code": "semantic_review", "status": "pass", "detail": "complete"},
+            ]
+        ),
+    )
 
-    assert len(vision_cases) == 2
-    before, after = vision_cases[0].review.photos
-    different_after = vision_cases[1].review.photos[1]
+    grade = ai_eval.grade_case(case, result, "gpt-5.4")
+
+    assert grade["required_checks_ok"] is True
+    assert grade["score_and_gate_ok"] is True
+    assert grade["passed"] is True
+
+
+def test_generated_vision_cases_are_distinct_clear_synthetic_jpegs() -> None:
+    cases = {case.name: case for case in ai_eval.build_cases()}
+    vision_cases = [case for case in cases.values() if case.vision]
+
+    assert {case.name for case in vision_cases} == {
+        "complete_guard_installation",
+        "old_photo",
+        "duplicate_photo",
+        "similar_photo",
+        "missing_time_norm",
+        "vision_guard_fitted",
+        "vision_different_machine",
+        "fresh_holdout_visible_warning_sign",
+    }
+    before, after = cases["vision_guard_fitted"].review.photos
+    different_after = cases["vision_different_machine"].review.photos[1]
     assert before.image_bytes is not None and after.image_bytes is not None
     assert after.image_bytes != different_after.image_bytes
     with Image.open(BytesIO(before.image_bytes)) as image:
@@ -132,33 +179,72 @@ def test_generated_vision_cases_are_distinct_clear_synthetic_jpegs() -> None:
         assert image.size == (360, 220)
 
 
-@pytest.mark.parametrize("label", ["Принято", "Принято с замечаниями"])  # noqa: RUF001
-def test_explicit_unfinished_work_cannot_be_accepted_even_with_remarks(label):
-    case = next(case for case in ai_eval.build_cases() if case.name == "not_repaired")
-    result = ReviewResult(
-        verdict=None,
-        score=None,
-        needs_master_review=True,
-        explanation="Рекомендация модели: " + label + ".",
-        model_name="gpt-6.1-sol",
-        report=_report(
-            [
-                {"code": "semantic_review", "status": "unknown", "detail": "unfinished"},
-                {"code": "model_0", "status": "warning", "detail": "unfinished"},
-            ]
-        ),
-    )
-    assert not ai_eval.grade_case(case, result, "gpt-6.1-sol")["passed"]
+def test_synthetic_safety_cases_cover_local_evidence_failures() -> None:
+    cases = {case.name: case for case in ai_eval.build_cases()}
+    expected = {
+        "missing_after_unplanned": ("photo_pairs", "fail"),
+        "old_photo": ("capture_provenance", "warning"),
+        "duplicate_photo": ("exact_photo_reuse", "fail"),
+        "similar_photo": ("perceptual_photo_similarity", "warning"),
+        "missing_time_norm": ("repair_time", "unknown"),
+        "excessive_historical_consumption": ("materials", "warning"),
+    }
+
+    for name, (code, status) in expected.items():
+        result = manual_review_result(cases[name].review, source="rules")
+        check = next(item for item in result.report["checks"] if item["code"] == code)
+        assert check["status"] == status, name
 
 
-def test_different_equipment_requires_explicit_visual_check():
-    case = next(case for case in ai_eval.build_cases() if case.name == "vision_different_machine")
-    result = ReviewResult(
-        verdict=None,
-        score=None,
-        needs_master_review=True,
-        explanation="Рекомендация модели: Недостаточно данных.",
-        model_name="gpt-6.1-sol",
-        report=_report([{"code": "semantic_review", "status": "unknown"}]),
-    )
-    assert not ai_eval.grade_case(case, result, "gpt-6.1-sol")["passed"]
+def test_all_cases_are_calibration_after_two_live_repair_cycles() -> None:
+    cases = ai_eval.build_cases()
+    calibration = {case.name for case in cases if case.partition == "calibration"}
+
+    assert len(cases) == 15
+    assert len(calibration) == 15
+    assert all("seed" not in case.name for case in cases)
+
+
+def test_metrics_count_abstention_as_a_failure() -> None:
+    cases = ai_eval.build_cases()
+    positive = next(case for case in cases if case.name == "complete_guard_installation")
+    negative = next(case for case in cases if case.name == "not_repaired")
+    records = [
+        {
+            "name": positive.name,
+            "grade": {
+                "passed": False,
+                "expected_outcome": "accepted",
+                "actual_outcome": "abstain",
+            },
+        },
+        {
+            "name": negative.name,
+            "grade": {
+                "passed": False,
+                "expected_outcome": "rework_required",
+                "actual_outcome": "accepted",
+            },
+        },
+    ]
+
+    metrics = ai_eval._metrics(records, cases)
+
+    overall = metrics["overall"]
+    assert overall["passed"] == 0
+    assert overall["abstentions"] == 1
+    assert overall["unsafe_acceptances"] == 1
+    assert metrics["by_partition"]["calibration"]["expected_cases"] == 15
+
+
+def test_key_file_settings_override_an_ambient_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    key_file = tmp_path / "fresh-key"
+    key_file.write_text("fresh-test-key\n", encoding="utf-8")
+    monkeypatch.setenv("NARYADAI_AI_API_KEY", "old-key-must-not-be-used")
+
+    settings = ai_eval._settings_from_key_file(key_file)
+
+    assert settings.ai_api_key is not None
+    assert settings.ai_api_key.get_secret_value() == "fresh-test-key"

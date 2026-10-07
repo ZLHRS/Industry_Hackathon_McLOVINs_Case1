@@ -1,0 +1,110 @@
+{
+  "date": "2026-10-08",
+  "backend": {
+    "passed": 439,
+    "coverage_percent": 92.22
+  },
+  "frontend_unit": {
+    "passed": 55
+  },
+  "browser_e2e": {
+    "passed": 37,
+    "channel": "Chrome",
+    "physical_device": false
+  },
+  "realtime_local_ms": {
+    "issue": 1326,
+    "accept": 936
+  },
+  "public_accounts": {
+    "tested": 19,
+    "passed": 19
+  },
+  "public_layout_widths": [
+    1440,
+    768,
+    390
+  ],
+  "backup": {
+    "created_at": "2026-10-07T21:41:09.146557+00:00",
+    "database_restore": "passed",
+    "counts": [
+      "events|3723",
+      "materials|1081",
+      "orders|601",
+      "photos|0"
+    ],
+    "photo_archive_files": 0,
+    "database_sha256": "9df0ea56b78c43907b3a94d3c198a7a0c9f9baf9bae71e88ae827099fc8095bc",
+    "photos_sha256": "de837cc2d7d28d2d63b0f39caaefc467621cae81a610df211a4a3da213397595",
+    "scope": "Database restored with constraints; photo archive readable. Role grants, secrets and full service recovery require the deployment runbook."
+  },
+  "live_pipeline": {
+    "status": "PASS",
+    "source": "openai",
+    "model": "gpt-5.4",
+    "durable_job": "completed",
+    "master_decision": "closed",
+    "master_score": 4,
+    "original_ai_score_preserved": true,
+    "elapsed_seconds": 16.61,
+    "production_database_changed": false,
+    "synthetic_only": true,
+    "vision_in_this_smoke": false
+  },
+  "deployment": {
+    "api": {
+      "key_configured": true,
+      "model": "gpt-5.4",
+      "vision_enabled": false
+    },
+    "worker": {
+      "key_configured": true,
+      "model": "gpt-5.4",
+      "vision_enabled": true
+    },
+    "containers": [
+      {
+        "Service": "api",
+        "State": "running",
+        "Health": "healthy"
+      },
+      {
+        "Service": "postgres",
+        "State": "running",
+        "Health": "healthy"
+      },
+      {
+        "Service": "tunnel",
+        "State": "running",
+        "Health": "healthy"
+      },
+      {
+        "Service": "web",
+        "State": "running",
+        "Health": ""
+      },
+      {
+        "Service": "worker",
+        "State": "running",
+        "Health": ""
+      }
+    ]
+  },
+  "video": {
+    "seconds": 87.12,
+    "synthetic": true,
+    "external_ai_in_recording": false
+  },
+  "pdf_pages": 10,
+  "container_ai_smoke": {
+    "status": "PASS",
+    "source": "openai",
+    "model": "gpt-5.4",
+    "vision_configured": true,
+    "master_review_required": true,
+    "synthetic_only": true,
+    "database_written": false
+  },
+  "independent_review": "PASS"
+}

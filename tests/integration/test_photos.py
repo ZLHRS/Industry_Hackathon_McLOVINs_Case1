@@ -119,6 +119,7 @@ async def test_private_photo_upload_replay_and_download(database, tmp_path: Path
         assert result["version"] == 2
         assert result["kind"] == "before"
         assert len(result["sha256"]) == 64
+        assert result["ai_share_allowed"] is False
 
         replay = await client.post(path, content=_png(), headers=headers)
         assert replay.status_code == 201, replay.text
@@ -205,7 +206,8 @@ async def test_photo_limits_streaming_stale_and_read_scope(database, tmp_path: P
         version = result["version"]
         for index in range(5):
             after = await client.post(
-                f"/api/v1/work-orders/{order_id}/photos?kind=after&expected_version={version}",
+                f"/api/v1/work-orders/{order_id}/photos?kind=after&expected_version={version}"
+                + ("&ai_share_allowed=true" if index == 0 else ""),
                 content=_png(),
                 headers=executor
                 | {
@@ -214,6 +216,7 @@ async def test_photo_limits_streaming_stale_and_read_scope(database, tmp_path: P
                 },
             )
             assert after.status_code == 201, after.text
+            assert after.json()["ai_share_allowed"] is (index == 0)
             version = after.json()["version"]
         sixth = await client.post(
             f"/api/v1/work-orders/{order_id}/photos?kind=after&expected_version={version}",

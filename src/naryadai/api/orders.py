@@ -77,6 +77,8 @@ async def orders(
     priority: Priority | None = None,
     work_type: WorkType | None = None,
     overdue: bool | None = None,
+    q: str | None = Query(default=None, max_length=120),
+    attention: bool = False,
     offset: int = Query(default=0, ge=0, le=100_000),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> OrderPage:
@@ -90,6 +92,8 @@ async def orders(
         priority=priority,
         work_type=work_type,
         overdue=overdue,
+        q=q,
+        attention=attention,
         offset=offset,
         limit=limit,
     )

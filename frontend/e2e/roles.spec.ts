@@ -24,7 +24,14 @@ for (const role of ["executor", "master", "manager", "admin"] as const) {
       manager: ["Наряды", "Загрузка", "Отчёт"],
       admin: ["Сотрудники", "Справочники"],
     };
-    await expect(navigation.getByRole("button")).toHaveText(labels[role]);
+    const expectNavigationLabels = async (scope: typeof navigation) => {
+      const buttons = scope.getByRole("button");
+      await expect(buttons).toHaveCount(labels[role].length);
+      for (const [index, label] of labels[role].entries()) {
+        await expect(buttons.nth(index)).toHaveAccessibleName(label);
+      }
+    };
+    await expectNavigationLabels(navigation);
     if (role === "admin") {
       await expect(page.getByRole("heading", { name: "Сотрудники и доступ", exact: true })).toBeVisible();
       await expect(page.locator(".live-bar")).toHaveCount(0);
@@ -76,9 +83,7 @@ for (const role of ["executor", "master", "manager", "admin"] as const) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await page.screenshot({ path: info.outputPath(`${role}-home-mobile.png`) });
     await page.setViewportSize({ width: 1440, height: 900 });
-    await expect(page.getByRole("navigation", { name: "Основная навигация" }).getByRole("button")).toHaveText(
-      labels[role],
-    );
+    await expectNavigationLabels(page.getByRole("navigation", { name: "Основная навигация" }));
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await page.screenshot({ path: info.outputPath(`${role}-home-desktop.png`) });
     expect(errors).toEqual([]);

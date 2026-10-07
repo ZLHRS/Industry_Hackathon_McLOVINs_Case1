@@ -37,6 +37,7 @@ from naryadai.infrastructure.database import Database
 from naryadai.infrastructure.models import (
     AIReview,
     AIReviewJob,
+    Area,
     Employee,
     EmployeeArea,
     EmployeeRole,
@@ -104,6 +105,27 @@ async def _executor_for_area(
     return employee
 
 
+async def _master_for_area(session: AsyncSession, employee_id: UUID, area_id: UUID) -> None:
+    """Lock and revalidate the issuing master against concurrent access changes."""
+
+    master = await session.scalar(
+        select(Employee).where(Employee.id == employee_id).with_for_update()
+    )
+    if (
+        master is None
+        or master.role is not EmployeeRole.MASTER
+        or not master.is_active
+        or await session.scalar(
+            select(EmployeeArea.employee_id).where(
+                EmployeeArea.employee_id == employee_id,
+                EmployeeArea.area_id == area_id,
+            )
+        )
+        is None
+    ):
+        raise OperationError(409, "master_must_be_active_and_area_qualified")
+
+
 async def _lock_employees(session: AsyncSession, employee_ids: set[UUID]) -> dict[UUID, Employee]:
     """Lock employee rows in UUID order after the order row to avoid start races."""
 
@@ -123,7 +145,10 @@ async def _lock_employees(session: AsyncSession, employee_ids: set[UUID]) -> dic
 async def _verify_fault_code(session: AsyncSession, fault_code_id: UUID | None) -> None:
     if fault_code_id is None:
         return
-    if await session.get(FaultCode, fault_code_id) is None:
+    fault = await session.scalar(
+        select(FaultCode).where(FaultCode.id == fault_code_id).with_for_update()
+    )
+    if fault is None:
         raise OperationError(422, "fault_code_not_found")
 
 
@@ -132,7 +157,14 @@ async def _verify_materials(session: AsyncSession, completion: Completion) -> No
     if not material_ids:
         return
     found = set(
-        (await session.scalars(select(Material.id).where(Material.id.in_(material_ids)))).all()
+        (
+            await session.scalars(
+                select(Material.id)
+                .where(Material.id.in_(material_ids))
+                .order_by(Material.id)
+                .with_for_update()
+            )
+        ).all()
     )
     if found != material_ids:
         raise OperationError(422, "material_not_found")
@@ -190,6 +222,27 @@ def _assert_mutable(order: WorkOrder) -> None:
         raise OperationError(409, "terminal_order_is_immutable")
 
 
+async def _active_catalog_for_order(
+    session: AsyncSession, area_id: UUID, equipment_id: UUID
+) -> None:
+    """Lock the references used by a new assignment against concurrent archiving."""
+
+    area = await session.scalar(select(Area).where(Area.id == area_id).with_for_update())
+    if area is None:
+        raise OperationError(422, "area_not_found")
+    if not area.is_active:
+        raise OperationError(409, "area_inactive")
+    equipment = await session.scalar(
+        select(Equipment)
+        .where(Equipment.id == equipment_id, Equipment.area_id == area_id)
+        .with_for_update()
+    )
+    if equipment is None:
+        raise OperationError(422, "equipment_not_in_area")
+    if not equipment.is_active:
+        raise OperationError(409, "equipment_inactive")
+
+
 async def create_order(
     database: Database, principal: Principal, body: CreateOrder, key: str
 ) -> dict[str, Any]:
@@ -201,17 +254,12 @@ async def create_order(
 
     payload = body.model_dump(mode="json")
     async with database.sessions.begin() as session:
+        await _master_for_area(session, principal.employee_id, body.area_id)
         replay = await idempotent(session, principal, key, "create_order", payload)
         if replay is not None:
             return replay
 
-        equipment = await session.scalar(
-            select(Equipment.id).where(
-                Equipment.id == body.equipment_id, Equipment.area_id == body.area_id
-            )
-        )
-        if equipment is None:
-            raise OperationError(422, "equipment_not_in_area")
+        await _active_catalog_for_order(session, body.area_id, body.equipment_id)
         await _executor_for_area(session, body.executor_id, body.area_id, lock=True)
         await _verify_fault_code(session, body.fault_code_id)
 
@@ -392,6 +440,7 @@ async def execute_action(
             )
         elif body.action == "reassign":
             assert body.executor_id is not None
+            await _active_catalog_for_order(session, order.area_id, order.equipment_id)
             await _executor_for_area(session, body.executor_id, order.area_id, lock=True)
             changed = _apply_transition(
                 await _lifecycle_state(session, order),
@@ -463,6 +512,12 @@ async def execute_action(
                     order.closed_at = at
                 review = await _current_review(session, order)
                 if review is not None:
+                    if (
+                        action in {Action.CLOSE, Action.OVERRIDE_CLOSE}
+                        and review.score is None
+                        and body.master_score is None
+                    ):
+                        raise OperationError(422, "closed_order_requires_ai_or_master_score")
                     event_details = {
                         "review_id": str(review.id),
                         "submission_version": review.order_version,

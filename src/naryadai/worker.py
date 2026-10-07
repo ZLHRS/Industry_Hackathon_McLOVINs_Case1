@@ -125,6 +125,11 @@ async def _ai_loop(database: Database, settings: Settings, review: Delivery) -> 
         except SQLAlchemyError:
             # No exception payload: driver details may contain repair evidence.
             logger.error("AI review database pass failed; retrying")
+        except Exception:
+            # Vision preparation and provider adapters are optional integrations.
+            # Do not let one malformed private file or unexpected adapter failure
+            # terminate the TaskGroup that also drives deadlines and notifications.
+            logger.error("AI review pass failed; retrying")
         await asyncio.sleep(settings.worker_interval_seconds)
 
 

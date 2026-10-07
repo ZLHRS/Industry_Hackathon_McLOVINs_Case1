@@ -106,7 +106,9 @@ test("master audits fallback AI review with a score and manual close", async ({ 
   await expect(page.getByText(candidate.description, { exact: true })).toBeVisible();
   await page.getByText(candidate.description, { exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByRole("heading", { name: /Нужна доработка|Принято|Вердикт/ })).toBeVisible();
+  await expect(
+    dialog.getByRole("heading", { name: "Предварительный вывод не сформирован", exact: true }),
+  ).toBeVisible();
   await expect(dialog.getByText(/Автоматическая проверка/).first()).toBeVisible();
   await expect(dialog.getByLabel("Оценка мастера (необязательно)", { exact: true })).toBeVisible();
   await dialog.getByLabel("Оценка мастера (необязательно)", { exact: true }).fill("4");
@@ -136,6 +138,27 @@ test("master audits fallback AI review with a score and manual close", async ({ 
     (await events.json()).items.find((item: { action: string }) => item.action === "override_close").reason,
   ).toMatch(/подтверждает закрытие/);
   expect(errors).toEqual([]);
+});
+
+test("cancelled reviewed order no longer asks for a master decision", async ({ page, request }) => {
+  const candidate = await createManualReviewCandidate(request);
+  await login(page, state.master_login);
+  await page.getByText(candidate.description, { exact: true }).click();
+  const detail = page.getByRole("dialog");
+  await expect(detail.getByText("Ожидает решения мастера", { exact: true })).toBeVisible();
+  const current = await readOrder(request, candidate.master, candidate.id);
+  await action(request, candidate.master, candidate.id, {
+    action: "cancel",
+    expected_version: current.version,
+    reason: "Отмена после проверки для регрессионного сценария.",
+  });
+  await expect(detail.getByRole("heading", { name: /· Отменён$/ })).toBeVisible();
+  await expect(detail.getByText("Ожидает решения мастера", { exact: true })).toHaveCount(0);
+  await expect(
+    detail
+      .getByRole("region", { name: "Автоматическая проверка", exact: true })
+      .getByText("Наряд отменён", { exact: true }),
+  ).toBeVisible();
 });
 
 test("master returns current review to rework and executor starts a clean attempt", async ({

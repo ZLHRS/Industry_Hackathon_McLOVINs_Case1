@@ -74,8 +74,10 @@ export class RealtimeConnection {
       }
       if (message.type === "ready") {
         this.attempt = 0;
-        this.options.onState("live");
+        // Reload after every authenticated handshake. This closes the gap between
+        // the initial HTTP load and WebSocket readiness (including reconnects).
         this.options.onRefresh(message.revision);
+        this.options.onState("live");
       }
       if (message.type === "refresh") this.options.onRefresh(message.revision);
     };

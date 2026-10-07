@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     # A missing key yields an explicit manual review; it never invents an AI verdict.
     ai_api_key: SecretStr | None = None
     ai_model: str = Field(
-        default="gpt-6.1-sol",
+        default="gpt-5.4",
         min_length=1,
         max_length=120,
         pattern=r"^[a-zA-Z0-9._:-]+$",

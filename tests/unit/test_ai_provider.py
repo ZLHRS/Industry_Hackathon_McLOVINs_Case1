@@ -13,6 +13,7 @@ from pydantic import SecretStr
 
 import naryadai.ai.repair_review as repair_review
 from naryadai.ai import OpenAIReviewConfig, ProviderError, ReviewInput, ReviewPhoto
+from naryadai.domain.lifecycle import AiAssessment
 
 NOW = datetime(2026, 10, 6, 12, tzinfo=UTC)
 _UNIT_KEY = "unit-test-key-do-not-log"
@@ -273,7 +274,7 @@ async def test_request_rejects_malformed_or_oversized_body_without_echoing_it(
 
 
 @pytest.mark.asyncio
-async def test_wrong_equipment_assessment_is_advisory_only(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_wrong_equipment_assessment_requires_rework(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_request(
         _payload: dict[str, object], _config: OpenAIReviewConfig
     ) -> dict[str, object]:
@@ -282,9 +283,9 @@ async def test_wrong_equipment_assessment_is_advisory_only(monkeypatch: pytest.M
     monkeypatch.setattr(repair_review, "_request", fake_request)
     result = await repair_review.analyze_review(_review(), _config())
 
-    assert result.verdict is None
-    assert result.score is None
-    assert result.needs_master_review is True
+    assert result.verdict is AiAssessment.REWORK_REQUIRED
+    assert result.score == 1
+    assert result.needs_master_review is False
 
 
 @pytest.mark.asyncio
@@ -299,7 +300,7 @@ async def test_wrong_equipment_assessment_is_advisory_only(monkeypatch: pytest.M
     ],
     ids=["missing_images", "oversized_images"],
 )
-async def test_unavailable_visual_evidence_cannot_produce_automatic_success(
+async def test_unavailable_visual_evidence_keeps_master_gated_textual_assessment(
     monkeypatch: pytest.MonkeyPatch,
     photos: tuple[ReviewPhoto, ReviewPhoto],
 ) -> None:
@@ -314,7 +315,8 @@ async def test_unavailable_visual_evidence_cannot_produce_automatic_success(
         _config(max_image_bytes=32_768),
     )
 
-    assert result.verdict is None
+    assert result.verdict is AiAssessment.ACCEPTED_WITH_REMARKS
+    assert result.score == 4
     assert result.needs_master_review is True
 
 
@@ -330,8 +332,8 @@ async def test_client_reported_capture_time_cannot_prove_fresh_visual_success(
     monkeypatch.setattr(repair_review, "_request", fake_request)
     result = await repair_review.analyze_review(_review(), _config())
 
-    assert result.verdict is None
-    assert result.score is None
+    assert result.verdict is AiAssessment.ACCEPTED
+    assert result.score == 5
     assert result.needs_master_review is True
 
 

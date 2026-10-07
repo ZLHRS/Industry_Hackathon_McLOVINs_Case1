@@ -1,13 +1,18 @@
-"""Manage only this project's development PostgreSQL cluster (Ubuntu/WSL)."""
+"""Manage only this project's development PostgreSQL cluster on Linux or macOS."""
 
 import argparse
 import os
+import re
 import secrets
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import psycopg
+from sqlalchemy.engine import make_url
+
+from naryadai.config import Settings
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = ROOT / "var" / "postgres"
@@ -17,8 +22,33 @@ DATA = BASE / "data"
 PORT = 55432
 
 
-def run(*args: str, **kwargs: object) -> subprocess.CompletedProcess:
-    return subprocess.run(args, check=True, **kwargs)
+def postgres_runtime() -> tuple[Path, Path | None]:
+    """Prefer the workspace runtime; never connect to an installed system cluster."""
+    configured = os.environ.get("NARYADAI_PG_BIN")
+    candidates = [Path(configured)] if configured else [BIN]
+    if not configured:
+        if found := shutil.which("pg_ctl"):
+            candidates.append(Path(found).resolve().parent)
+        if sys.platform == "darwin":
+            candidates.extend(
+                [
+                    Path("/Library/PostgreSQL/17/bin"),
+                    Path("/opt/homebrew/opt/postgresql@17/bin"),
+                    Path("/opt/homebrew/opt/postgresql@16/bin"),
+                    Path("/usr/local/opt/postgresql@16/bin"),
+                ]
+            )
+    for candidate in candidates:
+        if all((candidate / executable).is_file() for executable in ("pg_ctl", "initdb")):
+            return candidate, SHARE if candidate == BIN else None
+    raise SystemExit(
+        "PostgreSQL binaries not found. On Ubuntu run bootstrap; on macOS install "
+        "PostgreSQL 16/17 or set NARYADAI_PG_BIN to its bin directory."
+    )
+
+
+def run(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(args, check=True, cwd=cwd)
 
 
 def private_file(path: Path, content: str) -> None:
@@ -27,12 +57,42 @@ def private_file(path: Path, content: str) -> None:
         stream.write(content)
 
 
+def verify_application_connection(app_url: str) -> None:
+    """Do not report readiness for a different or stale application configuration."""
+    message = (
+        "Application database configuration does not match this workspace cluster. "
+        "Check NARYADAI_DATABASE_URL in the environment and .env against "
+        "var/postgres/app-password; existing configuration was not overwritten."
+    )
+    try:
+        configured = Settings(_env_file=ROOT / ".env").database_url
+        if configured is None or make_url(configured.get_secret_value()) != make_url(app_url):
+            raise SystemExit(message)
+    except ValueError:
+        raise SystemExit(message) from None
+    try:
+        with psycopg.connect(
+            make_url(app_url).set(drivername="postgresql").render_as_string(hide_password=False),
+            connect_timeout=3,
+        ) as connection:
+            connection.execute("SELECT 1")
+    except psycopg.Error:
+        raise SystemExit(
+            "Application database login failed; check the workspace role and private credentials."
+        ) from None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["bootstrap", "start", "stop", "status"])
     args = parser.parse_args()
     BASE.mkdir(parents=True, exist_ok=True)
     if args.action == "bootstrap":
+        if sys.platform != "linux":
+            binary, _ = postgres_runtime()
+            run(str(binary / "postgres"), "--version")
+            print("Using installed binaries with a separate workspace cluster.")
+            return
         packages = BASE / "packages"
         packages.mkdir(exist_ok=True)
         run("apt-get", "download", "postgresql-16", cwd=packages)
@@ -42,15 +102,19 @@ def main() -> None:
         run("dpkg-deb", "-x", str(candidates[0]), str(BASE / "runtime"))
         run(str(BIN / "postgres"), "--version")
         return
-    if not (BIN / "pg_ctl").is_file():
-        raise SystemExit(
-            "Run bootstrap first on Ubuntu with apt-get and PostgreSQL client installed"
-        )
+    binary, share = postgres_runtime()
+    if (DATA / "PG_VERSION").is_file():
+        installed = subprocess.check_output([str(binary / "postgres"), "--version"], text=True)
+        major = re.search(r"\b(\d+)\.\d+", installed)
+        if major is None or major.group(1) != (DATA / "PG_VERSION").read_text().strip():
+            raise SystemExit(
+                "Cluster major version differs from PostgreSQL binaries; set NARYADAI_PG_BIN."
+            )
     if args.action == "status":
-        result = subprocess.run([str(BIN / "pg_ctl"), "-D", str(DATA), "status"], check=False)
+        result = subprocess.run([str(binary / "pg_ctl"), "-D", str(DATA), "status"], check=False)
         raise SystemExit(result.returncode)
     if args.action == "stop":
-        run(str(BIN / "pg_ctl"), "-D", str(DATA), "-m", "fast", "-w", "stop")
+        run(str(binary / "pg_ctl"), "-D", str(DATA), "-m", "fast", "-w", "stop")
         return
     password_path = BASE / "password"
     if not password_path.exists():
@@ -60,15 +124,14 @@ def main() -> None:
     password = password_path.read_text().strip()
     if not (DATA / "PG_VERSION").exists():
         run(
-            str(BIN / "initdb"),
+            str(binary / "initdb"),
             "-D",
             str(DATA),
-            "-L",
-            str(SHARE),
+            *(["-L", str(share)] if share else []),
             "-U",
             "naryadai",
             "--encoding=UTF8",
-            "--locale=C.UTF-8",
+            "--locale=" + ("en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8"),
             "--auth=scram-sha-256",
             "--pwfile",
             str(password_path),
@@ -78,13 +141,13 @@ def main() -> None:
             stream.write("unix_socket_directories=''\njit=off\n")
             stream.write("statement_timeout='15s'\nidle_in_transaction_session_timeout='30s'\n")
     status = subprocess.run(
-        [str(BIN / "pg_ctl"), "-D", str(DATA), "status"],
+        [str(binary / "pg_ctl"), "-D", str(DATA), "status"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         check=False,
     )
     if status.returncode != 0:
-        run(str(BIN / "pg_ctl"), "-D", str(DATA), "-l", str(BASE / "server.log"), "-w", "start")
+        run(str(binary / "pg_ctl"), "-D", str(DATA), "-l", str(BASE / "server.log"), "-w", "start")
     app_password_path = BASE / "app-password"
     if not app_password_path.exists():
         private_file(app_password_path, secrets.token_urlsafe(32))
@@ -122,6 +185,7 @@ def main() -> None:
     env_file = ROOT / ".env"
     if not env_file.exists():
         private_file(env_file, "NARYADAI_DATABASE_URL=" + app_url + "\n")
+    verify_application_connection(app_url)
     print("Development PostgreSQL ready on 127.0.0.1:55432")
     print(
         "Database password kept in ignored var/postgres/password; existing .env never overwritten"
