@@ -1,3 +1,4 @@
+import { t, message } from "../lib/i18n";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Api, ApiError } from "../api";
 import { Dialog } from "../components/Dialog";
@@ -17,16 +18,22 @@ const blankCreate = (): CreateEmployee => ({
   secret: "",
 });
 const failure = (error: unknown, action: string) => {
-  if (!(error instanceof ApiError)) return "Не удалось " + action + ". Проверьте соединение и повторите.";
+  if (!(error instanceof ApiError))
+    return t("Не удалось ") + action + t(". Проверьте соединение и повторите.");
   if (error.status === 409 && error.detail === "self_access_change_forbidden")
-    return "Нельзя изменить собственную роль или статус. Это ограничение защищает доступ администратора.";
+    return t("Нельзя изменить собственную роль или статус. Это ограничение защищает доступ администратора.");
   if (error.status === 409 && error.detail === "duplicate_or_invalid_reference")
-    return "Логин уже используется или выбранная бригада либо участок изменились. Обновите список и повторите.";
+    return t(
+      "Логин уже используется или выбранная бригада либо участок изменились. Обновите список и повторите.",
+    );
   if (error.status === 409 && error.detail === "worker_has_active_order")
-    return "Нельзя изменить доступ: у сотрудника есть незавершённый наряд. Завершите или отмените его сначала.";
-  if (error.status === 409) return "Данные сотрудника изменились. Обновите список и повторите действие.";
-  if (error.status === 422) return "Проверьте поля: логин, пароль и доступы должны соответствовать правилам.";
-  return "Не удалось " + action + ". Повторите попытку.";
+    return t(
+      "Нельзя изменить доступ: у сотрудника есть незавершённый наряд. Завершите или отмените его сначала.",
+    );
+  if (error.status === 409) return t("Данные сотрудника изменились. Обновите список и повторите действие.");
+  if (error.status === 422)
+    return t("Проверьте поля: логин, пароль и доступы должны соответствовать правилам.");
+  return t("Не удалось ") + action + t(". Повторите попытку.");
 };
 const specialties = (catalog: Catalog) =>
   Array.from(new Set(catalog.fault_codes.map((code) => code.specialty).filter(Boolean))).sort((a, b) =>
@@ -63,7 +70,7 @@ export function EmployeesView({
       setItems(await api.employees());
       setError("");
     } catch (caught) {
-      setError(failure(caught, "получить список сотрудников"));
+      setError(failure(caught, t("получить список сотрудников")));
     } finally {
       setLoading(false);
     }
@@ -96,7 +103,7 @@ export function EmployeesView({
     try {
       setSelected(await api.employee(employee.id));
     } catch (caught) {
-      setError(failure(caught, "открыть параметры доступа"));
+      setError(failure(caught, t("открыть параметры доступа")));
     }
   };
 
@@ -104,24 +111,24 @@ export function EmployeesView({
     <section className="workspace employees" aria-busy={loading}>
       <div className="page-head employees-head">
         <div>
-          <p className="eyebrow">АДМИНИСТРИРОВАНИЕ</p>
-          <h1>Сотрудники и доступ</h1>
+          <p className="eyebrow">{t("АДМИНИСТРИРОВАНИЕ")}</p>
+          <h1>{t("Сотрудники и доступ")}</h1>
           <p className="muted">
-            Добавьте сотрудника или откройте его запись, чтобы настроить права и пароль.
+            {t("Добавьте сотрудника или откройте его запись, чтобы настроить права и пароль.")}
           </p>
         </div>
         <button className="primary" type="button" onClick={() => setCreateOpen(true)}>
-          Добавить сотрудника
+          {t("Добавить сотрудника")}
         </button>
       </div>
-      <section className="employee-filters" aria-label="Фильтры сотрудников">
+      <section className="employee-filters" aria-label={t("Фильтры сотрудников")}>
         <label className="employee-search">
-          Поиск
+          {t("Поиск")}
           <input
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Имя, логин или специальность"
+            placeholder={t("Имя, логин или специальность")}
           />
         </label>
         <button
@@ -131,20 +138,21 @@ export function EmployeesView({
           aria-controls="employee-filter-options"
           onClick={() => setFiltersOpen(!filtersOpen)}
         >
-          Фильтры{role || status !== "all" ? ` · ${Number(Boolean(role)) + Number(status !== "all")}` : ""}
+          {t("Фильтры")}
+          {role || status !== "all" ? ` · ${Number(Boolean(role)) + Number(status !== "all")}` : ""}
         </button>
         <div
           id="employee-filter-options"
           className={`employee-filter-options ${filtersOpen ? "is-open" : ""}`}
         >
           <label>
-            Роль
+            {t("Роль")}
             <select
-              aria-label="Роль"
+              aria-label={t("Роль")}
               value={role}
               onChange={(event) => setRole(event.target.value as Role | "")}
             >
-              <option value="">Все роли</option>
+              <option value="">{t("Все роли")}</option>
               {roles.map((value) => (
                 <option value={value} key={value}>
                   {roleLabels[value]}
@@ -153,29 +161,29 @@ export function EmployeesView({
             </select>
           </label>
           <label>
-            Статус
+            {t("Статус")}
             <select
-              aria-label="Статус"
+              aria-label={t("Статус")}
               value={status}
               onChange={(event) => setStatus(event.target.value as typeof status)}
             >
-              <option value="all">Все статусы</option>
-              <option value="active">Доступ активен</option>
-              <option value="inactive">Доступ отключён</option>
+              <option value="all">{t("Все статусы")}</option>
+              <option value="active">{t("Доступ активен")}</option>
+              <option value="inactive">{t("Доступ отключён")}</option>
             </select>
           </label>
         </div>
         <button className="secondary" type="button" onClick={() => void refresh()} disabled={loading}>
-          {loading ? "Обновляем…" : "Обновить"}
+          {loading ? t("Обновляем…") : t("Обновить")}
         </button>
       </section>
       {notice && (
         <p className="employee-feedback" role="status">
-          {notice}
+          {message(notice)}
           <button
             type="button"
             className="text-button"
-            aria-label="Закрыть подтверждение"
+            aria-label={t("Закрыть подтверждение")}
             onClick={() => setNotice("")}
           >
             ×
@@ -184,13 +192,13 @@ export function EmployeesView({
       )}
       {error && (
         <p className="error" role="alert">
-          {error}
+          {message(error)}
         </p>
       )}
       {!loading && items && (
         <p className="employees-count">
           <span>
-            Найдено: <strong>{visible.length}</strong> из {items.length}
+            {t("Найдено:")} <strong>{visible.length}</strong> {t("из")} {items.length}
           </span>
           {(search || role || status !== "all") && (
             <button
@@ -202,7 +210,7 @@ export function EmployeesView({
                 setStatus("all");
               }}
             >
-              Сбросить поиск и фильтры
+              {t("Сбросить поиск и фильтры")}
             </button>
           )}
         </p>
@@ -210,10 +218,10 @@ export function EmployeesView({
       {loading && !items ? (
         <div className="empty">
           <span className="spinner" />
-          <p>Загружаем сотрудников…</p>
+          <p>{t("Загружаем сотрудников…")}</p>
         </div>
       ) : visible.length ? (
-        <div className="employee-list" aria-label="Список сотрудников">
+        <div className="employee-list" aria-label={t("Список сотрудников")}>
           {visible.map((employee) => (
             <article
               className={"employee-row " + (!employee.is_active ? "is-inactive" : "")}
@@ -225,25 +233,25 @@ export function EmployeesView({
               </div>
               <div className="employee-meta">
                 <span>{roleLabels[employee.role]}</span>
-                <span>{employee.specialty || "Специальность не указана"}</span>
-                <span>{employee.grade ? employee.grade + " разряд" : "Разряд не указан"}</span>
+                <span>{employee.specialty || t("Специальность не указана")}</span>
+                <span>{employee.grade ? employee.grade + t(" разряд") : t("Разряд не указан")}</span>
               </div>
               <div className="employee-state">
                 <span className={"access-status " + (employee.is_active ? "active" : "inactive")}>
-                  {employee.is_active ? "Доступ активен" : "Доступ отключён"}
+                  {employee.is_active ? t("Доступ активен") : t("Доступ отключён")}
                 </span>
-                {employee.id === currentUserId && <small>Это ваша учётная запись</small>}
+                {employee.id === currentUserId && <small>{t("Это ваша учётная запись")}</small>}
               </div>
               <button className="secondary" type="button" onClick={() => void openAccess(employee)}>
-                Настроить
+                {t("Настроить")}
               </button>
             </article>
           ))}
         </div>
       ) : (
         <div className="empty">
-          <h2>Сотрудники не найдены</h2>
-          <p>Измените строку поиска или фильтры.</p>
+          <h2>{t("Сотрудники не найдены")}</h2>
+          <p>{t("Измените строку поиска или фильтры.")}</p>
         </div>
       )}
       {createOpen && (
@@ -253,7 +261,7 @@ export function EmployeesView({
           onClose={() => setCreateOpen(false)}
           onSaved={async () => {
             setCreateOpen(false);
-            setNotice("Сотрудник создан. Передайте ему логин и пароль для входа.");
+            setNotice(t("Сотрудник создан. Передайте ему логин и пароль для входа."));
             setSearch("");
             setRole("");
             setStatus("all");
@@ -270,7 +278,7 @@ export function EmployeesView({
           onClose={() => setSelected(null)}
           onSaved={async () => {
             setSelected(null);
-            setNotice("Права доступа сохранены. Сотруднику нужно войти заново.");
+            setNotice(t("Права доступа сохранены. Сотруднику нужно войти заново."));
             await refresh();
           }}
           onPassword={() => {
@@ -291,7 +299,7 @@ export function EmployeesView({
           onSaved={async () => {
             const own = passwordTarget.id === currentUserId;
             setPasswordTarget(null);
-            setNotice("Пароль изменён. Старый пароль больше не действует.");
+            setNotice(t("Пароль изменён. Старый пароль больше не действует."));
             if (own) {
               onSelfPasswordChanged?.();
               return;
@@ -309,8 +317,8 @@ export function EmployeesView({
             setStatusTarget(null);
             setNotice(
               statusTarget.is_active
-                ? "Доступ отключён. История работы сохранена."
-                : "Доступ восстановлен. Сотрудник может войти в систему.",
+                ? t("Доступ отключён. История работы сохранена.")
+                : t("Доступ восстановлен. Сотрудник может войти в систему."),
             );
             await refresh();
           }}
@@ -331,8 +339,8 @@ function AreaFields({
 }) {
   return (
     <fieldset className="employee-areas">
-      <legend>Участки допуска</legend>
-      <p className="muted">Сотрудник видит и обрабатывает данные только этих участков.</p>
+      <legend>{t("Участки допуска")}</legend>
+      <p className="muted">{t("Сотрудник видит и обрабатывает данные только этих участков.")}</p>
       <div>
         {catalog.areas.map((area) => (
           <label key={area.id}>
@@ -370,7 +378,7 @@ function CreateDialog({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (input.role !== "admin" && input.area_ids.length === 0) {
-      setError("Выберите хотя бы один участок, иначе сотрудник не увидит доступные ему данные.");
+      setError(t("Выберите хотя бы один участок, иначе сотрудник не увидит доступные ему данные."));
       return;
     }
     setBusy(true);
@@ -380,34 +388,35 @@ function CreateDialog({
       setInput((current) => ({ ...current, secret: "" }));
       await onSaved();
     } catch (caught) {
-      setError(failure(caught, "создать сотрудника"));
+      setError(failure(caught, t("создать сотрудника")));
     } finally {
       setBusy(false);
     }
   };
   return (
-    <Dialog title="Новый сотрудник" onClose={busy ? () => undefined : onClose}>
+    <Dialog title={t("Новый сотрудник")} onClose={busy ? () => undefined : onClose}>
       <form className="dialog-form employee-form" onSubmit={(event) => void submit(event)}>
         <p className="muted">
-          Сначала укажите сотрудника и его работу, затем выберите участки и задайте пароль.
+          {t("Сначала укажите сотрудника и его работу, затем выберите участки и задайте пароль.")}
         </p>
         <p className="muted" id="employee-login-hint">
-          Логин: от 3 до 64 символов — строчные латинские буквы, цифры, точка, дефис или подчёркивание.
-          Пароль: от 8 символов.
+          {t(
+            "Логин: от 3 до 64 символов — строчные латинские буквы, цифры, точка, дефис или подчёркивание. Пароль: от 8 символов.",
+          )}
         </p>
         {error && (
           <p className="error" role="alert">
-            {error}
+            {message(error)}
           </p>
         )}
         <div className="employee-form-grid">
           <label>
-            Логин
+            {t("Логин")}
             <input
               value={input.login}
               onChange={(event) => setInput({ ...input, login: event.target.value })}
               autoComplete="off"
-              aria-label="Логин"
+              aria-label={t("Логин")}
               aria-describedby="employee-login-hint"
               pattern={"[a-z0-9][a-z0-9._\\-]{2,63}"}
               maxLength={64}
@@ -415,7 +424,7 @@ function CreateDialog({
             />
           </label>
           <label>
-            ФИО сотрудника
+            {t("ФИО сотрудника")}
             <input
               value={input.display_name}
               onChange={(event) => setInput({ ...input, display_name: event.target.value })}
@@ -424,9 +433,9 @@ function CreateDialog({
             />
           </label>
           <label>
-            Роль
+            {t("Роль")}
             <select
-              aria-label="Роль"
+              aria-label={t("Роль")}
               value={input.role}
               onChange={(event) => setInput({ ...input, role: event.target.value as Role })}
             >
@@ -438,14 +447,14 @@ function CreateDialog({
             </select>
           </label>
           <label>
-            Специальность
+            {t("Специальность")}
             <select
-              aria-label="Специальность"
+              aria-label={t("Специальность")}
               value={input.specialty}
               onChange={(event) => setInput({ ...input, specialty: event.target.value })}
               required
             >
-              <option value="">Выберите специальность</option>
+              <option value="">{t("Выберите специальность")}</option>
               {specialties(catalog).map((value) => (
                 <option key={value} value={value}>
                   {value}
@@ -454,7 +463,7 @@ function CreateDialog({
             </select>
           </label>
           <label>
-            Разряд
+            {t("Разряд")}
             <input
               type="number"
               min="1"
@@ -465,13 +474,13 @@ function CreateDialog({
             />
           </label>
           <label>
-            Бригада
+            {t("Бригада")}
             <select
-              aria-label="Бригада"
+              aria-label={t("Бригада")}
               value={input.brigade_id ?? ""}
               onChange={(event) => setInput({ ...input, brigade_id: event.target.value || null })}
             >
-              <option value="">Не назначена</option>
+              <option value="">{t("Не назначена")}</option>
               {catalog.brigades.map((brigade) => (
                 <option key={brigade.id} value={brigade.id}>
                   {brigade.code} · {brigade.name}
@@ -482,7 +491,7 @@ function CreateDialog({
         </div>
         {input.role === "admin" ? (
           <p className="notice">
-            Администратор работает со всеми справочниками; участки не ограничивают его доступ.
+            {t("Администратор работает со всеми справочниками; участки не ограничивают его доступ.")}
           </p>
         ) : (
           <AreaFields
@@ -492,7 +501,7 @@ function CreateDialog({
           />
         )}
         <label>
-          Пароль
+          {t("Пароль")}
           <input
             type="password"
             value={input.secret}
@@ -505,10 +514,10 @@ function CreateDialog({
         </label>
         <div className="action-row">
           <button className="secondary" type="button" onClick={onClose} disabled={busy}>
-            Отмена
+            {t("Отмена")}
           </button>
           <button className="primary" disabled={busy}>
-            {busy ? "Создаём…" : "Создать сотрудника"}
+            {busy ? t("Создаём…") : t("Создать сотрудника")}
           </button>
         </div>
       </form>
@@ -544,13 +553,13 @@ function AccessDialog({
   const [busy, setBusy] = useState(false);
   const summary = employee.area_ids.length
     ? employee.area_ids
-        .map((id) => catalog.areas.find((area) => area.id === id)?.code ?? "Неизвестный участок")
+        .map((id) => catalog.areas.find((area) => area.id === id)?.code ?? t("Неизвестный участок"))
         .join(", ")
-    : "Участки не назначены";
+    : t("Участки не назначены");
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (role !== "admin" && areaIds.length === 0) {
-      setError("Выберите хотя бы один участок, иначе сотрудник не увидит доступные ему данные.");
+      setError(t("Выберите хотя бы один участок, иначе сотрудник не увидит доступные ему данные."));
       return;
     }
     const input: EmployeeAccessUpdate = { role: self ? undefined : role, area_ids: areaIds };
@@ -560,13 +569,13 @@ function AccessDialog({
       await api.updateEmployeeAccess(employee.id, input);
       await onSaved();
     } catch (caught) {
-      setError(failure(caught, "сохранить доступ"));
+      setError(failure(caught, t("сохранить доступ")));
     } finally {
       setBusy(false);
     }
   };
   return (
-    <Dialog title="Доступ сотрудника" onClose={busy ? () => undefined : onClose}>
+    <Dialog title={t("Доступ сотрудника")} onClose={busy ? () => undefined : onClose}>
       <form className="dialog-form employee-form" onSubmit={(event) => void submit(event)}>
         <div className="employee-dialog-summary">
           <strong>{employee.display_name}</strong>
@@ -576,19 +585,21 @@ function AccessDialog({
         </div>
         {error && (
           <p className="error" role="alert">
-            {error}
+            {message(error)}
           </p>
         )}
         {self && (
           <p className="notice">
-            Для собственной учётной записи нельзя менять роль и статус. Это защищает доступ администратора.
+            {t(
+              "Для собственной учётной записи нельзя менять роль и статус. Это защищает доступ администратора.",
+            )}
           </p>
         )}
-        <p className="notice">Изменение роли или участков завершит активные сеансы сотрудника.</p>
+        <p className="notice">{t("Изменение роли или участков завершит активные сеансы сотрудника.")}</p>
         <label>
-          Роль
+          {t("Роль")}
           <select
-            aria-label="Роль"
+            aria-label={t("Роль")}
             value={role}
             onChange={(event) => setRole(event.target.value as Role)}
             disabled={self}
@@ -602,24 +613,24 @@ function AccessDialog({
         </label>
         {role === "admin" ? (
           <p className="notice">
-            Администратор работает со всеми справочниками; участки не ограничивают его доступ.
+            {t("Администратор работает со всеми справочниками; участки не ограничивают его доступ.")}
           </p>
         ) : (
           <AreaFields catalog={catalog} value={areaIds} onChange={setAreaIds} />
         )}
-        <section className="employee-password-action" aria-label="Пароль сотрудника">
+        <section className="employee-password-action" aria-label={t("Пароль сотрудника")}>
           <div>
-            <strong>Пароль сотрудника</strong>
-            <p>Задайте новый пароль, если сотрудник потерял доступ.</p>
+            <strong>{t("Пароль сотрудника")}</strong>
+            <p>{t("Задайте новый пароль, если сотрудник потерял доступ.")}</p>
           </div>
           <button className="secondary" type="button" onClick={onPassword} disabled={busy}>
-            Сбросить пароль
+            {t("Сбросить пароль")}
           </button>
         </section>
         <div className="employee-danger-zone">
           <div>
-            <strong>{employee.is_active ? "Доступ включён" : "Доступ отключён"}</strong>
-            <p>При изменении статуса все активные сеансы сотрудника будут завершены.</p>
+            <strong>{employee.is_active ? t("Доступ включён") : t("Доступ отключён")}</strong>
+            <p>{t("При изменении статуса все активные сеансы сотрудника будут завершены.")}</p>
           </div>
           <button
             className={employee.is_active ? "danger-button" : "secondary"}
@@ -627,15 +638,15 @@ function AccessDialog({
             onClick={onStatus}
             disabled={self || busy}
           >
-            {employee.is_active ? "Отключить доступ" : "Включить доступ"}
+            {employee.is_active ? t("Отключить доступ") : t("Включить доступ")}
           </button>
         </div>
         <div className="action-row">
           <button className="secondary" type="button" onClick={onClose} disabled={busy}>
-            Отмена
+            {t("Отмена")}
           </button>
           <button className="primary" disabled={busy || !changed}>
-            {busy ? "Сохраняем…" : "Сохранить доступ"}
+            {busy ? t("Сохраняем…") : t("Сохранить доступ")}
           </button>
         </div>
       </form>
@@ -662,7 +673,7 @@ function PasswordDialog({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (secret !== confirmation) {
-      setError("Пароли не совпадают. Проверьте оба поля.");
+      setError(t("Пароли не совпадают. Проверьте оба поля."));
       return;
     }
     setBusy(true);
@@ -672,28 +683,28 @@ function PasswordDialog({
       setSecret("");
       await onSaved();
     } catch (caught) {
-      setError(failure(caught, "сбросить пароль"));
+      setError(failure(caught, t("сбросить пароль")));
     } finally {
       setBusy(false);
     }
   };
   return (
-    <Dialog title="Сброс пароля" onClose={busy ? () => undefined : onClose}>
+    <Dialog title={t("Сброс пароля")} onClose={busy ? () => undefined : onClose}>
       <form className="dialog-form employee-form" onSubmit={(event) => void submit(event)}>
         <p>
-          Новый пароль для <strong>{employee.display_name}</strong>. После сохранения все активные сеансы
-          будут завершены.
+          {t("Новый пароль для")} <strong>{employee.display_name}</strong>
+          {t(". После сохранения все активные сеансы будут завершены.")}
         </p>
         {error && (
           <p className="error" role="alert">
-            {error}
+            {message(error)}
           </p>
         )}
         <label className="password-field">
-          Новый пароль
+          {t("Новый пароль")}
           <input
             type={showSecret ? "text" : "password"}
-            aria-label="Новый пароль"
+            aria-label={t("Новый пароль")}
             value={secret}
             onChange={(event) => setSecret(event.target.value)}
             autoComplete="new-password"
@@ -705,7 +716,7 @@ function PasswordDialog({
             type="button"
             className="password-toggle"
             onClick={() => setShowSecret((value) => !value)}
-            aria-label={showSecret ? "Скрыть пароль" : "Показать пароль"}
+            aria-label={showSecret ? t("Скрыть пароль") : t("Показать пароль")}
           >
             <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
               {showSecret ? (
@@ -724,7 +735,7 @@ function PasswordDialog({
           </button>
         </label>
         <label>
-          Повторите пароль
+          {t("Повторите пароль")}
           <input
             type={showSecret ? "text" : "password"}
             value={confirmation}
@@ -737,10 +748,10 @@ function PasswordDialog({
         </label>
         <div className="action-row">
           <button className="secondary" type="button" onClick={onClose} disabled={busy}>
-            Отмена
+            {t("Отмена")}
           </button>
           <button className="primary" disabled={busy}>
-            {busy ? "Сохраняем…" : "Сохранить пароль"}
+            {busy ? t("Сохраняем…") : t("Сохранить пароль")}
           </button>
         </div>
       </form>
@@ -769,30 +780,34 @@ function StatusDialog({
       await api.updateEmployeeAccess(employee.id, { is_active: next });
       await onSaved();
     } catch (caught) {
-      setError(failure(caught, next ? "включить доступ" : "отключить доступ"));
+      setError(failure(caught, next ? t("включить доступ") : t("отключить доступ")));
     } finally {
       setBusy(false);
     }
   };
   return (
-    <Dialog title={next ? "Включить доступ" : "Отключить доступ"} onClose={busy ? () => undefined : onClose}>
+    <Dialog
+      title={next ? t("Включить доступ") : t("Отключить доступ")}
+      onClose={busy ? () => undefined : onClose}
+    >
       <div className="dialog-form employee-form">
         <p>
-          {next ? "Включить" : "Отключить"} учётную запись <strong>{employee.display_name}</strong>?
+          {next ? t("Включить") : t("Отключить")} {t("учётную запись")}{" "}
+          <strong>{employee.display_name}</strong>?
         </p>
         <p className={next ? "notice" : "error"}>
           {next
-            ? "Сотрудник сможет снова войти в систему."
-            : "Все активные сеансы сотрудника будут немедленно завершены."}
+            ? t("Сотрудник сможет снова войти в систему.")
+            : t("Все активные сеансы сотрудника будут немедленно завершены.")}
         </p>
         {error && (
           <p className="error" role="alert">
-            {error}
+            {message(error)}
           </p>
         )}
         <div className="action-row">
           <button className="secondary" type="button" onClick={onClose} disabled={busy}>
-            Отмена
+            {t("Отмена")}
           </button>
           <button
             className={next ? "primary" : "danger-button"}
@@ -800,7 +815,7 @@ function StatusDialog({
             onClick={() => void submit()}
             disabled={busy}
           >
-            {busy ? "Сохраняем…" : next ? "Включить доступ" : "Подтвердить отключение"}
+            {busy ? t("Сохраняем…") : next ? t("Включить доступ") : t("Подтвердить отключение")}
           </button>
         </div>
       </div>

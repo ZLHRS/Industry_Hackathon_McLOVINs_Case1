@@ -1,3 +1,5 @@
+import { t } from "../lib/i18n";
+import { LanguageSwitcher } from "./LanguageSwitcher";
 import { useEffect, useId, useRef } from "react";
 import type { ReactNode } from "react";
 
@@ -38,7 +40,13 @@ export function Dialog({
     >
       <div className="dialog-head">
         <h2 id={titleId}>{title}</h2>
-        <button className="icon-button" type="button" onClick={() => closeRef.current()} aria-label="Закрыть">
+        <LanguageSwitcher />
+        <button
+          className="icon-button"
+          type="button"
+          onClick={() => closeRef.current()}
+          aria-label={t("Закрыть")}
+        >
           ×
         </button>
       </div>

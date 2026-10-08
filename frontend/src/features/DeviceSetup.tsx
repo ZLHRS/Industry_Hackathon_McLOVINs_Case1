@@ -1,3 +1,4 @@
+import { t, message as translateMessage } from "../lib/i18n";
 import { useEffect, useState } from "react";
 
 type InstallPromptEvent = Event & {
@@ -35,7 +36,7 @@ export function DeviceSetup() {
     const complete = () => {
       setPrompt(undefined);
       setInstalled(true);
-      setMessage("Приложение установлено. Уведомления включаются отдельно в журнале уведомлений.");
+      setMessage(t("Приложение установлено. Уведомления включаются отдельно в журнале уведомлений."));
     };
     window.addEventListener("beforeinstallprompt", deferred);
     window.addEventListener("appinstalled", complete);
@@ -52,27 +53,31 @@ export function DeviceSetup() {
     setPrompt(undefined);
     setMessage(
       choice.outcome === "accepted"
-        ? "Установка подтверждена браузером."
-        : "Установка отменена. Можно продолжить в браузере.",
+        ? t("Установка подтверждена браузером.")
+        : t("Установка отменена. Можно продолжить в браузере."),
     );
   }
 
   if (installed) return null;
   if (!prompt && !isAppleMobile() && !message) return null;
   return (
-    <aside className="device-setup" aria-label="Установка приложения">
+    <aside className="device-setup" aria-label={t("Установка приложения")}>
       <div>
-        <strong>Работа с телефона</strong>
+        <strong>{t("Работа с телефона")}</strong>
         <p>
-          {message ||
+          {translateMessage(message) ||
             (isAppleMobile()
-              ? "Чтобы установить ТехНаряд на iPhone или iPad: откройте меню «Поделиться» в Safari и выберите «На экран Домой»."
-              : "Установите приложение, чтобы открывать наряды с домашнего экрана и получать фоновые уведомления после отдельного разрешения.")}
+              ? t(
+                  "Чтобы установить ТехНаряд на iPhone или iPad: откройте меню «Поделиться» в Safari и выберите «На экран Домой».",
+                )
+              : t(
+                  "Установите приложение, чтобы открывать наряды с домашнего экрана и получать фоновые уведомления после отдельного разрешения.",
+                ))}
         </p>
       </div>
       {prompt && (
         <button type="button" className="secondary" onClick={() => void install()}>
-          Установить приложение
+          {t("Установить приложение")}
         </button>
       )}
     </aside>

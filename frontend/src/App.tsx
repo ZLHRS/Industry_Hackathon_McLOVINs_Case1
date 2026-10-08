@@ -1,3 +1,5 @@
+import { t, getLocale, useLanguage, message } from "./lib/i18n";
+import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { navigation, permittedView, canViewWorkload, type View } from "./lib/roleAccess";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Api, ApiError, clearMutationKeys } from "./api";
@@ -46,13 +48,27 @@ const tokenKey = "naryadai.session.token";
 const expiryKey = "naryadai.session.expires";
 const userKey = "naryadai.session.user";
 const actionLabels: Record<string, string> = {
-  accept: "Принятие",
-  queue: "Постановка в очередь",
-  reject: "Отказ",
-  start: "Начало работы",
-  pause: "Пауза",
-  resume: "Возобновление",
-  complete: "Сдача работы",
+  get accept() {
+    return t("Принятие");
+  },
+  get queue() {
+    return t("Постановка в очередь");
+  },
+  get reject() {
+    return t("Отказ");
+  },
+  get start() {
+    return t("Начало работы");
+  },
+  get pause() {
+    return t("Пауза");
+  },
+  get resume() {
+    return t("Возобновление");
+  },
+  get complete() {
+    return t("Сдача работы");
+  },
 };
 const navIcons: Record<View, string> = {
   orders: "▦",
@@ -76,6 +92,7 @@ function storedToken() {
 }
 
 export default function App() {
+  useLanguage();
   const initialToken = storedToken();
   const expiredActor = useRef<string | null>(initialToken ? null : (storedUser()?.id ?? null));
   const [token, setToken] = useState<string | null>(initialToken);
@@ -202,9 +219,9 @@ export default function App() {
       }
       setPending(await listPending(actorId));
       if (report.sent) {
-        setNotice(`Подтверждено сервером: ${report.sent}.`);
+        setNotice(t("Подтверждено сервером: {0}.", [report.sent]));
       }
-      if (report.blocked) setError("Некоторые отложенные действия требуют ручного решения.");
+      if (report.blocked) setError(t("Некоторые отложенные действия требуют ручного решения."));
       return report;
     },
     [invalidate, sender],
@@ -255,7 +272,8 @@ export default function App() {
         setData(dashboard);
         setSavedAt(null);
         setNotice((current) =>
-          current.startsWith("Показан сохранённый снимок") || current.startsWith("Для выбранных фильтров")
+          current.startsWith(t("Показан сохранённый снимок")) ||
+          current.startsWith(t("Для выбранных фильтров"))
             ? ""
             : current,
         );
@@ -289,12 +307,14 @@ export default function App() {
           setSavedAt(cached.savedAt);
           setNotice(
             cached.data.orderFilterKey === currentFilterKey
-              ? "Показан сохранённый снимок. Новые данные появятся после восстановления связи."
-              : "Для выбранных фильтров нет сохранённых нарядов. Подключитесь к сети, чтобы загрузить список.",
+              ? t("Показан сохранённый снимок. Новые данные появятся после восстановления связи.")
+              : t(
+                  "Для выбранных фильтров нет сохранённых нарядов. Подключитесь к сети, чтобы загрузить список.",
+                ),
           );
         } else {
           setData(null);
-          setError("Не удалось получить данные. Проверьте соединение и выбранные фильтры.");
+          setError(t("Не удалось получить данные. Проверьте соединение и выбранные фильтры."));
         }
       } finally {
         if (guard === authGeneration.current && request === refreshGeneration.current) setLoading(false);
@@ -332,7 +352,7 @@ export default function App() {
             actorIdRef.current = remembered.id;
             setUser(remembered);
             await refreshRef.current(remembered);
-          } else setError("Сервер недоступен. Войдите снова после восстановления связи.");
+          } else setError(t("Сервер недоступен. Войдите снова после восстановления связи."));
         }
       }
     };
@@ -410,7 +430,7 @@ export default function App() {
       .catch(() => {
         if (!active) return;
         setInboxOpen(true);
-        setNotice("Уведомление больше недоступно. Открыт ваш журнал.");
+        setNotice(t("Уведомление больше недоступно. Открыт ваш журнал."));
         navigate(location.pathname, true);
       });
     return () => {
@@ -454,14 +474,16 @@ export default function App() {
       const report = await sync(user.id);
       if (report.unauthorized) throw new ApiError(401, "unauthorized");
       const remaining = (await listPending(user.id)).find((item) => item.id === entry.id);
-      if (report.offline || report.remaining) setNotice("Действие ожидает подтверждения сервером.");
+      if (report.offline || report.remaining) setNotice(t("Действие ожидает подтверждения сервером."));
       await refresh();
       return remaining
         ? {
             state: remaining.state === "blocked" ? "blocked" : "pending",
             message:
               remaining.error ??
-              "Действие сохранено на устройстве. Отправим его при восстановлении связи; статус ещё не изменён.",
+              t(
+                "Действие сохранено на устройстве. Отправим его при восстановлении связи; статус ещё не изменён.",
+              ),
           }
         : { state: "confirmed" };
     }
@@ -498,7 +520,7 @@ export default function App() {
     return (
       <main className="splash">
         <span className="spinner"></span>
-        <p>Проверяем сессию…</p>
+        <p>{t("Проверяем сессию…")}</p>
         {error && <p className="error">{error}</p>}
       </main>
     );
@@ -510,14 +532,16 @@ export default function App() {
       <aside className="side-nav">
         <div className="brand">
           <div className="brand-mark">
-            Т<span>•</span>
+            {t("Т")}
+            <span>•</span>
           </div>
           <strong>
-            Тех<span>Наряд</span>
+            {t("Тех")}
+            <span>{t("Наряд")}</span>
           </strong>
         </div>
-        <p className="nav-caption">РАБОЧИЙ КОНТУР</p>
-        <nav aria-label="Основная навигация">
+        <p className="nav-caption">{t("РАБОЧИЙ КОНТУР")}</p>
+        <nav aria-label={t("Основная навигация")}>
           {currentNav.map(([key, label]) => (
             <button key={key} className={visibleView === key ? "active" : ""} onClick={() => setView(key)}>
               <span className="nav-icon" aria-hidden="true">
@@ -528,40 +552,45 @@ export default function App() {
           ))}
         </nav>
         <div className="user-card">
+          <LanguageSwitcher />
           <strong>{user.display_name}</strong>
           <small>
             {user.role === "master"
-              ? "Мастер"
+              ? t("Мастер")
               : user.role === "executor"
-                ? "Исполнитель"
+                ? t("Исполнитель")
                 : user.role === "manager"
-                  ? "Руководитель"
-                  : "Администратор"}
+                  ? t("Руководитель")
+                  : t("Администратор")}
           </small>
-          <button onClick={() => void signOut()}>Выйти</button>
+          <button onClick={() => void signOut()}>{t("Выйти")}</button>
         </div>
       </aside>
       <header className="mobile-header">
         <div className="mobile-brand">
           <span>
-            Т<span>•</span>
+            {t("Т")}
+            <span>•</span>
           </span>
-          <strong>ТехНаряд</strong>
+          <strong>{t("ТехНаряд")}</strong>
         </div>
         <div>
           <small>
-            {user.display_name} · {user.role === "executor" ? "смена" : "контур"}
+            {user.display_name} · {user.role === "executor" ? t("смена") : t("контур")}
           </small>
-          <button aria-label="Выйти из учётной записи" onClick={() => void signOut()}>
-            Выйти
+          <button aria-label={t("Выйти из учётной записи")} onClick={() => void signOut()}>
+            {t("Выйти")}
           </button>
         </div>
       </header>{" "}
       <main className="app-main">
+        <div className="mobile-language">
+          <LanguageSwitcher />
+        </div>
         {history.state?.technaryad && history.state?.parent && (
-          <nav className="page-navigation" aria-label="Навигация страницы">
+          <nav className="page-navigation" aria-label={t("Навигация страницы")}>
             <button type="button" className="text-button" onClick={() => history.back()}>
-              ← Назад
+              {t("← Назад")}
             </button>
           </nav>
         )}
@@ -571,10 +600,10 @@ export default function App() {
               <span className="connection-state" role="status">
                 <span className={`live-dot ${liveState}`}></span>
                 {liveState === "reconnecting"
-                  ? "Переподключение…"
+                  ? t("Переподключение…")
                   : liveState === "connecting"
-                    ? "Подключение…"
-                    : "Нет соединения"}
+                    ? t("Подключение…")
+                    : t("Нет соединения")}
               </span>
             )}
             <NotificationButton count={unreadCount} onOpen={() => setInboxOpen(true)} />
@@ -583,12 +612,16 @@ export default function App() {
         {user.role !== "admin" && <DeviceSetup />}
         {(notice || savedAt || error) && (
           <div className={error ? "banner error-banner" : "banner"} role={error ? "alert" : "status"}>
-            {error || notice}
+            {message(error || notice)}
             {savedAt &&
-              ` · сохранено ${new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(new Date(savedAt))}`}
+              t(" · сохранено {0}", [
+                new Intl.DateTimeFormat(getLocale(), { dateStyle: "short", timeStyle: "short" }).format(
+                  new Date(savedAt),
+                ),
+              ])}
             {(notice || error) && (
               <button
-                aria-label="Закрыть сообщение"
+                aria-label={t("Закрыть сообщение")}
                 onClick={() => {
                   setNotice("");
                   setError("");
@@ -602,23 +635,25 @@ export default function App() {
         {pending.length > 0 && (
           <section className="pending-panel">
             <div>
-              <strong>Ожидают отправки: {pending.length}</strong>
-              <p>Действия сохранены на устройстве и ожидают отправки.</p>
+              <strong>
+                {t("Ожидают отправки:")} {pending.length}
+              </strong>
+              <p>{t("Действия сохранены на устройстве и ожидают отправки.")}</p>
             </div>
             <div>
               {pending.map((entry) => (
                 <div key={entry.id} className="pending-item">
                   <span>
-                    {actionLabels[entry.request.action] || "Действие"} ·{" "}
-                    {data?.orders.items.find((order) => order.id === entry.orderId)?.number || "наряд"}
+                    {actionLabels[entry.request.action] || t("Действие")} ·{" "}
+                    {data?.orders.items.find((order) => order.id === entry.orderId)?.number || t("наряд")}
                   </span>
-                  <small>{entry.error || "Ожидает подтверждения"}</small>
+                  <small>{message(entry.error || "") || t("Ожидает подтверждения")}</small>
                   <button
                     className="secondary"
                     onClick={() => void retry(entry.id)}
                     disabled={entry.state === "blocked"}
                   >
-                    Повторить
+                    {t("Повторить")}
                   </button>
                   <button
                     className="text-button"
@@ -629,7 +664,7 @@ export default function App() {
                       })()
                     }
                   >
-                    Удалить
+                    {t("Удалить")}
                   </button>
                 </div>
               ))}
@@ -678,7 +713,7 @@ export default function App() {
               onSelfPasswordChanged={() => void invalidate(user.id)}
             />
           ) : (
-            <p>Загрузка данных сотрудников…</p>
+            <p>{t("Загрузка данных сотрудников…")}</p>
           ))}
         {visibleView === "reference" && (
           <ReferenceView
@@ -698,7 +733,7 @@ export default function App() {
       </main>
       <nav
         className="bottom-nav"
-        aria-label="Мобильная навигация"
+        aria-label={t("Мобильная навигация")}
         style={{ gridTemplateColumns: "repeat(" + currentNav.length + ", 1fr)" }}
       >
         {currentNav.map(([key, label]) => (

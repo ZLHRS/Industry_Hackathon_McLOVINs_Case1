@@ -32,7 +32,7 @@ from naryadai.infrastructure.models import (
     WorkOrderEvent,
 )
 
-_TOKEN = re.compile(r"[0-9a-zа-яё]+", re.IGNORECASE)
+_TOKEN = re.compile(r"[0-9a-zа-яёәғқңөұүһі]+", re.IGNORECASE)
 _ACTIVE_WORK = (
     WorkOrderStatus.ISSUED,
     WorkOrderStatus.ACCEPTED,
@@ -164,15 +164,76 @@ def _words(value: str) -> dict[str, str]:
 
 _SYNONYMS: dict[str, frozenset[str]] = {
     "утечка": frozenset(
-        {_stem(word) for word in ("утечка", "течь", "протечка", "подтекание", "подтекает", "потек")}
+        {
+            _stem(word)
+            for word in (
+                "утечка",
+                "течь",
+                "протечка",
+                "подтекание",
+                "подтекает",
+                "потек",
+                "leak",
+                "leaking",
+                "leakage",
+                "ағу",
+                "ағады",
+                "ағып",
+            )
+        }
     ),
-    "вибрация": frozenset({_stem(word) for word in ("вибрация", "вибрирует", "биение", "тряска")}),
+    "вибрация": frozenset(
+        {
+            _stem(word)
+            for word in (
+                "вибрация",
+                "вибрирует",
+                "биение",
+                "тряска",
+                "vibration",
+                "vibrating",
+                "діріл",
+                "дірілдейді",
+            )
+        }
+    ),
     "перегрев": frozenset(
-        {_stem(word) for word in ("перегрев", "греется", "перегрелся", "перегревается")}
+        {
+            _stem(word)
+            for word in (
+                "перегрев",
+                "греется",
+                "перегрелся",
+                "перегревается",
+                "overheating",
+                "overheated",
+                "қызып",
+                "қызады",
+            )
+        }
     ),
-    "давление": frozenset({_stem(word) for word in ("давление", "напор", "разгерметизация")}),
-    "подшипник": frozenset({_stem(word) for word in ("подшипник", "подшипника", "подшипников")}),
-    "двигатель": frozenset({_stem(word) for word in ("двигатель", "электродвигатель", "мотор")}),
+    "давление": frozenset(
+        {_stem(word) for word in ("давление", "напор", "разгерметизация", "pressure", "қысым")}
+    ),
+    "подшипник": frozenset(
+        {
+            _stem(word)
+            for word in (
+                "подшипник",
+                "подшипника",
+                "подшипников",
+                "bearing",
+                "bearings",
+                "мойынтірек",
+            )
+        }
+    ),
+    "двигатель": frozenset(
+        {
+            _stem(word)
+            for word in ("двигатель", "электродвигатель", "мотор", "motor", "engine", "қозғалтқыш")
+        }
+    ),
 }
 _GENERIC_ACTION_WORDS = frozenset(
     _stem(word)
@@ -190,7 +251,7 @@ def _fault_match(fault: FaultCode, description: str) -> tuple[int, list[str]]:
     code_chars = [character for character in fault.code if character.isalnum()]
     code_pattern = r"[\W_]*".join(re.escape(character) for character in code_chars)
     if len(code_chars) >= 2 and re.search(
-        rf"(?<![0-9a-zа-я]){code_pattern}(?![0-9a-zа-я])", description, re.IGNORECASE
+        rf"(?<!\w){code_pattern}(?!\w)", description, re.IGNORECASE
     ):
         score += 100
         reasons.append(f"В описании указан шифр «{fault.code}».")

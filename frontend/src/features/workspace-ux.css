@@ -131,6 +131,7 @@
   display: grid;
   gap: 0.2rem;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 .suggestion-card small {
   color: #596062;

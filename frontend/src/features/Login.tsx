@@ -1,3 +1,5 @@
+import { t, message } from "../lib/i18n";
+import { LanguageSwitcher } from "../components/LanguageSwitcher";
 import { FormEvent, useState } from "react";
 import type { ApiError } from "../api";
 
@@ -17,10 +19,10 @@ export function Login({ onLogin }: { onLogin: (login: string, secret: string) =>
       const failure = caught as ApiError;
       setError(
         failure.status === 401
-          ? "Неверный логин или пароль."
+          ? t("Неверный логин или пароль.")
           : failure.status === 429
-            ? "Слишком много попыток. Повторите позже."
-            : "Не удалось войти. Проверьте подключение.",
+            ? t("Слишком много попыток. Повторите позже.")
+            : t("Не удалось войти. Проверьте подключение."),
       );
     } finally {
       setBusy(false);
@@ -31,26 +33,29 @@ export function Login({ onLogin }: { onLogin: (login: string, secret: string) =>
       <section className="login-brand">
         <div className="login-brand-top">
           <div className="mark">
-            Т<span>•</span>
+            {t("Т")}
+            <span>•</span>
           </div>
-          <span>Костанайские минералы</span>
+          <span>{t("Костанайские минералы")}</span>
         </div>
-        <p className="eyebrow">СИСТЕМА РЕМОНТА</p>
+        <p className="eyebrow">{t("СИСТЕМА РЕМОНТА")}</p>
         <h1>
-          Тех<span>Наряд</span>
+          {t("Тех")}
+          <span>{t("Наряд")}</span>
         </h1>
-        <p>Рабочий контур смены: наряды, ремонт и загрузка участка.</p>
-        <div className="login-points" aria-label="Возможности системы">
-          <span>Наряды</span>
-          <span>Ремонт</span>
-          <span>Смена</span>
+        <p>{t("Рабочий контур смены: наряды, ремонт и загрузка участка.")}</p>
+        <div className="login-points" aria-label={t("Возможности системы")}>
+          <span>{t("Наряды")}</span>
+          <span>{t("Ремонт")}</span>
+          <span>{t("Смена")}</span>
         </div>
       </section>
       <form className="login-form" onSubmit={submit}>
-        <h2>Вход в смену</h2>
-        <p className="muted">Введите данные учётной записи для начала смены.</p>
+        <LanguageSwitcher />
+        <h2>{t("Вход в смену")}</h2>
+        <p className="muted">{t("Введите данные учётной записи для начала смены.")}</p>
         <label>
-          Логин
+          {t("Логин")}
           <input
             autoComplete="username"
             value={login}
@@ -62,10 +67,10 @@ export function Login({ onLogin }: { onLogin: (login: string, secret: string) =>
           />
         </label>
         <label className="password-field">
-          Пароль
+          {t("Пароль")}
           <input
             type={showSecret ? "text" : "password"}
-            aria-label="Пароль"
+            aria-label={t("Пароль")}
             autoComplete="current-password"
             value={secret}
             onChange={(e) => setSecret(e.target.value)}
@@ -76,7 +81,7 @@ export function Login({ onLogin }: { onLogin: (login: string, secret: string) =>
             type="button"
             className="password-toggle"
             onClick={() => setShowSecret((value) => !value)}
-            aria-label={showSecret ? "Скрыть пароль" : "Показать пароль"}
+            aria-label={showSecret ? t("Скрыть пароль") : t("Показать пароль")}
           >
             <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
               {showSecret ? (
@@ -96,11 +101,11 @@ export function Login({ onLogin }: { onLogin: (login: string, secret: string) =>
         </label>
         {error && (
           <p className="error" role="alert">
-            {error}
+            {message(error)}
           </p>
         )}
         <button className="primary" disabled={busy}>
-          {busy ? "Проверяем…" : "Войти"}
+          {busy ? t("Проверяем…") : t("Войти")}
         </button>
       </form>
     </main>

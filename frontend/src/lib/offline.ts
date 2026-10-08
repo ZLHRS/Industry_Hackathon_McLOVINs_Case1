@@ -1,4 +1,4 @@
-/** Private actor-scoped snapshots and durable, version-preserving executor commands. */
+import { t } from "./i18n";
 export type ActionRequest = {
   action: string;
   expected_version: number;
@@ -31,7 +31,7 @@ const running = new Map<string, Promise<SyncReport>>();
 
 export class OfflineStorageError extends Error {
   constructor(
-    message = "Локальное хранилище недоступно. Освободите место или используйте обычный режим браузера.",
+    message = t("Локальное хранилище недоступно. Освободите место или используйте обычный режим браузера."),
   ) {
     super(message);
     this.name = "OfflineStorageError";
@@ -64,7 +64,7 @@ function openDatabase(): Promise<IDBDatabase> {
       };
       request.onerror = () => reject(new OfflineStorageError());
       request.onblocked = () =>
-        reject(new OfflineStorageError("Закройте другие вкладки приложения и повторите."));
+        reject(new OfflineStorageError(t("Закройте другие вкладки приложения и повторите.")));
     }).catch((error: unknown) => {
       connection = undefined;
       throw error;
@@ -98,7 +98,7 @@ async function transaction<T>(
 }
 
 export async function saveSnapshot<T>(actorId: string, key: string, data: T): Promise<void> {
-  if (!actorId || !key) throw new OfflineStorageError("Не указан владелец локальных данных.");
+  if (!actorId || !key) throw new OfflineStorageError(t("Не указан владелец локальных данных."));
   await transaction("snapshots", "readwrite", async (tx) => {
     await requestValue(
       tx.objectStore("snapshots").put({ actorId, key, data, savedAt: new Date().toISOString() }),
@@ -142,7 +142,7 @@ export async function enqueue(input: {
     !Number.isSafeInteger(input.request.expected_version) ||
     input.request.expected_version < 1
   ) {
-    throw new OfflineStorageError("Это действие нельзя сохранить для отправки без связи.");
+    throw new OfflineStorageError(t("Это действие нельзя сохранить для отправки без связи."));
   }
   const entry: PendingAction = {
     ...input,
@@ -159,7 +159,7 @@ export async function enqueue(input: {
   } catch (error) {
     if (error instanceof DOMException && error.name === "ConstraintError") {
       throw new OfflineStorageError(
-        "По этому наряду уже ожидается отправка. Сначала отправьте или удалите предыдущее действие.",
+        t("По этому наряду уже ожидается отправка. Сначала отправьте или удалите предыдущее действие."),
       );
     }
     throw new OfflineStorageError();
@@ -225,20 +225,26 @@ async function sendQueue(actorId: string, send: Sender, onlyId?: string): Promis
         const detail = typeof error === "object" && error !== null && "detail" in error ? error.detail : "";
         entry.error =
           detail === "executor_busy"
-            ? "У вас уже есть наряд в работе. Завершите или приостановите его, затем удалите отклонённое действие из очереди и повторите начало работы."
+            ? t(
+                "У вас уже есть наряд в работе. Завершите или приостановите его, затем удалите отклонённое действие из очереди и повторите начало работы.",
+              )
             : detail === "executor_must_be_active_and_on_shift"
-              ? "Не удалось начать работу: ваш доступ или смена неактивны. Обратитесь к мастеру или администратору. После исправления удалите отклонённое действие из очереди и повторите."
+              ? t(
+                  "Не удалось начать работу: ваш доступ или смена неактивны. Обратитесь к мастеру или администратору. После исправления удалите отклонённое действие из очереди и повторите.",
+                )
               : detail === "executor_not_qualified_for_order_area"
-                ? "Этот участок недоступен вам. Обратитесь к мастеру для проверки назначения."
+                ? t("Этот участок недоступен вам. Обратитесь к мастеру для проверки назначения.")
                 : status === 409
-                  ? "Наряд изменился. Откройте актуальную карточку; удалите это действие и повторите осознанно."
-                  : "Сервер отклонил действие. Проверьте права и актуальную карточку перед повтором.";
+                  ? t(
+                      "Наряд изменился. Откройте актуальную карточку; удалите это действие и повторите осознанно.",
+                    )
+                  : t("Сервер отклонил действие. Проверьте права и актуальную карточку перед повтором.");
         report.blocked += 1;
         await updateExisting(entry);
         continue;
       }
       entry.state = "pending";
-      entry.error = "Не удалось подтвердить отправку. Повторите её, когда появится связь.";
+      entry.error = t("Не удалось подтвердить отправку. Повторите её, когда появится связь.");
       await updateExisting(entry);
       report.offline = true;
       break;

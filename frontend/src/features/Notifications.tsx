@@ -1,10 +1,11 @@
+import { t, getLocale, message } from "../lib/i18n";
 import { useEffect, useState } from "react";
 import type { Api } from "../api";
 import { Dialog } from "../components/Dialog";
 import type { NotificationItem, NotificationPage } from "../types";
 
 const formatDate = (value: string) =>
-  new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+  new Intl.DateTimeFormat(getLocale(), { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
 
 function decodePublicKey(value: string) {
   const padded = `${value}${"=".repeat((4 - (value.length % 4)) % 4)}`.replace(/-/g, "+").replace(/_/g, "/");
@@ -23,10 +24,12 @@ function supportsPush() {
 
 function initialPushState(supported: boolean, permission: NotificationPermission | "unsupported") {
   if (!supported)
-    return "Этот браузер не поддерживает фоновые уведомления или страница открыта не по защищённому адресу.";
-  if (permission === "denied") return "Уведомления заблокированы в настройках браузера для этого сайта.";
-  if (permission === "granted") return "Разрешение браузера выдано. Проверяем подписку этого устройства…";
-  return "Получайте уведомления, когда приложение свёрнуто.";
+    return t(
+      "Этот браузер не поддерживает фоновые уведомления или страница открыта не по защищённому адресу.",
+    );
+  if (permission === "denied") return t("Уведомления заблокированы в настройках браузера для этого сайта.");
+  if (permission === "granted") return t("Разрешение браузера выдано. Проверяем подписку этого устройства…");
+  return t("Получайте уведомления, когда приложение свёрнуто.");
 }
 
 export function NotificationButton({ count, onOpen }: { count: number; onOpen: () => void }) {
@@ -35,9 +38,10 @@ export function NotificationButton({ count, onOpen }: { count: number; onOpen: (
       type="button"
       className="notification-button"
       onClick={onOpen}
-      aria-label={`Уведомления: непрочитанных ${count}`}
+      aria-label={t("Уведомления: непрочитанных {0}", [count])}
     >
-      Уведомления{count > 0 && <b>{count}</b>}
+      {t("Уведомления")}
+      {count > 0 && <b>{count}</b>}
     </button>
   );
 }
@@ -80,7 +84,7 @@ export function NotificationsDialog({
         setPage(next);
       })
       .catch(() => {
-        if (active) setError("Не удалось получить уведомления.");
+        if (active) setError(t("Не удалось получить уведомления."));
       });
     return () => {
       active = false;
@@ -91,10 +95,10 @@ export function NotificationsDialog({
       void navigator.serviceWorker.ready
         .then((registration) => registration.pushManager.getSubscription())
         .then((subscription) => {
-          if (subscription) setPushState("Уведомления на этом устройстве включены.");
-          else setPushState("Разрешение браузера выдано, но устройство ещё не подписано на уведомления.");
+          if (subscription) setPushState(t("Уведомления на этом устройстве включены."));
+          else setPushState(t("Разрешение браузера выдано, но устройство ещё не подписано на уведомления."));
         })
-        .catch(() => setPushState("Не удалось проверить подписку устройства."));
+        .catch(() => setPushState(t("Не удалось проверить подписку устройства.")));
     }
   }, [pushPermission, pushSupported]);
   const update = (item: NotificationItem) =>
@@ -113,20 +117,20 @@ export function NotificationsDialog({
       return;
     }
     if (Notification.permission === "denied") {
-      setPushState("Уведомления заблокированы в настройках браузера для этого сайта.");
+      setPushState(t("Уведомления заблокированы в настройках браузера для этого сайта."));
       return;
     }
     try {
       const config = await api.pushConfig();
       if (!config.enabled || !config.public_key) {
-        setPushState("Фоновые уведомления пока недоступны. Обратитесь к администратору.");
+        setPushState(t("Фоновые уведомления пока недоступны. Обратитесь к администратору."));
         return;
       }
       const permission =
         Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
       setPushPermission(permission);
       if (permission !== "granted") {
-        setPushState("Разрешение на уведомления не выдано.");
+        setPushState(t("Разрешение на уведомления не выдано."));
         return;
       }
       const registration = await navigator.serviceWorker.ready;
@@ -138,21 +142,21 @@ export function NotificationsDialog({
         }));
       const registered = await api.subscribePush(subscription.toJSON());
       onPushBound?.(registered.id);
-      setPushState("Уведомления на этом устройстве включены.");
+      setPushState(t("Уведомления на этом устройстве включены."));
     } catch {
-      setPushState("Не удалось включить уведомления. Повторите позже.");
+      setPushState(t("Не удалось включить уведомления. Повторите позже."));
     }
   }
 
   return (
-    <Dialog title="Уведомления" onClose={onClose}>
+    <Dialog title={t("Уведомления")} onClose={onClose}>
       <section className="notification-drawer">
         <div className="push-control">
-          <strong>Уведомления на устройстве</strong>
-          <small>{pushState}</small>
+          <strong>{t("Уведомления на устройстве")}</strong>
+          <small>{message(pushState)}</small>
           {pushPermission !== "denied" && pushSupported && (
             <button type="button" className="secondary" onClick={() => void enablePush()}>
-              {pushPermission === "granted" ? "Подключить устройство" : "Включить уведомления"}
+              {pushPermission === "granted" ? t("Подключить устройство") : t("Включить уведомления")}
             </button>
           )}
         </div>
@@ -165,11 +169,11 @@ export function NotificationsDialog({
               setOffset(0);
             }}
           />{" "}
-          Только непрочитанные
+          {t("Только непрочитанные")}
         </label>
-        {error && <p className="error">{error}</p>}
-        {!page && !error && <p className="muted">Загрузка…</p>}
-        {page?.items.length === 0 && <p className="muted">Уведомлений нет.</p>}
+        {error && <p className="error">{message(error)}</p>}
+        {!page && !error && <p className="muted">{t("Загрузка…")}</p>}
+        {page?.items.length === 0 && <p className="muted">{t("Уведомлений нет.")}</p>}
         {page?.items.map((item) => (
           <article
             className={`notification-item ${item.urgent ? "urgent" : ""} ${item.read_at ? "read" : ""}`}
@@ -183,7 +187,7 @@ export function NotificationsDialog({
             <div className="notification-actions">
               {item.order_id && (
                 <button type="button" className="secondary" onClick={() => onOrder(item.order_id!)}>
-                  Открыть наряд
+                  {t("Открыть наряд")}
                 </button>
               )}
               {!item.read_at && (
@@ -194,10 +198,10 @@ export function NotificationsDialog({
                     void api
                       .markNotificationRead(item.id)
                       .then(update)
-                      .catch(() => setError("Не удалось отметить уведомление."))
+                      .catch(() => setError(t("Не удалось отметить уведомление.")))
                   }
                 >
-                  Прочитано
+                  {t("Прочитано")}
                 </button>
               )}
               {item.urgent && item.action_required && !item.acknowledged_at && (
@@ -208,10 +212,10 @@ export function NotificationsDialog({
                     void api
                       .acknowledgeNotification(item.id)
                       .then(update)
-                      .catch(() => setError("Не удалось подтвердить получение."))
+                      .catch(() => setError(t("Не удалось подтвердить получение.")))
                   }
                 >
-                  Подтвердить получение
+                  {t("Подтвердить получение")}
                 </button>
               )}
             </div>
@@ -219,12 +223,12 @@ export function NotificationsDialog({
         ))}
         {offset > 0 && (
           <button type="button" className="secondary" onClick={() => setOffset(Math.max(0, offset - 50))}>
-            Предыдущие уведомления
+            {t("Предыдущие уведомления")}
           </button>
         )}
         {page && page.total > offset + page.items.length && (
           <button type="button" className="secondary" onClick={() => setOffset(offset + page.items.length)}>
-            Следующие уведомления
+            {t("Следующие уведомления")}
           </button>
         )}
       </section>

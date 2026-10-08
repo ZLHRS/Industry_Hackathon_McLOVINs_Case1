@@ -12,6 +12,62 @@
   background: #f4f2ed;
   font-synthesis: none;
 }
+.language-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  font-size: 13px;
+}
+.language-switcher select {
+  width: auto;
+  min-width: 112px;
+  min-height: 40px;
+  padding: 6px 28px 6px 10px;
+  color: #25282a;
+  background: #fff;
+  border: 1px solid #c9cecc;
+  border-radius: 8px;
+}
+.language-switcher select:focus-visible {
+  outline: 2px solid #167b76;
+  outline-offset: 2px;
+}
+.login-form .language-switcher {
+  justify-self: end;
+}
+.user-card .language-switcher {
+  margin-bottom: 8px;
+}
+.mobile-language {
+  display: none;
+}
+.dialog-head .language-switcher {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+@media (max-width: 820px) {
+  .mobile-language {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 10px;
+  }
+}
+@media (max-width: 460px) {
+  .dialog-head {
+    flex-wrap: wrap;
+  }
+  .dialog-head h2 {
+    flex: 1 1 55%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .dialog-head .language-switcher {
+    order: 3;
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
+}
 * {
   box-sizing: border-box;
 }

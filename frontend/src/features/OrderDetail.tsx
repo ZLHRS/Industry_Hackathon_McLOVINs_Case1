@@ -1,3 +1,4 @@
+import { t, getLocale, message } from "../lib/i18n";
 import "./order-ux.css";
 import { canReviewRepair, canViewRepairOutcome, roleLabels } from "../lib/roleAccess";
 import { FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
@@ -6,52 +7,129 @@ import { OfflineStorageError } from "../lib/offline";
 import { blackenPixels, normalizeRedaction, type RedactionRect } from "../lib/photoRedaction";
 import { Dialog } from "../components/Dialog";
 import { AIReviewReport, ExecutorFeedbackReport, ReviewHistory } from "./AIReviewReport";
-import { masterDecisionPayload, validateMasterDecision, type MasterDecision } from "./aiReview";
+import {
+  masterCloseOptions,
+  masterDecisionPayload,
+  validateMasterDecision,
+  type MasterDecision,
+} from "./aiReview";
 import type { ActionRequest, Catalog, EventItem, OrderDetail, Role, Workload } from "../types";
 
 const ruStatus: Record<string, string> = {
-  issued: "Выдан",
-  accepted: "Принят",
-  queued: "В очереди",
-  rejected: "Отказ",
-  in_progress: "В работе",
-  paused: "Пауза",
-  completed: "Сдан",
-  ai_review: "Проверка",
-  closed: "Закрыт",
-  cancelled: "Отменён",
-  rework: "Доработка",
+  get issued() {
+    return t("Выдан");
+  },
+  get accepted() {
+    return t("Принят");
+  },
+  get queued() {
+    return t("В очереди");
+  },
+  get rejected() {
+    return t("Отказ");
+  },
+  get in_progress() {
+    return t("В работе");
+  },
+  get paused() {
+    return t("Пауза");
+  },
+  get completed() {
+    return t("Сдан");
+  },
+  get ai_review() {
+    return t("Проверка");
+  },
+  get closed() {
+    return t("Закрыт");
+  },
+  get cancelled() {
+    return t("Отменён");
+  },
+  get rework() {
+    return t("Доработка");
+  },
 };
 const ruPriority: Record<string, string> = {
-  emergency: "Аварийный",
-  high: "Высокий",
-  normal: "Обычный",
-  planned: "Плановый",
+  get emergency() {
+    return t("Аварийный");
+  },
+  get high() {
+    return t("Высокий");
+  },
+  get normal() {
+    return t("Обычный");
+  },
+  get planned() {
+    return t("Плановый");
+  },
 };
 const ruWorkType: Record<string, string> = {
-  planned: "Плановый",
-  unplanned: "Внеплановый",
+  get planned() {
+    return t("Плановый");
+  },
+  get unplanned() {
+    return t("Внеплановый");
+  },
 };
 const actionLabels: Record<string, string> = {
-  issue: "Наряд выдан",
-  accept: "Наряд принят",
-  queue: "Добавлен в очередь",
-  reject: "Отказ от наряда",
-  start: "Работа начата",
-  resume: "Работа возобновлена",
-  pause: "Работа приостановлена",
-  complete: "Работа сдана",
-  start_ai_review: "Проверка начата",
-  request_rework: "Возврат на доработку",
-  mark_rework: "Доработка назначена",
-  close: "Наряд закрыт",
-  override_close: "Наряд закрыт вручную",
-  cancel: "Наряд отменён",
-  change_priority: "Приоритет изменён",
-  reassign: "Исполнитель переназначен",
-  comment: "Комментарий",
-  record_downtime: "Простой",
-  adjudicate_refusal: "Оценка отказа",
+  get issue() {
+    return t("Наряд выдан");
+  },
+  get accept() {
+    return t("Наряд принят");
+  },
+  get queue() {
+    return t("Добавлен в очередь");
+  },
+  get reject() {
+    return t("Отказ от наряда");
+  },
+  get start() {
+    return t("Работа начата");
+  },
+  get resume() {
+    return t("Работа возобновлена");
+  },
+  get pause() {
+    return t("Работа приостановлена");
+  },
+  get complete() {
+    return t("Работа сдана");
+  },
+  get start_ai_review() {
+    return t("Проверка начата");
+  },
+  get request_rework() {
+    return t("Возврат на доработку");
+  },
+  get mark_rework() {
+    return t("Доработка назначена");
+  },
+  get close() {
+    return t("Наряд закрыт");
+  },
+  get override_close() {
+    return t("Наряд закрыт вручную");
+  },
+  get cancel() {
+    return t("Наряд отменён");
+  },
+  get change_priority() {
+    return t("Приоритет изменён");
+  },
+  get reassign() {
+    return t("Исполнитель переназначен");
+  },
+  get comment() {
+    return t("Комментарий");
+  },
+  get record_downtime() {
+    return t("Простой");
+  },
+  get adjudicate_refusal() {
+    return t("Оценка отказа");
+  },
 };
 const eventComment = (event: EventItem) => {
   const value = event.details.comment;
@@ -68,7 +146,7 @@ const confirmedActionStatuses: Record<string, string[]> = {
 };
 const local = (value: string | null) =>
   value
-    ? new Intl.DateTimeFormat("ru-RU", {
+    ? new Intl.DateTimeFormat(getLocale(), {
         dateStyle: "short",
         timeStyle: "short",
         timeZone: "Asia/Almaty",
@@ -174,10 +252,12 @@ export function OrderDetailDialog({
         }
         setError(
           caught.status === 404
-            ? "Наряд больше недоступен."
+            ? t("Наряд больше недоступен.")
             : caught.detail === "history_limit_exceeded"
-              ? "Журнал превышает предел 2 000 событий. Сузьте период в отчёте или обратитесь к администратору."
-              : "Не удалось загрузить карточку.",
+              ? t(
+                  "Журнал превышает предел 2 000 событий. Сузьте период в отчёте или обратитесь к администратору.",
+                )
+              : t("Не удалось загрузить карточку."),
         );
       });
   }, [id, load]);
@@ -229,12 +309,17 @@ export function OrderDetailDialog({
       setError(
         caught instanceof OfflineStorageError
           ? caught.message
-          : failure.status === 409
-            ? "Наряд изменился. Проверьте обновлённые данные и повторите действие."
-            : failure.status === 401
-              ? "Сессия завершена."
-              : "Действие не выполнено.",
+          : failure.status === 409 && failure.detail === "version_conflict"
+            ? t("Наряд изменился. Проверьте обновлённые данные и повторите действие.")
+            : failure.status === 409
+              ? t(
+                  "Действие недоступно в текущем состоянии наряда. Проверьте данные и выберите доступное действие.",
+                )
+              : failure.status === 401
+                ? t("Сессия завершена.")
+                : t("Действие не выполнено."),
       );
+      if (failure.status === 409) await refresh();
     } finally {
       setBusy(false);
     }
@@ -253,7 +338,7 @@ export function OrderDetailDialog({
     const lines = materials.filter((line) => line.material_id || line.quantity);
     if (noMaterials) {
       if (completion.no_materials_reason.trim().length < 3) {
-        setError("Укажите причину отсутствия материалов.");
+        setError(t("Укажите причину отсутствия материалов."));
         return;
       }
     } else if (
@@ -262,7 +347,7 @@ export function OrderDetailDialog({
         (line) => !line.material_id || !Number.isFinite(Number(line.quantity)) || Number(line.quantity) <= 0,
       )
     ) {
-      setError("Добавьте материал и положительное количество либо отметьте отсутствие материалов.");
+      setError(t("Добавьте материал и положительное количество либо отметьте отсутствие материалов."));
       return;
     }
     const completionData = noMaterials
@@ -292,7 +377,7 @@ export function OrderDetailDialog({
       link.click();
       URL.revokeObjectURL(href);
     } catch {
-      setError("Не удалось скачать отчёт Excel.");
+      setError(t("Не удалось скачать отчёт Excel."));
     } finally {
       setReportExporting(false);
     }
@@ -312,7 +397,7 @@ export function OrderDetailDialog({
       setDowntime({ started_at: "", ended_at: "", reason: "" });
       await refresh();
     } catch {
-      setError("Простой не сохранён. Проверьте время и причину.");
+      setError(t("Простой не сохранён. Проверьте время и причину."));
     } finally {
       setBusy(false);
     }
@@ -330,7 +415,7 @@ export function OrderDetailDialog({
       setRefusal({ event_id: "", justified: "true", reason: "" });
       await refresh();
     } catch {
-      setError("Оценка отказа не сохранена.");
+      setError(t("Оценка отказа не сохранена."));
     } finally {
       setBusy(false);
     }
@@ -355,8 +440,8 @@ export function OrderDetailDialog({
   }
   if (!detail)
     return (
-      <Dialog title="Карточка наряда" onClose={onClose}>
-        <p className={error ? "error" : "muted"}>{error || "Загрузка…"}</p>
+      <Dialog title={t("Карточка наряда")} onClose={onClose}>
+        <p className={error ? "error" : "muted"}>{error || t("Загрузка…")}</p>
       </Dialog>
     );
   const machine = catalog.equipment.find((item) => item.id === detail.equipment_id);
@@ -371,46 +456,34 @@ export function OrderDetailDialog({
   const currentMaterials = detail.materials.filter(
     (item) => item.submission_version === detail.last_submission_version,
   );
-  const hasAiScore =
-    typeof currentReview?.score === "number" &&
-    Number.isInteger(currentReview.score) &&
-    currentReview.score >= 1 &&
-    currentReview.score <= 5;
-  const canClose =
-    detail.status === "ai_review" &&
-    currentReview &&
-    hasAiScore &&
-    ["accepted", "accepted_with_remarks"].includes(currentReview.verdict ?? "");
-  const canOverride =
-    (detail.status === "ai_review" && currentReview?.needs_master_review && !canClose) ||
-    (detail.status === "rework" && currentReview?.verdict === "rework_required");
+  const { canClose, canOverride } = masterCloseOptions(detail.status, currentReview);
   const masterScoreRequiresReason = masterScore.trim().length > 0 && reason.trim().length < 3;
   const executorNext: Partial<Record<OrderDetail["status"], string>> = {
-    issued: "Ознакомьтесь с заданием и примите наряд. Если заняты, поставьте его в очередь.",
-    accepted: "Когда будете готовы приступить, нажмите «Начать работу».",
-    queued: "Наряд в очереди. Начните его, когда завершите текущую работу.",
-    in_progress: "Опишите выполненные работы, добавьте материалы и фото, затем сдайте наряд мастеру.",
-    paused: "Работа приостановлена. Нажмите «Возобновить», чтобы продолжить.",
-    rework: "Прочитайте замечания мастера ниже и начните доработку.",
-    completed: "Работа сдана. Ожидайте решения мастера — повторная сдача не нужна.",
-    ai_review: "Работа сдана. Ожидайте решения мастера — повторная сдача не нужна.",
-    closed: "Наряд закрыт. Здесь сохранены отчёт, фотографии и история работы.",
-    cancelled: "Наряд отменён. Выполнять это задание больше не нужно.",
-    rejected: "Отказ передан мастеру. Дальнейшее назначение определяет мастер.",
+    issued: t("Ознакомьтесь с заданием и примите наряд. Если заняты, поставьте его в очередь."),
+    accepted: t("Когда будете готовы приступить, нажмите «Начать работу»."),
+    queued: t("Наряд в очереди. Начните его, когда завершите текущую работу."),
+    in_progress: t("Опишите выполненные работы, добавьте материалы и фото, затем сдайте наряд мастеру."),
+    paused: t("Работа приостановлена. Нажмите «Возобновить», чтобы продолжить."),
+    rework: t("Прочитайте замечания мастера ниже и начните доработку."),
+    completed: t("Работа сдана. Ожидайте решения мастера — повторная сдача не нужна."),
+    ai_review: t("Работа сдана. Ожидайте решения мастера — повторная сдача не нужна."),
+    closed: t("Наряд закрыт. Здесь сохранены отчёт, фотографии и история работы."),
+    cancelled: t("Наряд отменён. Выполнять это задание больше не нужно."),
+    rejected: t("Отказ передан мастеру. Дальнейшее назначение определяет мастер."),
   };
   const nextStep = canExecutor
     ? executorNext[detail.status]
     : masterOwns
       ? ["completed", "ai_review"].includes(detail.status)
         ? currentReview
-          ? "Изучите отчёт исполнителя и проверку, затем примите ремонт или верните на доработку."
-          : "Работа сдана. Дождитесь результатов проверки перед решением по ремонту."
+          ? t("Изучите отчёт исполнителя и проверку, затем примите ремонт или верните на доработку.")
+          : t("Работа сдана. Дождитесь результатов проверки перед решением по ремонту.")
         : detail.status === "rejected"
-          ? "Исполнитель отказался от наряда. Изучите причину и назначьте дальнейшие действия."
+          ? t("Исполнитель отказался от наряда. Изучите причину и назначьте дальнейшие действия.")
           : ["closed", "cancelled"].includes(detail.status)
-            ? "Наряд завершён. Отчёт и история доступны для просмотра."
-            : "Наряд назначен исполнителю. При необходимости уточните приоритет или назначение."
-      : "Режим просмотра. Изменять наряд и принимать ремонт может выдавший его мастер.";
+            ? t("Наряд завершён. Отчёт и история доступны для просмотра.")
+            : t("Наряд назначен исполнителю. При необходимости уточните приоритет или назначение.")
+      : t("Режим просмотра. Изменять наряд и принимать ремонт может выдавший его мастер.");
   const executorAction =
     canExecutor &&
     ["issued", "accepted", "queued", "in_progress", "paused", "rework"].includes(detail.status);
@@ -435,13 +508,13 @@ export function OrderDetailDialog({
               onClick={() => void downloadReport()}
               disabled={reportExporting}
             >
-              {reportExporting ? "Готовим…" : "Отчёт Excel"}
+              {reportExporting ? t("Готовим…") : t("Отчёт Excel")}
             </button>
           )}
         </div>
         <div className="order-next-step">
           <div>
-            <strong>{["closed", "cancelled"].includes(detail.status) ? "Итог" : "Что дальше"}</strong>
+            <strong>{["closed", "cancelled"].includes(detail.status) ? t("Итог") : t("Что дальше")}</strong>
             <p>{nextStep}</p>
           </div>
           {executorAction && (
@@ -454,85 +527,89 @@ export function OrderDetailDialog({
                 actions?.focus({ preventScroll: true });
               }}
             >
-              К действиям
+              {t("К действиям")}
             </button>
           )}
         </div>
         <dl className="facts">
           <div>
-            <dt>Оборудование</dt>
+            <dt>{t("Оборудование")}</dt>
             <dd>{machine ? `${machine.inventory_number} · ${machine.name}` : detail.equipment_id}</dd>
           </div>
           <div>
-            <dt>Участок</dt>
+            <dt>{t("Участок")}</dt>
             <dd>{area ? `${area.code} · ${area.name}` : detail.area_id}</dd>
           </div>
           <div>
-            <dt>Вид работ</dt>
+            <dt>{t("Вид работ")}</dt>
             <dd>{ruWorkType[detail.work_type] ?? detail.work_type}</dd>
           </div>
           <div>
-            <dt>Срок</dt>
+            <dt>{t("Срок")}</dt>
             <dd className={detail.overdue ? "danger-text" : ""}>{local(detail.deadline)}</dd>
           </div>
           <div>
-            <dt>Приоритет</dt>
+            <dt>{t("Приоритет")}</dt>
             <dd>{ruPriority[detail.priority]}</dd>
           </div>
           <div>
-            <dt>Попытка ремонта</dt>
+            <dt>{t("Попытка ремонта")}</dt>
             <dd>{detail.attempt}</dd>
           </div>
           <div>
-            <dt>Выдан</dt>
+            <dt>{t("Выдан")}</dt>
             <dd>{local(detail.issued_at)}</dd>
           </div>
           {detail.started_at && (
             <div>
-              <dt>Начат</dt>
+              <dt>{t("Начат")}</dt>
               <dd>{local(detail.started_at)}</dd>
             </div>
           )}
           {detail.completed_at && (
             <div>
-              <dt>Сдан</dt>
+              <dt>{t("Сдан")}</dt>
               <dd>{local(detail.completed_at)}</dd>
             </div>
           )}
           {detail.closed_at && (
             <div>
-              <dt>Закрыт</dt>
+              <dt>{t("Закрыт")}</dt>
               <dd>{local(detail.closed_at)}</dd>
             </div>
           )}
           {detail.master_name && (
             <div>
-              <dt>Мастер</dt>
+              <dt>{t("Мастер")}</dt>
               <dd>{detail.master_name}</dd>
             </div>
           )}
           {detail.executor_name && (
             <div>
-              <dt>Исполнитель</dt>
+              <dt>{t("Исполнитель")}</dt>
               <dd>{detail.executor_name}</dd>
             </div>
           )}
         </dl>
         {detail.comment?.trim() && (
           <section className="order-comment">
-            <h3>Последний комментарий</h3>
+            <h3>{t("Последний комментарий")}</h3>
             <p>{detail.comment}</p>
           </section>
         )}
         {detail.last_submission_version !== null && detail.work_description && (
           <section className="repair-submission">
-            <h3>Отчёт исполнителя</h3>
+            <h3>{t("Отчёт исполнителя")}</h3>
             <p className="review-explanation">{detail.work_description}</p>
             <p className="muted">
-              Неисправность:{" "}
-              {catalog.fault_codes.find((item) => item.id === detail.fault_code_id)?.name ?? "Не указана"}
+              {t("Неисправность:")}{" "}
+              {catalog.fault_codes.find((item) => item.id === detail.fault_code_id)?.name ?? t("Не указана")}
             </p>
-            {detail.no_materials_reason && <p>Без расхода материалов: {detail.no_materials_reason}</p>}
+            {detail.no_materials_reason && (
+              <p>
+                {t("Без расхода материалов:")} {detail.no_materials_reason}
+              </p>
+            )}
           </section>
         )}
         {canExecutor && detail.executor_feedback && detail.executor_feedback.length > 0 ? (
@@ -557,22 +634,22 @@ export function OrderDetailDialog({
         )}
         {canExecutor && detail.status === "rework" && (
           <section className="action-block">
-            <h3>Что исправить</h3>
+            <h3>{t("Что исправить")}</h3>
             <p>
               {[...events].reverse().find((item) => item.action === "request_rework")?.reason ??
-                "Свяжитесь с мастером, чтобы уточнить замечания перед продолжением работы."}
+                t("Свяжитесь с мастером, чтобы уточнить замечания перед продолжением работы.")}
             </p>
           </section>
         )}
         {error && (
           <p className="error" role="alert" id="action-error" tabIndex={-1}>
-            {error}
+            {message(error)}
           </p>
         )}
         {canExecutor &&
           ["issued", "accepted", "queued", "in_progress", "paused", "rework"].includes(detail.status) && (
             <section className="action-block" id="executor-actions" tabIndex={-1}>
-              <h3>Действия исполнителя</h3>
+              <h3>{t("Действия исполнителя")}</h3>
               {feedback &&
                 !(
                   feedback.state === "pending" &&
@@ -580,11 +657,11 @@ export function OrderDetailDialog({
                 ) && (
                   <div id="action-feedback" className="action-feedback" role="status" tabIndex={-1}>
                     <strong>
-                      {feedback.state === "blocked" ? "Действие не выполнено" : "Ожидаем подтверждения"}
+                      {feedback.state === "blocked" ? t("Действие не выполнено") : t("Ожидаем подтверждения")}
                     </strong>
                     <p>{feedback.message}</p>
                     <button type="button" className="secondary" onClick={onClose}>
-                      К очереди отправки
+                      {t("К очереди отправки")}
                     </button>
                   </div>
                 )}
@@ -593,12 +670,13 @@ export function OrderDetailDialog({
                   id="work-progress"
                   className="work-progress"
                   tabIndex={-1}
-                  aria-label="Работа начата"
+                  aria-label={t("Работа начата")}
                 >
-                  <h3>Работа начата</h3>
+                  <h3>{t("Работа начата")}</h3>
                   <p>
-                    Наряд в работе. Выполните задание, затем добавьте фото, опишите результат и сдайте работу
-                    мастеру.
+                    {t(
+                      "Наряд в работе. Выполните задание, затем добавьте фото, опишите результат и сдайте работу мастеру.",
+                    )}
                   </p>
                   <button
                     type="button"
@@ -609,7 +687,7 @@ export function OrderDetailDialog({
                       form?.focus({ preventScroll: true });
                     }}
                   >
-                    Заполнить отчёт
+                    {t("Заполнить отчёт")}
                   </button>
                 </section>
               )}
@@ -617,29 +695,29 @@ export function OrderDetailDialog({
                 {detail.status === "issued" && (
                   <>
                     <button className="primary" disabled={busy} onClick={() => void act("accept", {}, true)}>
-                      Принять
+                      {t("Принять")}
                     </button>
                     <button className="secondary" disabled={busy} onClick={() => void act("queue", {}, true)}>
-                      В очередь
+                      {t("В очередь")}
                     </button>
                   </>
                 )}
                 {["accepted", "queued", "rework"].includes(detail.status) && (
                   <button className="primary" disabled={busy} onClick={() => void act("start", {}, true)}>
-                    {busy ? "Начинаем…" : "Начать работу"}
+                    {busy ? t("Начинаем…") : t("Начать работу")}
                   </button>
                 )}
                 {detail.status === "paused" && (
                   <button className="primary" disabled={busy} onClick={() => void act("resume", {}, true)}>
-                    Возобновить
+                    {t("Возобновить")}
                   </button>
                 )}
               </div>
               {detail.status === "issued" && (
                 <details className="secondary-action">
-                  <summary>Не могу выполнить наряд</summary>
+                  <summary>{t("Не могу выполнить наряд")}</summary>
                   <label>
-                    Причина отказа
+                    {t("Причина отказа")}
                     <textarea
                       disabled={busy}
                       value={reason}
@@ -654,15 +732,15 @@ export function OrderDetailDialog({
                     disabled={busy || reason.trim().length < 3}
                     onClick={() => void act("reject", { reason }, true)}
                   >
-                    Отказаться
+                    {t("Отказаться")}
                   </button>
                 </details>
               )}
               {detail.status === "in_progress" && (
                 <details className="secondary-action">
-                  <summary>Приостановить работу</summary>
+                  <summary>{t("Приостановить работу")}</summary>
                   <label>
-                    Причина паузы
+                    {t("Причина паузы")}
                     <textarea
                       disabled={busy}
                       value={reason}
@@ -677,13 +755,13 @@ export function OrderDetailDialog({
                     disabled={busy || reason.trim().length < 3}
                     onClick={() => void act("pause", { reason }, true)}
                   >
-                    Поставить на паузу
+                    {t("Поставить на паузу")}
                   </button>
                 </details>
               )}
               {["in_progress", "paused"].includes(detail.status) && (
                 <PhotoUploadPanel
-                  label="Фото после"
+                  label={t("Фото после")}
                   busy={busy}
                   onUpload={(file, aiShareAllowed, capturedAt) => upload(file, aiShareAllowed, capturedAt)}
                 />
@@ -697,9 +775,9 @@ export function OrderDetailDialog({
             tabIndex={-1}
             onSubmit={(e) => void submitCompletion(e)}
           >
-            <h3>Сдать работу</h3>
+            <h3>{t("Сдать работу")}</h3>
             <label>
-              Что выполнено
+              {t("Что выполнено")}
               <textarea
                 required
                 value={completion.work_description}
@@ -707,13 +785,13 @@ export function OrderDetailDialog({
               />
             </label>
             <label>
-              Шифр неисправности
+              {t("Шифр неисправности")}
               <select
                 required
                 value={completion.fault_code_id}
                 onChange={(e) => setCompletion({ ...completion, fault_code_id: e.target.value })}
               >
-                <option value="">Выберите шифр</option>
+                <option value="">{t("Выберите шифр")}</option>
                 {catalog.fault_codes.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.code} · {item.name}
@@ -727,11 +805,11 @@ export function OrderDetailDialog({
                 checked={noMaterials}
                 onChange={(e) => setNoMaterials(e.target.checked)}
               />{" "}
-              Материалы не использовались
+              {t("Материалы не использовались")}
             </label>
             {noMaterials ? (
               <label>
-                Причина отсутствия материалов
+                {t("Причина отсутствия материалов")}
                 <textarea
                   required
                   minLength={3}
@@ -745,7 +823,7 @@ export function OrderDetailDialog({
                   {materials.map((line, index) => (
                     <div className="two-col" key={index}>
                       <label>
-                        Материал
+                        {t("Материал")}
                         <select
                           required
                           value={line.material_id}
@@ -757,7 +835,7 @@ export function OrderDetailDialog({
                             )
                           }
                         >
-                          <option value="">Выберите материал</option>
+                          <option value="">{t("Выберите материал")}</option>
                           {catalog.materials
                             .filter(
                               (item) =>
@@ -773,7 +851,7 @@ export function OrderDetailDialog({
                         </select>
                       </label>
                       <label>
-                        Количество
+                        {t("Количество")}
                         <input
                           required
                           inputMode="decimal"
@@ -798,7 +876,7 @@ export function OrderDetailDialog({
                             setMaterials((current) => current.filter((_, rowIndex) => rowIndex !== index))
                           }
                         >
-                          Удалить строку
+                          {t("Удалить строку")}
                         </button>
                       )}
                     </div>
@@ -809,28 +887,30 @@ export function OrderDetailDialog({
                   className="secondary"
                   onClick={() => setMaterials((current) => [...current, { material_id: "", quantity: "" }])}
                 >
-                  Добавить материал
+                  {t("Добавить материал")}
                 </button>
               </>
             )}{" "}
             <button className="primary" disabled={busy}>
-              Сдать наряд
+              {t("Сдать наряд")}
             </button>
           </form>
         )}
         {masterOwns && (
           <section className="action-block audit-controls">
-            <h3>Учёт простоя</h3>
+            <h3>{t("Учёт простоя")}</h3>
             <p className="muted">
               {latestDowntime
                 ? latestDowntime.details.void === true
-                  ? "Последняя запись простоя аннулирована."
-                  : `Последняя запись: ${local(String(latestDowntime.details.started_at ?? latestDowntime.occurred_at))}`
-                : "Интервал вносится мастером и не выводится из статуса наряда."}
+                  ? t("Последняя запись простоя аннулирована.")
+                  : t("Последняя запись: {0}", [
+                      local(String(latestDowntime.details.started_at ?? latestDowntime.occurred_at)),
+                    ])
+                : t("Интервал вносится мастером и не выводится из статуса наряда.")}
             </p>
             <div className="action-row">
               <label>
-                Начало простоя
+                {t("Начало простоя")}
                 <input
                   type="datetime-local"
                   value={downtime.started_at}
@@ -839,7 +919,7 @@ export function OrderDetailDialog({
                 />
               </label>
               <label>
-                Окончание (можно оставить открытым)
+                {t("Окончание (можно оставить открытым)")}
                 <input
                   type="datetime-local"
                   value={downtime.ended_at}
@@ -849,7 +929,7 @@ export function OrderDetailDialog({
               </label>
             </div>
             <label>
-              Причина записи или исправления
+              {t("Причина записи или исправления")}
               <textarea
                 value={downtime.reason}
                 disabled={busy}
@@ -864,7 +944,7 @@ export function OrderDetailDialog({
                 disabled={busy || !downtime.started_at || downtime.reason.trim().length < 3}
                 onClick={() => void saveDowntime()}
               >
-                Зафиксировать простой
+                {t("Зафиксировать простой")}
               </button>
               {latestDowntime && (
                 <button
@@ -873,7 +953,7 @@ export function OrderDetailDialog({
                   disabled={busy || downtime.reason.trim().length < 3}
                   onClick={() => void saveDowntime(true)}
                 >
-                  Аннулировать последнюю запись
+                  {t("Аннулировать последнюю запись")}
                 </button>
               )}
             </div>
@@ -881,25 +961,25 @@ export function OrderDetailDialog({
         )}
         {masterOwns && rejections.length > 0 && (
           <section className="action-block audit-controls">
-            <h3>Оценка отказа</h3>
-            <p className="muted">Решение добавляется к исходному отказу и не меняет статус наряда.</p>
+            <h3>{t("Оценка отказа")}</h3>
+            <p className="muted">{t("Решение добавляется к исходному отказу и не меняет статус наряда.")}</p>
             <label>
-              Отказ
+              {t("Отказ")}
               <select
                 value={refusal.event_id}
                 disabled={busy}
                 onChange={(event) => setRefusal((value) => ({ ...value, event_id: event.target.value }))}
               >
-                <option value="">Выберите отказ…</option>
+                <option value="">{t("Выберите отказ…")}</option>
                 {rejections.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {local(item.occurred_at)} · {item.reason ?? "без причины"}
+                    {local(item.occurred_at)} · {item.reason ?? t("без причины")}
                   </option>
                 ))}
               </select>
             </label>
             <fieldset className="assessment-choice">
-              <legend>Оценка</legend>
+              <legend>{t("Оценка")}</legend>
               <label>
                 <input
                   type="radio"
@@ -908,7 +988,7 @@ export function OrderDetailDialog({
                   checked={refusal.justified === "true"}
                   onChange={(event) => setRefusal((value) => ({ ...value, justified: event.target.value }))}
                 />{" "}
-                Обоснован
+                {t("Обоснован")}
               </label>
               <label>
                 <input
@@ -918,11 +998,11 @@ export function OrderDetailDialog({
                   checked={refusal.justified === "false"}
                   onChange={(event) => setRefusal((value) => ({ ...value, justified: event.target.value }))}
                 />{" "}
-                Необоснован
+                {t("Необоснован")}
               </label>
             </fieldset>
             <label>
-              Основание решения
+              {t("Основание решения")}
               <textarea
                 value={refusal.reason}
                 disabled={busy}
@@ -936,25 +1016,26 @@ export function OrderDetailDialog({
               disabled={busy || !refusal.event_id || refusal.reason.trim().length < 3}
               onClick={() => void assessRefusal()}
             >
-              Сохранить оценку
+              {t("Сохранить оценку")}
             </button>
           </section>
         )}
         {masterOwns && !["closed", "cancelled"].includes(detail.status) && (
           <section className="action-block master-controls">
-            <h3>Управление мастера</h3>
+            <h3>{t("Управление мастера")}</h3>
             <p className="muted">
-              Каждое действие оформляется отдельно: причина относится только к выбранному изменению.
+              {t("Каждое действие оформляется отдельно: причина относится только к выбранному изменению.")}
             </p>
             {(detail.status === "ai_review" || canOverride) && (
               <section className="master-action-panel">
-                <h4>Решение мастера</h4>
+                <h4>{t("Решение мастера")}</h4>
                 <p className="muted">
-                  Вывод и оценка ИИ предварительные. Закрытие или возврат — решение мастера; итоговая оценка
-                  берётся из вашей оценки либо из действительной рекомендации ИИ.
+                  {t(
+                    "Вывод и оценка ИИ предварительные. Закрытие или возврат — решение мастера; итоговая оценка берётся из вашей оценки либо из действительной рекомендации ИИ.",
+                  )}
                 </p>
                 <label>
-                  Причина решения
+                  {t("Причина решения")}
                   <textarea
                     disabled={busy}
                     value={reason}
@@ -964,7 +1045,7 @@ export function OrderDetailDialog({
                 </label>
                 {["ai_review", "rework"].includes(detail.status) && (
                   <label>
-                    Оценка мастера (необязательно)
+                    {t("Оценка мастера (необязательно)")}
                     <input
                       type="number"
                       min="1"
@@ -987,7 +1068,7 @@ export function OrderDetailDialog({
                         disabled={busy || reason.trim().length < 3}
                         onClick={() => void decideMaster("request_rework")}
                       >
-                        Вернуть на доработку
+                        {t("Вернуть на доработку")}
                       </button>
                       {canClose && (
                         <button
@@ -996,9 +1077,7 @@ export function OrderDetailDialog({
                           disabled={busy || masterScoreRequiresReason}
                           onClick={() => void decideMaster("close")}
                         >
-                          {masterScore.trim()
-                            ? "Закрыть с оценкой мастера"
-                            : "Принять рекомендацию ИИ и закрыть"}
+                          {masterScore.trim() ? t("Закрыть вручную") : t("Подтвердить оценку ИИ и закрыть")}
                         </button>
                       )}
                     </>
@@ -1010,7 +1089,11 @@ export function OrderDetailDialog({
                       disabled={busy || reason.trim().length < 3}
                       onClick={() => void decideMaster("override_close")}
                     >
-                      Закрыть вручную
+                      {!masterScore.trim() &&
+                      currentReview?.score != null &&
+                      ["accepted", "accepted_with_remarks"].includes(currentReview.verdict ?? "")
+                        ? t("Подтвердить оценку ИИ и закрыть")
+                        : t("Закрыть вручную")}
                     </button>
                   )}
                 </div>
@@ -1018,29 +1101,29 @@ export function OrderDetailDialog({
             )}
             {detail.status === "issued" && (
               <section className="master-action-panel">
-                <h4>Фото до ремонта</h4>
+                <h4>{t("Фото до ремонта")}</h4>
                 <p className="muted">
-                  Необязательно. Добавьте исходное состояние оборудования до начала работ.
+                  {t("Необязательно. Добавьте исходное состояние оборудования до начала работ.")}
                 </p>
                 <PhotoUploadPanel
-                  label="Фотография"
+                  label={t("Фотография")}
                   busy={busy}
                   onUpload={(file, aiShareAllowed, capturedAt) => upload(file, aiShareAllowed, capturedAt)}
                 />
               </section>
             )}
             <details className="master-action-panel">
-              <summary>Изменить приоритет</summary>
+              <summary>{t("Изменить приоритет")}</summary>
               <div className="master-panel-body">
                 <label>
-                  Новый приоритет
+                  {t("Новый приоритет")}
                   <select
-                    aria-label="Новый приоритет"
+                    aria-label={t("Новый приоритет")}
                     value={priority}
                     disabled={busy}
                     onChange={(event) => setPriority(event.target.value)}
                   >
-                    <option value="">Выберите приоритет…</option>
+                    <option value="">{t("Выберите приоритет…")}</option>
                     {Object.entries(ruPriority).map(([value, label]) => (
                       <option key={value} value={value}>
                         {label}
@@ -1049,7 +1132,7 @@ export function OrderDetailDialog({
                   </select>
                 </label>
                 <label>
-                  Причина изменения приоритета
+                  {t("Причина изменения приоритета")}
                   <textarea
                     value={priorityReason}
                     disabled={busy}
@@ -1064,24 +1147,24 @@ export function OrderDetailDialog({
                     disabled={busy || !priority || priorityReason.trim().length < 3}
                     onClick={() => void act("change_priority", { priority, reason: priorityReason })}
                   >
-                    Сохранить приоритет
+                    {t("Сохранить приоритет")}
                   </button>
                 </div>
               </div>
             </details>
             {canReassign && (
               <details className="master-action-panel">
-                <summary>Переназначить исполнителя</summary>
+                <summary>{t("Переназначить исполнителя")}</summary>
                 <div className="master-panel-body">
                   <label>
-                    Новый исполнитель
+                    {t("Новый исполнитель")}
                     <select
-                      aria-label="Новый исполнитель"
+                      aria-label={t("Новый исполнитель")}
                       value={reassignExecutorId}
                       disabled={busy}
                       onChange={(event) => setReassignExecutorId(event.target.value)}
                     >
-                      <option value="">Выберите исполнителя…</option>
+                      <option value="">{t("Выберите исполнителя…")}</option>
                       {workers
                         .filter((person) => person.is_on_shift && person.employee_id !== detail.executor_id)
                         .map((person) => (
@@ -1092,7 +1175,7 @@ export function OrderDetailDialog({
                     </select>
                   </label>
                   <label>
-                    Причина переназначения
+                    {t("Причина переназначения")}
                     <textarea
                       value={reassignReason}
                       disabled={busy}
@@ -1109,18 +1192,18 @@ export function OrderDetailDialog({
                         void act("reassign", { executor_id: reassignExecutorId, reason: reassignReason })
                       }
                     >
-                      Переназначить
+                      {t("Переназначить")}
                     </button>
                   </div>
                 </div>
               </details>
             )}
             <details className="master-action-panel master-action-danger">
-              <summary>Отменить наряд</summary>
+              <summary>{t("Отменить наряд")}</summary>
               <div className="master-panel-body">
-                <p className="muted">Отменённый наряд нельзя вернуть в работу.</p>
+                <p className="muted">{t("Отменённый наряд нельзя вернуть в работу.")}</p>
                 <label>
-                  Причина отмены
+                  {t("Причина отмены")}
                   <textarea
                     value={cancelReason}
                     disabled={busy}
@@ -1135,7 +1218,7 @@ export function OrderDetailDialog({
                     disabled={busy}
                     onChange={(event) => setCancelConfirmed(event.target.checked)}
                   />
-                  Я понимаю, что наряд будет отменён
+                  {t("Я понимаю, что наряд будет отменён")}
                 </label>
                 <div className="master-panel-actions">
                   <button
@@ -1144,7 +1227,7 @@ export function OrderDetailDialog({
                     disabled={busy || !cancelConfirmed || cancelReason.trim().length < 3}
                     onClick={() => void act("cancel", { reason: cancelReason })}
                   >
-                    Отменить наряд
+                    {t("Отменить наряд")}
                   </button>
                 </div>
               </div>
@@ -1153,9 +1236,9 @@ export function OrderDetailDialog({
         )}
         {(canExecutor || masterOwns) && !["closed", "cancelled"].includes(detail.status) && (
           <section className="action-block">
-            <h3>Комментарий</h3>
+            <h3>{t("Комментарий")}</h3>
             <textarea
-              aria-label="Текст комментария"
+              aria-label={t("Текст комментария")}
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               maxLength={5000}
@@ -1166,12 +1249,12 @@ export function OrderDetailDialog({
               disabled={busy || !comment.trim()}
               onClick={() => void act("comment", { comment })}
             >
-              Добавить комментарий
+              {t("Добавить комментарий")}
             </button>
           </section>
         )}
         <section>
-          <h3>Материалы текущей сдачи и фотографии</h3>
+          <h3>{t("Материалы текущей сдачи и фотографии")}</h3>
           {currentMaterials.length ? (
             <ul className="plain-list">
               {currentMaterials.map((item) => (
@@ -1181,15 +1264,15 @@ export function OrderDetailDialog({
               ))}
             </ul>
           ) : (
-            <p className="muted">Материалы не зафиксированы.</p>
+            <p className="muted">{t("Материалы не зафиксированы.")}</p>
           )}
           <PhotoGallery photos={detail.photos} getUrl={photoUrl} attempt={detail.attempt} />
           {!canExecutor && canViewOutcome && <ReviewHistory reviews={detail.reviews} audience="reviewer" />}
         </section>
         <section>
-          <h3>Журнал</h3>
+          <h3>{t("Журнал")}</h3>
           <details className="secondary-action">
-            <summary>Показать историю действий</summary>
+            <summary>{t("Показать историю действий")}</summary>
             <ol className="timeline">
               {events
                 .filter(
@@ -1215,23 +1298,28 @@ export function OrderDetailDialog({
                         {item.actor_display_name ??
                           item.actor_name ??
                           roleLabels[item.actor_role as keyof typeof roleLabels] ??
-                          "Сотрудник"}
+                          t("Сотрудник")}
                       </span>
                       {item.reason && <small>{item.reason}</small>}
                       {comment && <small>{comment}</small>}
                       {item.action === "record_downtime" && (
                         <small>
                           <strong>
-                            {item.details.void === true ? "Простой аннулирован" : "Простой зафиксирован"}
+                            {item.details.void === true
+                              ? t("Простой аннулирован")
+                              : t("Простой зафиксирован")}
                           </strong>
-                          {item.details.started_at ? `: с ${local(String(item.details.started_at))}` : ""}
-                          {item.details.ended_at ? ` по ${local(String(item.details.ended_at))}` : ""}
+                          {item.details.started_at
+                            ? t(": с {0}", [local(String(item.details.started_at))])
+                            : ""}
+                          {item.details.ended_at ? t(" по {0}", [local(String(item.details.ended_at))]) : ""}
                         </small>
                       )}
                       {item.action === "adjudicate_refusal" && (
                         <small>
                           <strong>
-                            Отказ: {item.details.justified === true ? "обоснован" : "необоснован"}
+                            {t("Отказ:")}{" "}
+                            {item.details.justified === true ? t("обоснован") : t("необоснован")}
                           </strong>
                         </small>
                       )}
@@ -1369,14 +1457,14 @@ function PhotoUploadPanel({
       await onUpload(upload, aiShareAllowed, capturedAt);
       select(undefined);
     } catch {
-      setError("Фото не загружено. Проверьте тип, размер, соединение и доступ.");
+      setError(t("Фото не загружено. Проверьте тип, размер, соединение и доступ."));
     } finally {
       setUploading(false);
     }
   }
 
   return (
-    <section className="photo-upload-panel" aria-label="Подготовка загрузки фото">
+    <section className="photo-upload-panel" aria-label={t("Подготовка загрузки фото")}>
       <label htmlFor={inputId}>
         {label}
         <input
@@ -1390,14 +1478,14 @@ function PhotoUploadPanel({
       </label>
       {selected && (
         <div className="photo-upload-preview">
-          {preview && <img src={preview} alt={`Предпросмотр: ${selected.name}`} />}
+          {preview && <img src={preview} alt={t("Предпросмотр: {0}", [selected.name])} />}
           <div>
             <strong>{selected.name}</strong>
             <small>
-              {new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 }).format(
+              {new Intl.NumberFormat(getLocale(), { maximumFractionDigits: 1 }).format(
                 selected.size / 1024 / 1024,
               )}{" "}
-              МБ
+              {t("МБ")}
             </small>
           </div>
         </div>
@@ -1412,11 +1500,13 @@ function PhotoUploadPanel({
             onPointerUp={finishMask}
             onPointerCancel={finishMask}
             aria-label={
-              maskMode ? "Проведите по фотографии, чтобы скрыть участок" : "Предпросмотр для скрытия участков"
+              maskMode
+                ? t("Проведите по фотографии, чтобы скрыть участок")
+                : t("Предпросмотр для скрытия участков")
             }
             role={maskMode ? "application" : undefined}
           >
-            <img src={preview} alt="Предпросмотр для ручного скрытия данных" />
+            <img src={preview} alt={t("Предпросмотр для ручного скрытия данных")} />
             {[...redactions, ...(draft ? [draft] : [])].map((redaction, index) => (
               <span
                 className="photo-redaction-box"
@@ -1438,7 +1528,7 @@ function PhotoUploadPanel({
               disabled={busy || uploading}
               onClick={() => setMaskMode((active) => !active)}
             >
-              {maskMode ? "Завершить скрытие" : "Скрыть личные данные"}
+              {maskMode ? t("Завершить скрытие") : t("Скрыть личные данные")}
             </button>
             <button
               type="button"
@@ -1446,7 +1536,7 @@ function PhotoUploadPanel({
               disabled={!redactions.length || busy || uploading}
               onClick={() => setRedactions((current) => current.slice(0, -1))}
             >
-              Отменить последнее
+              {t("Отменить последнее")}
             </button>
             <button
               type="button"
@@ -1454,20 +1544,21 @@ function PhotoUploadPanel({
               disabled={!redactions.length || busy || uploading}
               onClick={() => setRedactions([])}
             >
-              Очистить скрытия
+              {t("Очистить скрытия")}
             </button>
           </div>
           <p className="photo-privacy-note">
-            Скрытие ручное: проведите по участку на фото. После загрузки будет сохранён JPEG с чёрными
-            прямоугольниками, исходный файл не отправляется.
+            {t(
+              "Скрытие ручное: проведите по участку на фото. После загрузки будет сохранён JPEG с чёрными прямоугольниками, исходный файл не отправляется.",
+            )}
           </p>
           <details className="photo-manual-mask">
-            <summary>Ввести область скрытия точно</summary>
-            <p>Координаты в процентах от левого верхнего угла изображения.</p>
+            <summary>{t("Ввести область скрытия точно")}</summary>
+            <p>{t("Координаты в процентах от левого верхнего угла изображения.")}</p>
             <div>
               {(["x", "y", "width", "height"] as const).map((field) => (
                 <label key={field}>
-                  {{ x: "X", y: "Y", width: "Ширина", height: "Высота" }[field]}, %
+                  {{ x: "X", y: "Y", width: t("Ширина"), height: t("Высота") }[field]}, %
                   <input
                     type="number"
                     min="0"
@@ -1483,7 +1574,7 @@ function PhotoUploadPanel({
               ))}
             </div>
             <button type="button" className="secondary" disabled={busy || uploading} onClick={addManualMask}>
-              Добавить область
+              {t("Добавить область")}
             </button>
           </details>
         </>
@@ -1495,20 +1586,21 @@ function PhotoUploadPanel({
           disabled={!selected || busy || uploading}
           onChange={(event) => setAiShareAllowed(event.target.checked)}
         />{" "}
-        На фото только оборудование, личные и конфиденциальные данные скрыты. Разрешить анализ ИИ.
+        {t("На фото только оборудование, личные и конфиденциальные данные скрыты. Разрешить анализ ИИ.")}
       </label>
       <small className="photo-privacy-note">
-        Без этой отметки фото сохранится во внутреннем наряде и не будет передано внешнему ИИ. Отметка не
-        заменяет проверку кадра человеком.
+        {t(
+          "Без этой отметки фото сохранится во внутреннем наряде и не будет передано внешнему ИИ. Отметка не заменяет проверку кадра человеком.",
+        )}
       </small>
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error">{message(error)}</p>}
       <button
         type="button"
         className="secondary"
         disabled={!selected || busy || uploading}
         onClick={() => void send()}
       >
-        {uploading ? "Загружаем…" : "Загрузить фото"}
+        {uploading ? t("Загружаем…") : t("Загрузить фото")}
       </button>
     </section>
   );
@@ -1533,11 +1625,11 @@ function PhotoEvidenceGroup({
             {urls[photo.id] ? (
               <img
                 src={urls[photo.id]}
-                alt={`${photo.kind === "before" ? "До ремонта" : "После ремонта"}, ${local(photo.uploaded_at)}`}
+                alt={`${photo.kind === "before" ? t("До ремонта") : t("После ремонта")}, ${local(photo.uploaded_at)}`}
               />
             ) : (
               <div className="photo-placeholder" role="status">
-                Загружаем фото…
+                {t("Загружаем фото…")}
               </div>
             )}
             <figcaption>{local(photo.uploaded_at)}</figcaption>
@@ -1584,22 +1676,25 @@ function PhotoGallery({
       created.forEach((url) => URL.revokeObjectURL(url));
     };
   }, [photos, getUrl]);
-  if (!photos.length) return <p className="muted">Фото не загружены.</p>;
+  if (!photos.length) return <p className="muted">{t("Фото не загружены.")}</p>;
   const originals = photos.filter((photo) => photo.kind === "before");
   const currentAfter = photos.filter((photo) => photo.kind === "after" && photo.attempt === attempt);
   const priorAfter = photos.filter((photo) => photo.kind === "after" && photo.attempt !== attempt);
   return (
     <div className="photo-evidence-list">
-      <PhotoEvidenceGroup title="Исходные фото до ремонта" photos={originals} urls={urls} />
+      <PhotoEvidenceGroup title={t("Исходные фото до ремонта")} photos={originals} urls={urls} />
       <PhotoEvidenceGroup
-        title={`Фото после: текущая попытка ${attempt}`}
+        title={t("Фото после: текущая попытка {0}", [attempt])}
         photos={currentAfter}
         urls={urls}
       />
       {priorAfter.length > 0 && (
         <details className="photo-history">
-          <summary>Фото предыдущих попыток ({priorAfter.length})</summary>
-          <PhotoEvidenceGroup title="Предыдущие доказательства" photos={priorAfter} urls={urls} />
+          <summary>
+            {t("Фото предыдущих попыток (")}
+            {priorAfter.length})
+          </summary>
+          <PhotoEvidenceGroup title={t("Предыдущие доказательства")} photos={priorAfter} urls={urls} />
         </details>
       )}
     </div>

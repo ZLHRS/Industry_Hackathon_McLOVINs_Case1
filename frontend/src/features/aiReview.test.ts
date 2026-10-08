@@ -1,5 +1,41 @@
 import { describe, expect, it } from "vitest";
-import { masterDecisionPayload, validateMasterDecision } from "./aiReview";
+import { masterCloseOptions, masterDecisionPayload, validateMasterDecision } from "./aiReview";
+import type { Review } from "../types";
+
+describe("master closing availability", () => {
+  const review: Review = {
+    id: "review",
+    order_version: 10,
+    verdict: "accepted_with_remarks",
+    score: 4,
+    needs_master_review: true,
+    explanation: "Photo unavailable",
+    model_name: "test",
+    created_at: "2026-10-08T00:00:00Z",
+    master_score: null,
+    is_current: true,
+  };
+  it("requires manual acceptance even when a provisional AI score is positive", () => {
+    expect(masterCloseOptions("ai_review", review)).toEqual({ canClose: false, canOverride: true });
+  });
+  it("allows ordinary acceptance when AI does not require manual review", () => {
+    expect(masterCloseOptions("ai_review", { ...review, needs_master_review: false })).toEqual({
+      canClose: true,
+      canOverride: false,
+    });
+  });
+  it("allows manual acceptance for rework and for a missing AI score", () => {
+    expect(masterCloseOptions("rework", { ...review, verdict: "rework_required" }).canOverride).toBe(true);
+    expect(masterCloseOptions("ai_review", { ...review, score: null })).toEqual({
+      canClose: false,
+      canOverride: true,
+    });
+  });
+  it("does not offer closing without a review or for completed orders", () => {
+    expect(masterCloseOptions("ai_review")).toEqual({ canClose: false, canOverride: false });
+    expect(masterCloseOptions("closed", review)).toEqual({ canClose: false, canOverride: false });
+  });
+});
 
 describe("master AI review decision validation", () => {
   it("allows an ordinary close without a score or reason", () => {

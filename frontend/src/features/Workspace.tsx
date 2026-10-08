@@ -1,3 +1,5 @@
+import { suggestionText } from "../lib/suggestionText";
+import { t, message } from "../lib/i18n";
 import {
   activeOrderStatuses as activeStatuses,
   archivedOrderStatuses as archiveStatuses,
@@ -114,24 +116,24 @@ export function OrdersView({
   const committedQuery = useRef(filters.query);
   const view = {
     executor: {
-      eyebrow: "МОЯ СМЕНА",
-      title: "Мои наряды",
-      guidance: "Откройте наряд, чтобы принять его, начать работу или завершить выполнение.",
+      eyebrow: t("МОЯ СМЕНА"),
+      title: t("Мои наряды"),
+      guidance: t("Откройте наряд, чтобы принять его, начать работу или завершить выполнение."),
     },
     master: {
-      eyebrow: "УПРАВЛЕНИЕ СМЕНОЙ",
-      title: "Наряды участка",
-      guidance: "Выдавайте наряды и контролируйте ход работ по участку.",
+      eyebrow: t("УПРАВЛЕНИЕ СМЕНОЙ"),
+      title: t("Наряды участка"),
+      guidance: t("Выдавайте наряды и контролируйте ход работ по участку."),
     },
     manager: {
-      eyebrow: "КОНТРОЛЬ РАБОТ",
-      title: "Наряды участка",
-      guidance: "Просматривайте ход работ и переключайте список по текущей задаче.",
+      eyebrow: t("КОНТРОЛЬ РАБОТ"),
+      title: t("Наряды участка"),
+      guidance: t("Просматривайте ход работ и переключайте список по текущей задаче."),
     },
     admin: {
-      eyebrow: "ПРОСМОТР РАБОТ",
-      title: "Наряды",
-      guidance: "Просматривайте текущий список нарядов.",
+      eyebrow: t("ПРОСМОТР РАБОТ"),
+      title: t("Наряды"),
+      guidance: t("Просматривайте текущий список нарядов."),
     },
   }[role];
   const activeTab = filters.status.join(",") === activeStatuses.join(",");
@@ -192,36 +194,36 @@ export function OrdersView({
         </div>
         {role === "master" && (
           <button className="primary" onClick={() => setCreating(true)}>
-            Выдать наряд
+            {t("Выдать наряд")}
           </button>
         )}
       </div>
 
       {page && (role !== "executor" || urgentCount > 0) && (
-        <section className={`operations-strip role-${role}`} aria-label="Сводка очереди">
+        <section className={`operations-strip role-${role}`} aria-label={t("Сводка очереди")}>
           <button
             type="button"
             className={filters.attention ? "operations-signal is-active" : "operations-signal"}
             onClick={() => onFilters({ ...filters, attention: !filters.attention, offset: 0 })}
             aria-pressed={filters.attention}
           >
-            <span className="operations-kicker">ТРЕБУЮТ ВНИМАНИЯ</span>
+            <span className="operations-kicker">{t("ТРЕБУЮТ ВНИМАНИЯ")}</span>
             <strong>{urgentCount}</strong>
-            <small>{filters.attention ? "Показаны срочные" : "Сроки и высокий приоритет"}</small>
+            <small>{filters.attention ? t("Показаны срочные") : t("Сроки и высокий приоритет")}</small>
           </button>
           <div className="operations-stat">
-            <span>Выполняются</span>
+            <span>{t("Выполняются")}</span>
             <strong>{activeCount}</strong>
           </div>
           <div className="operations-stat">
-            <span>В выборке</span>
+            <span>{t("В выборке")}</span>
             <strong>{page.total}</strong>
           </div>
         </section>
       )}
 
       {page && (
-        <div className="status-tabs" aria-label="Список нарядов">
+        <div className="status-tabs" aria-label={t("Список нарядов")}>
           <button
             className={activeTab ? "active" : ""}
             aria-pressed={activeTab}
@@ -229,7 +231,7 @@ export function OrdersView({
               onFilters({ ...filters, query: searchInput.trim(), status: activeStatuses, offset: 0 })
             }
           >
-            В работе
+            {t("В работе")}
           </button>
           <button
             className={archiveTab ? "active" : ""}
@@ -238,20 +240,20 @@ export function OrdersView({
               onFilters({ ...filters, query: searchInput.trim(), status: archiveStatuses, offset: 0 })
             }
           >
-            История
+            {t("История")}
           </button>
         </div>
       )}
 
       <div className="orders-filter-actions">
         <label className="order-search">
-          <span className="sr-only">Поиск наряда</span>
+          <span className="sr-only">{t("Поиск наряда")}</span>
           <input
             type="search"
             value={searchInput}
             onChange={(event) => setSearchInput(event.target.value)}
-            placeholder="Номер, задача или оборудование"
-            aria-label="Поиск наряда"
+            placeholder={t("Номер, задача или оборудование")}
+            aria-label={t("Поиск наряда")}
           />
         </label>
         <button
@@ -259,27 +261,28 @@ export function OrdersView({
           type="button"
           aria-expanded={filtersOpen}
           aria-controls="order-filters"
-          aria-label={additionalFilterCount ? "Фильтры: выбрано " + additionalFilterCount : "Фильтры"}
+          aria-label={additionalFilterCount ? t("Фильтры: выбрано ") + additionalFilterCount : t("Фильтры")}
           onClick={() => setFiltersOpen((open) => !open)}
         >
-          Фильтры{additionalFilterCount ? " (" + additionalFilterCount + ")" : ""}
+          {t("Фильтры")}
+          {additionalFilterCount ? " (" + additionalFilterCount + ")" : ""}
         </button>
         {hasAdditionalFilters && (
           <button className="text-button reset-order-filters" type="button" onClick={resetFilters}>
-            Сбросить фильтры
+            {t("Сбросить фильтры")}
           </button>
         )}
       </div>
 
       <div id="order-filters" className={"filters " + (filtersOpen ? "is-open" : "")}>
         <label>
-          Приоритет
+          {t("Приоритет")}
           <select
-            aria-label="Приоритет"
+            aria-label={t("Приоритет")}
             value={filters.priority}
             onChange={(e) => onFilters({ ...filters, priority: e.target.value, offset: 0 })}
           >
-            <option value="">Все</option>
+            <option value="">{t("Все")}</option>
             {Object.entries(ruPriority).map(([key, value]) => (
               <option key={key} value={key}>
                 {value}
@@ -289,15 +292,15 @@ export function OrdersView({
         </label>
         {catalog && (
           <label>
-            Участок
+            {t("Участок")}
             <select
-              aria-label="Участок"
+              aria-label={t("Участок")}
               value={filters.area_id}
               onChange={(e) =>
                 onFilters({ ...filters, area_id: e.target.value, equipment_id: "", offset: 0 })
               }
             >
-              <option value="">Все участки</option>
+              <option value="">{t("Все участки")}</option>
               {catalog.areas
                 .filter((item) => item.is_active !== false)
                 .map((item) => (
@@ -310,13 +313,13 @@ export function OrdersView({
         )}
         {catalog && (
           <label>
-            Оборудование
+            {t("Оборудование")}
             <select
-              aria-label="Оборудование"
+              aria-label={t("Оборудование")}
               value={filters.equipment_id}
               onChange={(e) => onFilters({ ...filters, equipment_id: e.target.value, offset: 0 })}
             >
-              <option value="">Всё оборудование</option>
+              <option value="">{t("Всё оборудование")}</option>
               {catalog.equipment
                 .filter(
                   (item) =>
@@ -332,9 +335,9 @@ export function OrdersView({
         )}
         {(role === "master" || role === "manager") && (
           <label>
-            Мастер
+            {t("Мастер")}
             <select
-              aria-label="Мастер"
+              aria-label={t("Мастер")}
               value={filters.master_id === "all" ? "" : filters.master_id}
               onChange={(e) =>
                 onFilters({
@@ -344,8 +347,8 @@ export function OrdersView({
                 })
               }
             >
-              <option value="">Все доступные мастера</option>
-              {role === "master" && <option value={currentUserId}>Мои наряды</option>}
+              <option value="">{t("Все доступные мастера")}</option>
+              {role === "master" && <option value={currentUserId}>{t("Мои наряды")}</option>}
               {masters
                 .filter((item) => item.id !== currentUserId)
                 .map((item) => (
@@ -358,13 +361,13 @@ export function OrdersView({
         )}
         {role !== "executor" && (
           <label>
-            Исполнитель
+            {t("Исполнитель")}
             <select
-              aria-label="Исполнитель"
+              aria-label={t("Исполнитель")}
               value={filters.executor_id}
               onChange={(e) => onFilters({ ...filters, executor_id: e.target.value, offset: 0 })}
             >
-              <option value="">Все исполнители</option>
+              <option value="">{t("Все исполнители")}</option>
               {workload.map((item) => (
                 <option key={item.employee_id} value={item.employee_id}>
                   {item.display_name}
@@ -379,41 +382,41 @@ export function OrdersView({
             checked={filters.overdue}
             onChange={(e) => onFilters({ ...filters, overdue: e.target.checked, offset: 0 })}
           />
-          Только просроченные
+          {t("Только просроченные")}
         </label>
       </div>
 
       {page && (
         <p className="orders-summary" aria-live="polite">
-          {filters.query || filters.attention ? "Найдено" : "В списке"}:{" "}
+          {filters.query || filters.attention ? t("Найдено") : t("В списке")}:{" "}
           <strong>{visibleOrders.length}</strong>
-          {visibleOrders.length !== page.total && ` из ${page.total}`}
+          {visibleOrders.length !== page.total && t(" из {0}", [page.total])}
         </p>
       )}
-      {loading && <p className="muted">Обновляем наряды…</p>}
+      {loading && <p className="muted">{t("Обновляем наряды…")}</p>}
       {emptyState ? (
         <div className="empty orders-empty">
           <h2>
             {unfilteredEmpty
               ? archiveTab
-                ? "История пока пуста"
-                : "Нет текущих нарядов"
-              : "По выбранным условиям нарядов нет"}
+                ? t("История пока пуста")
+                : t("Нет текущих нарядов")
+              : t("По выбранным условиям нарядов нет")}
           </h2>
           <p>
             {unfilteredEmpty
               ? archiveTab
-                ? "Здесь появятся закрытые и отменённые наряды."
+                ? t("Здесь появятся закрытые и отменённые наряды.")
                 : role === "master"
-                  ? "Создайте первый наряд, когда появится работа на участке."
-                  : "Новые наряды появятся здесь после выдачи мастером."
+                  ? t("Создайте первый наряд, когда появится работа на участке.")
+                  : t("Новые наряды появятся здесь после выдачи мастером.")
               : hasAdditionalFilters
-                ? "Сбросьте дополнительные фильтры или выберите другой список нарядов."
-                : "Переключитесь между текущими нарядами и историей."}
+                ? t("Сбросьте дополнительные фильтры или выберите другой список нарядов.")
+                : t("Переключитесь между текущими нарядами и историей.")}
           </p>
           {hasAdditionalFilters && (
             <button className="secondary" type="button" onClick={resetFilters}>
-              Сбросить фильтры
+              {t("Сбросить фильтры")}
             </button>
           )}
         </div>
@@ -434,17 +437,17 @@ export function OrdersView({
             disabled={page.offset === 0}
             onClick={() => onFilters({ ...filters, offset: Math.max(0, page.offset - page.limit) })}
           >
-            Назад
+            {t("Назад")}
           </button>
           <span>
-            {page.offset + 1}–{Math.min(page.offset + page.items.length, page.total)} из {page.total}
+            {page.offset + 1}–{Math.min(page.offset + page.items.length, page.total)} {t("из")} {page.total}
           </span>
           <button
             className="secondary"
             disabled={page.offset + page.limit >= page.total}
             onClick={() => onFilters({ ...filters, offset: page.offset + page.limit })}
           >
-            Далее
+            {t("Далее")}
           </button>
         </div>
       )}
@@ -476,18 +479,18 @@ function Kanban({
   onHistory: (equipmentId: string) => Promise<void>;
 }) {
   const columns: Array<[string, string[]]> = [
-    ["К выдаче", ["issued", "accepted", "queued"]],
-    ["В работе", ["in_progress", "paused"]],
-    ["На проверке", ["completed", "ai_review"]],
-    ["Доработка и отказы", ["rework", "rejected"]],
-    ["Закрытые", ["closed"]],
-    ["Отменённые", ["cancelled"]],
+    [t("К выдаче"), ["issued", "accepted", "queued"]],
+    [t("В работе"), ["in_progress", "paused"]],
+    [t("На проверке"), ["completed", "ai_review"]],
+    [t("Доработка и отказы"), ["rework", "rejected"]],
+    [t("Закрытые"), ["closed"]],
+    [t("Отменённые"), ["cancelled"]],
   ] satisfies Array<[string, string[]]>;
   const visibleColumns = columns.filter(([, statuses]) =>
     orders.some((order) => statuses.includes(order.status)),
   );
   return (
-    <div className="kanban" aria-label="Доска нарядов">
+    <div className="kanban" aria-label={t("Доска нарядов")}>
       {visibleColumns.map(([title, statuses]) => {
         const items = orders.filter((order) => statuses.includes(order.status));
         return (
@@ -506,7 +509,7 @@ function Kanban({
                 />
               ))
             ) : (
-              <p className="muted">Нет нарядов</p>
+              <p className="muted">{t("Нет нарядов")}</p>
             )}
           </section>
         );
@@ -534,12 +537,12 @@ function OrderRow({
       <button
         className="order-hit"
         onClick={() => onOpen(order.id)}
-        aria-label={`Открыть наряд ${order.number}`}
+        aria-label={t("Открыть наряд {0}", [order.number])}
       >
         <span className="order-number">{order.number}</span>
         <span className="order-main">
           <strong>{description}</strong>
-          <small>{machine ? `${machine.inventory_number} · ${machine.name}` : "Оборудование"}</small>
+          <small>{machine ? `${machine.inventory_number} · ${machine.name}` : t("Оборудование")}</small>
         </span>
         <span className={`status status-${order.status}`}>{ruStatus[order.status]}</span>
         <span className={order.overdue ? "deadline danger-text" : "deadline"}>{local(order.deadline)}</span>
@@ -548,9 +551,9 @@ function OrderRow({
         <button
           className="history-button"
           onClick={() => void onHistory(machine.id)}
-          aria-label={`История ${machine.name}`}
+          aria-label={t("История {0}", [machine.name])}
         >
-          История
+          {t("История")}
         </button>
       )}
     </article>
@@ -616,6 +619,7 @@ function CreateOrderDialog({
       requestId.current += 1;
       setSuggesting(false);
       setSuggestionError("");
+      setReceivedKey("");
     }
     setInput(next);
   };
@@ -628,7 +632,7 @@ function CreateOrderDialog({
 
   async function requestSuggestions() {
     if (!input.area_id || !input.equipment_id || !input.description.trim()) {
-      setSuggestionError("Выберите участок и оборудование, затем опишите работу.");
+      setSuggestionError(t("Выберите участок и оборудование, затем опишите работу."));
       return;
     }
     const id = ++requestId.current;
@@ -648,7 +652,7 @@ function CreateOrderDialog({
     } catch {
       if (id === requestId.current) {
         setSuggestions(null);
-        setSuggestionError("Подбор недоступен. Заполните поля вручную или повторите попытку.");
+        setSuggestionError(t("Подбор недоступен. Заполните поля вручную или повторите попытку."));
       }
     } finally {
       if (id === requestId.current) setSuggesting(false);
@@ -659,7 +663,7 @@ function CreateOrderDialog({
     event.preventDefault();
     setError("");
     if (!input.deadline) {
-      setError("Укажите срок выполнения.");
+      setError(t("Укажите срок выполнения."));
       return;
     }
     try {
@@ -672,28 +676,28 @@ function CreateOrderDialog({
         comment: input.comment || undefined,
       });
     } catch {
-      setError("Наряд не создан. Проверьте обязательные поля и доступ участка.");
+      setError(t("Наряд не создан. Проверьте обязательные поля и доступ участка."));
     }
   }
   return (
-    <Dialog title="Выдать наряд" onClose={onClose}>
+    <Dialog title={t("Выдать наряд")} onClose={onClose}>
       <form className="dialog-form guided-order-form" onSubmit={(event) => void submit(event)}>
-        <div className="form-progress" aria-label="Шаги выдачи наряда">
+        <div className="form-progress" aria-label={t("Шаги выдачи наряда")}>
           <span>
-            <b>1</b> Где работа
+            <b>1</b> {t("Где работа")}
           </span>
           <span>
-            <b>2</b> Что сделать
+            <b>2</b> {t("Что сделать")}
           </span>
           <span>
-            <b>3</b> Кому
+            <b>3</b> {t("Кому")}
           </span>
         </div>
         <p className="form-hint">
-          Система показывает варианты, но не выбирает исполнителя, шифр или срок вместо мастера.
+          {t("Система показывает варианты, но не выбирает исполнителя, шифр или срок вместо мастера.")}
         </p>
         <label>
-          Участок
+          {t("Участок")}
           <select
             required
             value={input.area_id}
@@ -717,13 +721,13 @@ function CreateOrderDialog({
           </select>
         </label>
         <label>
-          Оборудование
+          {t("Оборудование")}
           <select
             required
             value={input.equipment_id}
             onChange={(event) => updateInput({ ...input, equipment_id: event.target.value }, true)}
           >
-            <option value="">Выберите оборудование</option>
+            <option value="">{t("Выберите оборудование")}</option>
             {equipment.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.inventory_number} · {item.name}
@@ -732,7 +736,7 @@ function CreateOrderDialog({
           </select>
         </label>
         <label>
-          Описание
+          {t("Описание")}
           <textarea
             required
             minLength={1}
@@ -741,12 +745,12 @@ function CreateOrderDialog({
           />
         </label>
         <label>
-          Шифр неисправности
+          {t("Шифр неисправности")}
           <select
             value={input.fault_code_id}
             onChange={(event) => updateInput({ ...input, fault_code_id: event.target.value }, true)}
           >
-            <option value="">Не выбран</option>
+            <option value="">{t("Не выбран")}</option>
             {catalog.fault_codes.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.code} · {item.name}
@@ -756,23 +760,25 @@ function CreateOrderDialog({
         </label>
         {selectedNorm !== undefined ? (
           <p className="suggestion-norm">
-            Ориентир трудоёмкости: {selectedNorm} мин. Это не срок выполнения.
+            {t("Ориентир трудоёмкости:")} {selectedNorm} {t("мин. Это не срок выполнения.")}
           </p>
         ) : (
           input.fault_code_id && (
-            <p className="muted suggestion-note">Для выбранного шифра и типа оборудования нормы пока нет.</p>
+            <p className="muted suggestion-note">
+              {t("Для выбранного шифра и типа оборудования нормы пока нет.")}
+            </p>
           )
         )}
-        <section className="order-suggestions" aria-label="Подбор вариантов">
+        <section className="order-suggestions" aria-label={t("Подбор вариантов")}>
           {input.fault_code_id && (
             <p className="suggestion-selected-fault">
-              Подбор исполнителя по выбранному шифру. Чтобы найти другой шифр, очистите это поле.
+              {t("Подбор исполнителя по выбранному шифру. Чтобы найти другой шифр, очистите это поле.")}
             </p>
           )}
           <div className="order-suggestions-head">
             <div>
-              <h3>Подбор вариантов</h3>
-              <p>Учитывает участок, оборудование, описание и текущую нагрузку.</p>
+              <h3>{t("Подбор вариантов")}</h3>
+              <p>{t("Учитывает участок, оборудование, описание и текущую нагрузку.")}</p>
             </div>
             <button
               type="button"
@@ -780,31 +786,35 @@ function CreateOrderDialog({
               onClick={() => void requestSuggestions()}
               disabled={suggesting}
             >
-              {suggesting ? "Подбираем…" : "Подобрать по описанию"}
+              {suggesting ? t("Подбираем…") : t("Подобрать по описанию")}
             </button>
           </div>
           {suggestionError && (
             <p className="error" role="alert">
-              {suggestionError}
+              {message(suggestionError)}
             </p>
           )}
           {suggestions && receivedKey !== suggestionKey && (
-            <p className="muted">Данные изменились. Подберите варианты снова.</p>
+            <p className="muted">{t("Данные изменились. Подберите варианты снова.")}</p>
           )}
           {suggestions && receivedKey === suggestionKey && (
             <div className="suggestion-results">
               {!input.fault_code_id && suggestions.faults.length > 0 && (
                 <section>
-                  <h4>Шифры неисправности</h4>
+                  <h4>{t("Шифры неисправности")}</h4>
                   {suggestions.faults.map((fault) => (
                     <article className="suggestion-card" key={fault.fault_code_id}>
                       <div>
                         <strong>
                           {fault.code} · {fault.name}
                         </strong>
-                        {fault.reasons.length > 0 && <small>{fault.reasons.join(" · ")}</small>}
+                        {fault.reasons.length > 0 && (
+                          <small>{fault.reasons.map(suggestionText).join(" · ")}</small>
+                        )}
                         {fault.norm_minutes !== null && (
-                          <small>Ориентир трудоёмкости: {fault.norm_minutes} мин</small>
+                          <small>
+                            {t("Ориентир трудоёмкости:")} {fault.norm_minutes} {t("мин")}
+                          </small>
                         )}
                       </div>
                       <button
@@ -812,7 +822,7 @@ function CreateOrderDialog({
                         className="text-button"
                         onClick={() => updateInput({ ...input, fault_code_id: fault.fault_code_id }, true)}
                       >
-                        Выбрать шифр
+                        {t("Выбрать шифр")}
                       </button>
                     </article>
                   ))}
@@ -820,22 +830,34 @@ function CreateOrderDialog({
               )}
               {suggestions.executors.length > 0 && (
                 <section>
-                  <h4>Исполнители</h4>
+                  <h4>{t("Исполнители")}</h4>
                   {suggestions.executors.map((person) => (
                     <article className="suggestion-card" key={person.employee_id}>
                       <div>
                         <strong>
-                          {person.display_name} · {person.specialty} · {person.grade} разряд
+                          {person.display_name} · {person.specialty} · {person.grade} {t("разряд")}
                         </strong>
-                        {person.reasons.length > 0 && <small>{person.reasons.join(" · ")}</small>}
+                        {person.reasons.length > 0 && (
+                          <small>{person.reasons.map(suggestionText).join(" · ")}</small>
+                        )}
                         <small>
                           {person.availability === "free"
-                            ? "Свободен"
+                            ? t("Свободен")
                             : person.availability === "queued"
-                              ? "В очереди"
-                              : "Занят"}
-                          {person.queue_length > 0 && <> · очередь: {person.queue_length}</>}
-                          {person.paused_count > 0 && <> · пауз: {person.paused_count}</>}
+                              ? t("В очереди")
+                              : t("Занят")}
+                          {person.queue_length > 0 && (
+                            <>
+                              {" "}
+                              {t("· очередь:")} {person.queue_length}
+                            </>
+                          )}
+                          {person.paused_count > 0 && (
+                            <>
+                              {" "}
+                              {t("· пауз:")} {person.paused_count}
+                            </>
+                          )}
                         </small>
                       </div>
                       <button
@@ -846,7 +868,7 @@ function CreateOrderDialog({
                           updateInput({ ...input, executor_id: person.employee_id });
                         }}
                       >
-                        Выбрать исполнителя
+                        {t("Выбрать исполнителя")}
                       </button>
                     </article>
                   ))}
@@ -854,14 +876,14 @@ function CreateOrderDialog({
               )}
               {suggestions.notes.map((note, index) => (
                 <p className="muted suggestion-note" key={index}>
-                  {note}
+                  {suggestionText(note)}
                 </p>
               ))}
             </div>
           )}
         </section>
         <label>
-          Исполнитель
+          {t("Исполнитель")}
           <select
             required
             value={input.executor_id}
@@ -870,42 +892,42 @@ function CreateOrderDialog({
               updateInput({ ...input, executor_id: event.target.value });
             }}
           >
-            <option value="">Выберите исполнителя</option>
+            <option value="">{t("Выберите исполнителя")}</option>
             {selectedSuggestedExecutor && !manualExecutorExists && (
               <option value={selectedSuggestedExecutor.employee_id}>
                 {selectedSuggestedExecutor.display_name} · {selectedSuggestedExecutor.specialty} ·{" "}
-                {selectedSuggestedExecutor.grade} разряд
+                {selectedSuggestedExecutor.grade} {t("разряд")}
               </option>
             )}
             {workers
               .filter((person) => person.area_ids?.includes(input.area_id))
               .map((person) => (
                 <option key={person.employee_id} value={person.employee_id} disabled={!person.is_on_shift}>
-                  {person.display_name} · {person.specialty} · {person.grade} разряд ·{" "}
+                  {person.display_name} · {person.specialty} · {person.grade} {t("разряд ·")}{" "}
                   {person.availability === "free"
-                    ? "Свободен"
+                    ? t("Свободен")
                     : person.availability === "queued"
-                      ? "В очереди"
+                      ? t("В очереди")
                       : person.availability === "busy"
-                        ? "В работе"
-                        : "Не на смене"}
+                        ? t("В работе")
+                        : t("Не на смене")}
                 </option>
               ))}
           </select>
         </label>
         <div className="two-col">
           <label>
-            Тип
+            {t("Тип")}
             <select
               value={input.work_type}
               onChange={(event) => updateInput({ ...input, work_type: event.target.value })}
             >
-              <option value="unplanned">Внеплановый</option>
-              <option value="planned">Плановый</option>
+              <option value="unplanned">{t("Внеплановый")}</option>
+              <option value="planned">{t("Плановый")}</option>
             </select>
           </label>
           <label>
-            Приоритет
+            {t("Приоритет")}
             <select
               value={input.priority}
               onChange={(event) => updateInput({ ...input, priority: event.target.value })}
@@ -919,7 +941,7 @@ function CreateOrderDialog({
           </label>
         </div>
         <label>
-          Срок (Asia/Almaty)
+          {t("Срок (Asia/Almaty)")}
           <input
             type="datetime-local"
             required
@@ -927,8 +949,8 @@ function CreateOrderDialog({
             onChange={(event) => updateInput({ ...input, deadline: event.target.value })}
           />
         </label>
-        <div className="deadline-presets" aria-label="Быстрый выбор срока">
-          <span>Быстрый срок после проверки мастером:</span>
+        <div className="deadline-presets" aria-label={t("Быстрый выбор срока")}>
+          <span>{t("Быстрый срок после проверки мастером:")}</span>
           <button
             type="button"
             className="secondary"
@@ -936,7 +958,7 @@ function CreateOrderDialog({
               updateInput({ ...input, deadline: almatyInputDate(new Date(Date.now() + 60 * 60_000)) })
             }
           >
-            Через 1 час
+            {t("Через 1 час")}
           </button>
           <button
             type="button"
@@ -945,25 +967,25 @@ function CreateOrderDialog({
               updateInput({ ...input, deadline: almatyInputDate(new Date(Date.now() + 2 * 60 * 60_000)) })
             }
           >
-            Через 2 часа
+            {t("Через 2 часа")}
           </button>
           <button
             type="button"
             className="secondary"
             onClick={() => updateInput({ ...input, deadline: endOfCurrentShift() })}
           >
-            До конца смены
+            {t("До конца смены")}
           </button>
         </div>
         <label>
-          Комментарий для исполнителя
+          {t("Комментарий для исполнителя")}
           <input
             value={input.comment}
             onChange={(event) => updateInput({ ...input, comment: event.target.value })}
           />
         </label>
-        {error && <p className="error">{error}</p>}
-        <button className="primary">Выдать наряд</button>
+        {error && <p className="error">{message(error)}</p>}
+        <button className="primary">{t("Выдать наряд")}</button>
       </form>
     </Dialog>
   );
@@ -983,19 +1005,19 @@ export function WorkloadView({
     <section className="workspace">
       <div className="page-head">
         <div>
-          <p className="eyebrow">СМЕНА</p>
-          <h1>Загрузка исполнителей</h1>
+          <p className="eyebrow">{t("СМЕНА")}</p>
+          <h1>{t("Загрузка исполнителей")}</h1>
         </div>
       </div>
-      <div className="workload-summary" aria-label="Сводка загрузки">
+      <div className="workload-summary" aria-label={t("Сводка загрузки")}>
         <span>
-          <b>{onShift.length}</b> в смене
+          <b>{onShift.length}</b> {t("в смене")}
         </span>
         <span>
-          <b>{busy}</b> заняты
+          <b>{busy}</b> {t("заняты")}
         </span>
         <span>
-          <b>{onShift.reduce((sum, person) => sum + person.queue_length, 0)}</b> в очереди
+          <b>{onShift.reduce((sum, person) => sum + person.queue_length, 0)}</b> {t("в очереди")}
         </span>
       </div>
       <div className="workload">
@@ -1011,18 +1033,18 @@ export function WorkloadView({
                 {person.display_name}
               </button>
               <small>
-                {person.specialty} · {person.grade} разряд
+                {person.specialty} · {person.grade} {t("разряд")}
               </small>
             </div>
             <div>
               <b>
                 {person.availability === "busy"
-                  ? "Занят"
+                  ? t("Занят")
                   : person.availability === "free"
-                    ? "Свободен"
+                    ? t("Свободен")
                     : person.availability === "queued"
-                      ? "Очередь"
-                      : "Не в смене"}
+                      ? t("Очередь")
+                      : t("Не в смене")}
               </b>
               {person.current_order_id && person.current_order_number ? (
                 <button
@@ -1033,7 +1055,9 @@ export function WorkloadView({
                   {person.current_order_number}
                 </button>
               ) : (
-                <small>В очереди: {person.queue_length}</small>
+                <small>
+                  {t("В очереди:")} {person.queue_length}
+                </small>
               )}
             </div>
           </article>
@@ -1087,7 +1111,7 @@ export function ReferenceView({
   if (!catalog)
     return (
       <section className="workspace">
-        <p>Загрузка справочников…</p>
+        <p>{t("Загрузка справочников…")}</p>
       </section>
     );
   const canManageCatalog = role === "admin";
@@ -1101,53 +1125,54 @@ export function ReferenceView({
   }> = [
     {
       id: "areas",
-      title: "Участки",
+      title: t("Участки"),
       count: catalog.areas.length,
-      summary: `${activeAreas} активных · зоны обслуживания и выдачи работ`,
+      summary: t("{0} активных · зоны обслуживания и выдачи работ", [activeAreas]),
     },
     {
       id: "equipment",
-      title: "Оборудование",
+      title: t("Оборудование"),
       count: catalog.equipment.length,
-      summary: `${activeEquipment} активных · инвентарные номера и критичность`,
+      summary: t("{0} активных · инвентарные номера и критичность", [activeEquipment]),
     },
     ...(role === "admin" || role === "master"
       ? [
           {
             id: "brigades" as const,
-            title: "Бригады",
+            title: t("Бригады"),
             count: catalog.brigades.length,
-            summary: "Состав ремонтных групп и назначение сотрудников",
+            summary: t("Состав ремонтных групп и назначение сотрудников"),
           },
         ]
       : []),
     {
       id: "materials",
-      title: "Материалы",
+      title: t("Материалы"),
       count: catalog.materials.length,
-      summary: "Расходники и единицы измерения для отчётов",
+      summary: t("Расходники и единицы измерения для отчётов"),
     },
     {
       id: "fault-codes",
-      title: "Шифры неисправностей",
+      title: t("Шифры неисправностей"),
       count: catalog.fault_codes.length,
-      summary: "Коды и специализации для сдачи работ",
+      summary: t("Коды и специализации для сдачи работ"),
     },
     ...(role === "admin" || role === "master"
       ? [
           {
             id: "time-norms" as const,
-            title: "Нормативы времени",
+            title: t("Нормативы времени"),
             count: catalog.time_norms.length,
-            summary: "Ориентир по шифру неисправности и типу оборудования",
+            summary: t("Ориентир по шифру неисправности и типу оборудования"),
           },
         ]
       : []),
     {
       id: "employees",
-      title: "Сотрудники",
+      title: t("Сотрудники"),
       count: role === "admin" ? undefined : employees.length,
-      summary: role === "admin" ? "Учётные записи и доступы" : "Состав смены и доступность исполнителей",
+      summary:
+        role === "admin" ? t("Учётные записи и доступы") : t("Состав смены и доступность исполнителей"),
     },
   ];
   const directorySearch = directoryFilters.query;
@@ -1171,10 +1196,10 @@ export function ReferenceView({
   const empty = (count: number) =>
     count === 0 && (
       <div className="reference-empty" role="status">
-        <strong>По этим условиям ничего не найдено.</strong>
-        <p>Измените поиск или сбросьте фильтры.</p>
+        <strong>{t("По этим условиям ничего не найдено.")}</strong>
+        <p>{t("Измените поиск или сбросьте фильтры.")}</p>
         <button type="button" className="secondary" onClick={resetFilters}>
-          Сбросить фильтры
+          {t("Сбросить фильтры")}
         </button>
       </div>
     );
@@ -1188,16 +1213,16 @@ export function ReferenceView({
           aria-pressed={directoryState === value}
           onClick={() => updateDirectoryFilters({ state: value })}
         >
-          {value === "active" ? "Активные" : value === "archived" ? "Архив" : "Все"}
+          {value === "active" ? t("Активные") : value === "archived" ? t("Архив") : t("Все")}
         </button>
       ))}
     </div>
   );
   const search = (placeholder: string) => (
     <label className="reference-search">
-      <span className="sr-only">Поиск по справочнику</span>
+      <span className="sr-only">{t("Поиск по справочнику")}</span>
       <input
-        aria-label="Поиск по справочнику"
+        aria-label={t("Поиск по справочнику")}
         value={directorySearch}
         onChange={(event) => updateDirectoryFilters({ query: event.target.value })}
         placeholder={placeholder}
@@ -1205,8 +1230,12 @@ export function ReferenceView({
       />
     </label>
   );
-  const stateLabel = (isActive: boolean) => (isActive ? "Активна" : "В архиве");
-  const resultCount = (count: number) => <p className="reference-results">Найдено: {count}</p>;
+  const stateLabel = (isActive: boolean) => (isActive ? t("Активна") : t("В архиве"));
+  const resultCount = (count: number) => (
+    <p className="reference-results">
+      {t("Найдено:")} {count}
+    </p>
+  );
   const areas = catalog.areas.filter(
     (item) => inState(item.is_active !== false) && matches(item.code, item.name),
   );
@@ -1227,7 +1256,7 @@ export function ReferenceView({
     matches(
       item.display_name,
       roleLabels[item.role as Role] ?? item.role,
-      item.is_on_shift ? "в смене" : "не в смене",
+      item.is_on_shift ? t("в смене") : t("не в смене"),
     ),
   );
 
@@ -1236,20 +1265,20 @@ export function ReferenceView({
       <section className="workspace reference-workspace">
         <div className="page-head">
           <div>
-            <p className="eyebrow">{canManageCatalog ? "СПРАВОЧНИКИ" : "КОНТЕКСТ УЧАСТКА"}</p>
-            <h1>{canManageCatalog ? "Справочные данные" : "Справочники"}</h1>
+            <p className="eyebrow">{canManageCatalog ? t("СПРАВОЧНИКИ") : t("КОНТЕКСТ УЧАСТКА")}</p>
+            <h1>{canManageCatalog ? t("Справочные данные") : t("Справочники")}</h1>
             <p className="muted reference-lead">
-              Выберите раздел, чтобы посмотреть сведения и выполнить доступные действия.
+              {t("Выберите раздел, чтобы посмотреть сведения и выполнить доступные действия.")}
             </p>
           </div>
         </div>
-        <div className="reference-overview" aria-label="Разделы справочника">
+        <div className="reference-overview" aria-label={t("Разделы справочника")}>
           {sectionCards.map((item) => (
             <button
               key={item.id}
               type="button"
               className="reference-card"
-              aria-label={`Открыть раздел: ${item.title}`}
+              aria-label={t("Открыть раздел: {0}", [item.title])}
               onClick={() => openSection(item.id)}
               ref={(node) => {
                 cardRefs.current[item.id] = node;
@@ -1258,14 +1287,14 @@ export function ReferenceView({
               {item.count !== undefined && <span className="reference-card-count">{item.count}</span>}
               <strong>{item.title}</strong>
               <small>{item.summary}</small>
-              <span className="reference-card-action">Открыть раздел →</span>
+              <span className="reference-card-action">{t("Открыть раздел →")}</span>
             </button>
           ))}
         </div>
       </section>
     );
 
-  const sectionTitle = sectionCards.find((item) => item.id === section)?.title ?? "Справочники";
+  const sectionTitle = sectionCards.find((item) => item.id === section)?.title ?? t("Справочники");
   const editorMatchesSection =
     editor &&
     ((editor.kind === "area" && section === "areas") ||
@@ -1275,25 +1304,25 @@ export function ReferenceView({
       (editor.kind === "fault-code" && section === "fault-codes") ||
       (editor.kind === "time-norm" && section === "time-norms"));
   const addAction: Partial<Record<DirectorySection, { kind: CatalogEditorKind; label: string }>> = {
-    areas: { kind: "area", label: "Добавить участок" },
-    equipment: { kind: "equipment", label: "Добавить оборудование" },
-    brigades: { kind: "brigade", label: "Добавить бригаду" },
-    materials: { kind: "material", label: "Добавить материал" },
-    "fault-codes": { kind: "fault-code", label: "Добавить шифр" },
-    "time-norms": { kind: "time-norm", label: "Добавить норматив" },
+    areas: { kind: "area", label: t("Добавить участок") },
+    equipment: { kind: "equipment", label: t("Добавить оборудование") },
+    brigades: { kind: "brigade", label: t("Добавить бригаду") },
+    materials: { kind: "material", label: t("Добавить материал") },
+    "fault-codes": { kind: "fault-code", label: t("Добавить шифр") },
+    "time-norms": { kind: "time-norm", label: t("Добавить норматив") },
   };
   return (
     <section className="workspace reference-workspace">
       <div className="page-head">
         <div>
-          <nav className="reference-breadcrumb" aria-label="Навигация справочника">
+          <nav className="reference-breadcrumb" aria-label={t("Навигация справочника")}>
             <button type="button" className="text-button reference-back" onClick={goToOverview}>
-              Все разделы
+              {t("Все разделы")}
             </button>
             <span aria-hidden="true">/</span>
             <span aria-current="page">{sectionTitle}</span>
           </nav>
-          <p className="eyebrow">{canManageCatalog ? "СПРАВОЧНИКИ" : "ТОЛЬКО ЧТЕНИЕ"}</p>
+          <p className="eyebrow">{canManageCatalog ? t("СПРАВОЧНИКИ") : t("ТОЛЬКО ЧТЕНИЕ")}</p>
           <h1 ref={sectionHeading} tabIndex={-1}>
             {sectionTitle}
           </h1>
@@ -1306,15 +1335,16 @@ export function ReferenceView({
       </div>
       {canManageCatalog && (section === "areas" || section === "equipment") && (
         <p className="notice">
-          Управляйте участками и оборудованием. Архив не используется при выдаче новых нарядов, но сохраняется
-          в истории.
+          {t(
+            "Управляйте участками и оборудованием. Архив не используется при выдаче новых нарядов, но сохраняется в истории.",
+          )}
         </p>
       )}
       {section === "areas" && (
-        <section className="reference-directory" aria-label="Список участков">
+        <section className="reference-directory" aria-label={t("Список участков")}>
           <div className="directory-controls">
-            {search("Код, инвентарный номер или название")}
-            {stateTabs("Статус участков")}
+            {search(t("Код, инвентарный номер или название"))}
+            {stateTabs(t("Статус участков"))}
           </div>
           {resultCount(areas.length)}
           <div className="reference-list">
@@ -1333,7 +1363,7 @@ export function ReferenceView({
                   </span>
                   {canManageCatalog && (
                     <button className="text-button" onClick={() => setEditor({ kind: "area", id: item.id })}>
-                      Изменить
+                      {t("Изменить")}
                     </button>
                   )}
                 </div>
@@ -1344,17 +1374,17 @@ export function ReferenceView({
         </section>
       )}
       {section === "equipment" && (
-        <section className="reference-directory" aria-label="Список оборудования">
+        <section className="reference-directory" aria-label={t("Список оборудования")}>
           <div className="directory-controls equipment-controls">
-            {search("Код, инвентарный номер или название")}
+            {search(t("Код, инвентарный номер или название"))}
             <label className="reference-area-filter">
-              <span>Участок</span>
+              <span>{t("Участок")}</span>
               <select
-                aria-label="Участок оборудования"
+                aria-label={t("Участок оборудования")}
                 value={equipmentAreaId}
                 onChange={(event) => updateDirectoryFilters({ area: event.target.value })}
               >
-                <option value="">Все участки</option>
+                <option value="">{t("Все участки")}</option>
                 {catalog.areas.map((area) => (
                   <option value={area.id} key={area.id}>
                     {area.code} · {area.name}
@@ -1362,7 +1392,7 @@ export function ReferenceView({
                 ))}
               </select>
             </label>
-            {stateTabs("Статус оборудования")}
+            {stateTabs(t("Статус оборудования"))}
           </div>
           {resultCount(equipment.length)}
           <div className="reference-list">
@@ -1377,8 +1407,8 @@ export function ReferenceView({
                     <strong>{item.inventory_number}</strong>
                     <span>{item.name}</span>
                     <small>
-                      {area ? `${area.code} · ${area.name}` : "Участок не найден"} · {item.equipment_type} ·
-                      критичность {item.criticality}/5
+                      {area ? `${area.code} · ${area.name}` : t("Участок не найден")} · {item.equipment_type}{" "}
+                      {t("· критичность")} {item.criticality}/5
                     </small>
                   </div>
                   <div className="reference-row-meta">
@@ -1392,7 +1422,7 @@ export function ReferenceView({
                         className="text-button"
                         onClick={() => setEditor({ kind: "equipment", id: item.id })}
                       >
-                        Изменить
+                        {t("Изменить")}
                       </button>
                     )}
                   </div>
@@ -1404,8 +1434,8 @@ export function ReferenceView({
         </section>
       )}
       {section === "materials" && (
-        <section className="reference-directory" aria-label="Список материалов">
-          <div className="directory-controls">{search("Код или название материала")}</div>
+        <section className="reference-directory" aria-label={t("Список материалов")}>
+          <div className="directory-controls">{search(t("Код или название материала"))}</div>
           {resultCount(materials.length)}
           <div className="reference-list">
             {materials.map((item) => (
@@ -1415,13 +1445,15 @@ export function ReferenceView({
                   <span>{item.name}</span>
                 </div>
                 <div className="reference-row-meta">
-                  <span className="reference-unit">Ед. изм.: {item.unit}</span>
+                  <span className="reference-unit">
+                    {t("Ед. изм.:")} {item.unit}
+                  </span>
                   {canManageCatalog && (
                     <button
                       className="text-button"
                       onClick={() => setEditor({ kind: "material", id: item.id })}
                     >
-                      Изменить
+                      {t("Изменить")}
                     </button>
                   )}
                 </div>
@@ -1432,8 +1464,8 @@ export function ReferenceView({
         </section>
       )}
       {section === "fault-codes" && (
-        <section className="reference-directory" aria-label="Список шифров неисправностей">
-          <div className="directory-controls">{search("Шифр или название неисправности")}</div>
+        <section className="reference-directory" aria-label={t("Список шифров неисправностей")}>
+          <div className="directory-controls">{search(t("Шифр или название неисправности"))}</div>
           {resultCount(faultCodes.length)}
           <div className="reference-list">
             {faultCodes.map((item) => (
@@ -1443,13 +1475,15 @@ export function ReferenceView({
                   <span>{item.name}</span>
                 </div>
                 <div className="reference-row-meta">
-                  <span className="reference-unit">Специализация: {item.specialty || "Не указана"}</span>
+                  <span className="reference-unit">
+                    {t("Специализация:")} {item.specialty || t("Не указана")}
+                  </span>
                   {canManageCatalog && (
                     <button
                       className="text-button"
                       onClick={() => setEditor({ kind: "fault-code", id: item.id })}
                     >
-                      Изменить
+                      {t("Изменить")}
                     </button>
                   )}
                 </div>
@@ -1460,8 +1494,8 @@ export function ReferenceView({
         </section>
       )}
       {section === "brigades" && (
-        <section className="reference-directory" aria-label="Список бригад">
-          <div className="directory-controls">{search("Код или название бригады")}</div>
+        <section className="reference-directory" aria-label={t("Список бригад")}>
+          <div className="directory-controls">{search(t("Код или название бригады"))}</div>
           {resultCount(brigades.length)}
           <div className="reference-list">
             {brigades.map((item) => (
@@ -1476,7 +1510,7 @@ export function ReferenceView({
                       className="text-button"
                       onClick={() => setEditor({ kind: "brigade", id: item.id })}
                     >
-                      Изменить
+                      {t("Изменить")}
                     </button>
                   </div>
                 )}
@@ -1487,8 +1521,8 @@ export function ReferenceView({
         </section>
       )}
       {section === "time-norms" && (
-        <section className="reference-directory" aria-label="Список нормативов времени">
-          <div className="directory-controls">{search("Шифр, тип оборудования или минуты")}</div>
+        <section className="reference-directory" aria-label={t("Список нормативов времени")}>
+          <div className="directory-controls">{search(t("Шифр, тип оборудования или минуты"))}</div>
           {resultCount(timeNorms.length)}
           <div className="reference-list">
             {timeNorms.map((item) => {
@@ -1496,17 +1530,19 @@ export function ReferenceView({
               return (
                 <article className="reference-row" key={item.id}>
                   <div>
-                    <strong>{fault ? `${fault.code} · ${fault.name}` : "Шифр не найден"}</strong>
+                    <strong>{fault ? `${fault.code} · ${fault.name}` : t("Шифр не найден")}</strong>
                     <span>{item.equipment_type}</span>
                   </div>
                   <div className="reference-row-meta">
-                    <span className="reference-unit">Норма: {item.minutes} мин</span>
+                    <span className="reference-unit">
+                      {t("Норма:")} {item.minutes} {t("мин")}
+                    </span>
                     {canManageCatalog && (
                       <button
                         className="text-button"
                         onClick={() => setEditor({ kind: "time-norm", id: item.id })}
                       >
-                        Изменить
+                        {t("Изменить")}
                       </button>
                     )}
                   </div>
@@ -1518,8 +1554,8 @@ export function ReferenceView({
         </section>
       )}
       {section === "employees" && (
-        <section className="reference-directory" aria-label="Список сотрудников">
-          <div className="directory-controls">{search("Имя, роль или смена")}</div>
+        <section className="reference-directory" aria-label={t("Список сотрудников")}>
+          <div className="directory-controls">{search(t("Имя, роль или смена"))}</div>
           {resultCount(staff.length)}
           <div className="reference-list">
             {staff.map((item, index) => (
@@ -1536,11 +1572,11 @@ export function ReferenceView({
                   ) : (
                     <strong>{item.display_name}</strong>
                   )}
-                  <span>{roleLabels[item.role as Role] ?? "Сотрудник"}</span>
+                  <span>{roleLabels[item.role as Role] ?? t("Сотрудник")}</span>
                 </div>
                 <div className="reference-row-meta">
                   <span className={item.is_on_shift ? "reference-state" : "reference-state archived"}>
-                    {item.is_on_shift ? "В смене" : "Не в смене"}
+                    {item.is_on_shift ? t("В смене") : t("Не в смене")}
                   </span>
                 </div>
               </article>
@@ -1631,10 +1667,10 @@ function CatalogEditor({
     } catch (caught) {
       setError(
         caught instanceof ApiError && caught.detail === "equipment_has_history"
-          ? "Оборудование с историей нарядов нельзя перенести на другой участок."
+          ? t("Оборудование с историей нарядов нельзя перенести на другой участок.")
           : caught instanceof ApiError && caught.status === 409
-            ? "Такой код уже есть или ссылка недействительна."
-            : "Не удалось сохранить изменения.",
+            ? t("Такой код уже есть или ссылка недействительна.")
+            : t("Не удалось сохранить изменения."),
       );
     } finally {
       setBusy(false);
@@ -1652,8 +1688,11 @@ function CatalogEditor({
     } catch (caught) {
       setError(
         caught instanceof ApiError && caught.detail === "active_work_orders_exist"
-          ? `${area ? "Участок" : "Оборудование"} нельзя архивировать: есть незавершённые наряды. Завершите или отмените их, затем повторите.`
-          : "Не удалось изменить статус записи.",
+          ? t(
+              "{0} нельзя архивировать: есть незавершённые наряды. Завершите или отмените их, затем повторите.",
+              [area ? t("Участок") : t("Оборудование")],
+            )
+          : t("Не удалось изменить статус записи."),
       );
     } finally {
       setBusy(false);
@@ -1661,14 +1700,14 @@ function CatalogEditor({
   };
   return (
     <Dialog
-      title={`${editor.id ? "Изменить" : "Добавить"} · ${editor.kind === "area" ? "участок" : "оборудование"}`}
+      title={`${editor.id ? t("Изменить") : t("Добавить")} · ${editor.kind === "area" ? t("участок") : t("оборудование")}`}
       onClose={onClose}
     >
       <form className="catalog-editor" onSubmit={(event) => void submit(event)}>
         {editor.kind === "area" ? (
           <>
             <label>
-              Код
+              {t("Код")}
               <input
                 value={input.code}
                 onChange={(event) => setInput({ ...input, code: event.target.value })}
@@ -1676,7 +1715,7 @@ function CatalogEditor({
               />
             </label>
             <label>
-              Название
+              {t("Название")}
               <input
                 value={input.name}
                 onChange={(event) => setInput({ ...input, name: event.target.value })}
@@ -1687,7 +1726,7 @@ function CatalogEditor({
         ) : (
           <>
             <label>
-              Инвентарный номер
+              {t("Инвентарный номер")}
               <input
                 value={input.inventory_number}
                 onChange={(event) => setInput({ ...input, inventory_number: event.target.value })}
@@ -1695,7 +1734,7 @@ function CatalogEditor({
               />
             </label>
             <label>
-              Название
+              {t("Название")}
               <input
                 value={input.name}
                 onChange={(event) => setInput({ ...input, name: event.target.value })}
@@ -1703,7 +1742,7 @@ function CatalogEditor({
               />
             </label>
             <label>
-              Участок
+              {t("Участок")}
               <select
                 value={input.area_id}
                 onChange={(event) => setInput({ ...input, area_id: event.target.value })}
@@ -1718,7 +1757,7 @@ function CatalogEditor({
               </select>
             </label>
             <label>
-              Тип
+              {t("Тип")}
               <input
                 value={input.equipment_type}
                 onChange={(event) => setInput({ ...input, equipment_type: event.target.value })}
@@ -1726,7 +1765,7 @@ function CatalogEditor({
               />
             </label>
             <label>
-              Критичность
+              {t("Критичность")}
               <select
                 value={input.criticality}
                 onChange={(event) => setInput({ ...input, criticality: event.target.value })}
@@ -1740,26 +1779,28 @@ function CatalogEditor({
             </label>
           </>
         )}
-        {error && <p className="error">{error}</p>}
+        {error && <p className="error">{message(error)}</p>}
         <div className="dialog-actions">
           <button className="secondary" type="button" onClick={onClose}>
-            Отмена
+            {t("Отмена")}
           </button>
           <button className="primary" disabled={busy}>
-            {busy ? "Сохраняем…" : "Сохранить"}
+            {busy ? t("Сохраняем…") : t("Сохранить")}
           </button>
         </div>
         {(area || equipment) && (
-          <section className="catalog-archive" aria-label="Статус записи">
-            <strong>{(area ?? equipment)!.is_active !== false ? "Архивирование" : "Восстановление"}</strong>
+          <section className="catalog-archive" aria-label={t("Статус записи")}>
+            <strong>
+              {(area ?? equipment)!.is_active !== false ? t("Архивирование") : t("Восстановление")}
+            </strong>
             <p>
               {(area ?? equipment)!.is_active !== false
-                ? "Архив не участвует в выдаче новых нарядов. История останется доступной."
-                : "Восстановленная запись снова доступна при выдаче нарядов."}
+                ? t("Архив не участвует в выдаче новых нарядов. История останется доступной.")
+                : t("Восстановленная запись снова доступна при выдаче нарядов.")}
             </p>
             {(area ?? equipment)!.is_active !== false && !archiveConfirm ? (
               <button className="danger-button" type="button" onClick={() => setArchiveConfirm(true)}>
-                Архивировать запись
+                {t("Архивировать запись")}
               </button>
             ) : (
               <div className="archive-confirm">
@@ -1770,10 +1811,10 @@ function CatalogEditor({
                   disabled={busy}
                 >
                   {busy
-                    ? "Обновляем…"
+                    ? t("Обновляем…")
                     : (area ?? equipment)!.is_active !== false
-                      ? "Подтвердить архивирование"
-                      : "Восстановить запись"}
+                      ? t("Подтвердить архивирование")
+                      : t("Восстановить запись")}
                 </button>
               </div>
             )}
@@ -1807,10 +1848,10 @@ function SimpleCatalogEditor({
     editor.kind === "time-norm" ? catalog.time_norms.find((item) => item.id === editor.id) : undefined;
   const record = brigade ?? material ?? fault ?? norm;
   const labels: Record<typeof editor.kind, string> = {
-    brigade: "бригада",
-    material: "материал",
-    "fault-code": "шифр неисправности",
-    "time-norm": "норматив времени",
+    brigade: t("бригада"),
+    material: t("материал"),
+    "fault-code": t("шифр неисправности"),
+    "time-norm": t("норматив времени"),
   };
   const [input, setInput] = useState({
     code: brigade?.code ?? material?.code ?? fault?.code ?? "",
@@ -1852,17 +1893,23 @@ function SimpleCatalogEditor({
   };
   const errorMessage = (caught: unknown, verb: "save" | "delete") => {
     if (!(caught instanceof ApiError))
-      return verb === "save" ? "Не удалось сохранить изменения." : "Не удалось удалить запись.";
+      return verb === "save" ? t("Не удалось сохранить изменения.") : t("Не удалось удалить запись.");
     if (caught.detail === "reference_in_use")
-      return "Запись используется в связанных данных и не может быть удалена. Сохраните историю или сначала измените связанные записи.";
+      return t(
+        "Запись используется в связанных данных и не может быть удалена. Сохраните историю или сначала измените связанные записи.",
+      );
     if (caught.detail === "material_has_history" || caught.detail === "material_unit_has_history")
-      return "Материал уже использован в нарядах. Чтобы сохранить историю, его код, название и единицу менять нельзя. Добавьте новую позицию.";
+      return t(
+        "Материал уже использован в нарядах. Чтобы сохранить историю, его код, название и единицу менять нельзя. Добавьте новую позицию.",
+      );
     if (caught.detail === "fault_code_has_history")
-      return "Шифр уже использован в нарядах. Чтобы сохранить историю, добавьте новый шифр вместо изменения существующего.";
+      return t(
+        "Шифр уже использован в нарядах. Чтобы сохранить историю, добавьте новый шифр вместо изменения существующего.",
+      );
     if (caught.detail === "duplicate_or_invalid_reference" || caught.status === 409)
-      return "Такой код уже существует или выбранная ссылка больше недействительна.";
-    if (caught.status === 404) return "Запись уже удалена. Обновите список справочника.";
-    return verb === "save" ? "Не удалось сохранить изменения." : "Не удалось удалить запись.";
+      return t("Такой код уже существует или выбранная ссылка больше недействительна.");
+    if (caught.status === 404) return t("Запись уже удалена. Обновите список справочника.");
+    return verb === "save" ? t("Не удалось сохранить изменения.") : t("Не удалось удалить запись.");
   };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -1894,12 +1941,12 @@ function SimpleCatalogEditor({
     }
   };
   return (
-    <Dialog title={`${editor.id ? "Изменить" : "Добавить"} · ${labels[editor.kind]}`} onClose={onClose}>
+    <Dialog title={`${editor.id ? t("Изменить") : t("Добавить")} · ${labels[editor.kind]}`} onClose={onClose}>
       <form className="catalog-editor" onSubmit={(event) => void submit(event)}>
         {editor.kind !== "time-norm" ? (
           <>
             <label>
-              Код
+              {t("Код")}
               <input
                 value={input.code}
                 onChange={(event) => setInput({ ...input, code: event.target.value })}
@@ -1909,7 +1956,7 @@ function SimpleCatalogEditor({
               />
             </label>
             <label>
-              Название
+              {t("Название")}
               <input
                 value={input.name}
                 onChange={(event) => setInput({ ...input, name: event.target.value })}
@@ -1921,13 +1968,13 @@ function SimpleCatalogEditor({
         ) : (
           <>
             <label>
-              Шифр неисправности
+              {t("Шифр неисправности")}
               <select
                 value={input.fault_code_id}
                 onChange={(event) => setInput({ ...input, fault_code_id: event.target.value })}
                 required
               >
-                <option value="">Выберите шифр</option>
+                <option value="">{t("Выберите шифр")}</option>
                 {catalog.fault_codes.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.code} · {item.name}
@@ -1936,7 +1983,7 @@ function SimpleCatalogEditor({
               </select>
             </label>
             <label>
-              Тип оборудования
+              {t("Тип оборудования")}
               <input
                 value={input.equipment_type}
                 onChange={(event) => setInput({ ...input, equipment_type: event.target.value })}
@@ -1945,7 +1992,7 @@ function SimpleCatalogEditor({
               />
             </label>
             <label>
-              Норма, минут
+              {t("Норма, минут")}
               <input
                 type="number"
                 min="1"
@@ -1959,7 +2006,7 @@ function SimpleCatalogEditor({
         )}
         {editor.kind === "fault-code" && (
           <label>
-            Специализация
+            {t("Специализация")}
             <input
               value={input.specialty}
               onChange={(event) => setInput({ ...input, specialty: event.target.value })}
@@ -1970,7 +2017,7 @@ function SimpleCatalogEditor({
         )}
         {editor.kind === "material" && (
           <label>
-            Единица измерения
+            {t("Единица измерения")}
             <input
               value={input.unit}
               onChange={(event) => setInput({ ...input, unit: event.target.value })}
@@ -1981,26 +2028,28 @@ function SimpleCatalogEditor({
         )}
         {error && (
           <p className="error" role="alert">
-            {error}
+            {message(error)}
           </p>
         )}
         <div className="dialog-actions">
           <button className="secondary" type="button" onClick={onClose}>
-            Отмена
+            {t("Отмена")}
           </button>
           <button className="primary" disabled={busy}>
-            {busy ? "Сохраняем…" : "Сохранить"}
+            {busy ? t("Сохраняем…") : t("Сохранить")}
           </button>
         </div>
         {record && (
-          <section className="catalog-archive catalog-delete" aria-label="Удаление записи">
-            <strong>Удаление записи</strong>
+          <section className="catalog-archive catalog-delete" aria-label={t("Удаление записи")}>
+            <strong>{t("Удаление записи")}</strong>
             <p>
-              Удаление доступно только пока запись не используется в нарядах, нормативах или составе бригады.
+              {t(
+                "Удаление доступно только пока запись не используется в нарядах, нормативах или составе бригады.",
+              )}
             </p>
             {!deleteConfirm ? (
               <button className="danger-button" type="button" onClick={() => setDeleteConfirm(true)}>
-                Удалить запись
+                {t("Удалить запись")}
               </button>
             ) : (
               <div className="archive-confirm">
@@ -2010,10 +2059,10 @@ function SimpleCatalogEditor({
                   onClick={() => setDeleteConfirm(false)}
                   disabled={busy}
                 >
-                  Не удалять
+                  {t("Не удалять")}
                 </button>
                 <button className="danger-button" type="button" onClick={() => void remove()} disabled={busy}>
-                  {busy ? "Удаляем…" : "Подтвердить удаление"}
+                  {busy ? t("Удаляем…") : t("Подтвердить удаление")}
                 </button>
               </div>
             )}

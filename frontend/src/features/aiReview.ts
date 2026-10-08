@@ -1,4 +1,27 @@
+import { t } from "../lib/i18n";
+import type { OrderDetail, Review } from "../types";
 export type MasterDecision = "close" | "override_close" | "request_rework";
+
+export function masterCloseOptions(status: OrderDetail["status"], review?: Review) {
+  const hasAiScore =
+    typeof review?.score === "number" &&
+    Number.isInteger(review.score) &&
+    review.score >= 1 &&
+    review.score <= 5;
+  return {
+    canClose: Boolean(
+      status === "ai_review" &&
+      review &&
+      !review.needs_master_review &&
+      hasAiScore &&
+      ["accepted", "accepted_with_remarks"].includes(review.verdict ?? ""),
+    ),
+    canOverride: Boolean(
+      (status === "ai_review" && review?.needs_master_review) ||
+      (status === "rework" && review?.verdict === "rework_required"),
+    ),
+  };
+}
 
 export function validateMasterDecision({
   action,
@@ -14,11 +37,11 @@ export function validateMasterDecision({
   if (action !== "request_rework" && normalizedScore) {
     const parsed = Number(normalizedScore);
     if (!Number.isInteger(parsed) || parsed < 1 || parsed > 5)
-      return "Оценка мастера — целое число от 1 до 5.";
-    if (normalizedReason.length < 3) return "Для оценки мастера укажите обоснование не короче 3 символов.";
+      return t("Оценка мастера — целое число от 1 до 5.");
+    if (normalizedReason.length < 3) return t("Для оценки мастера укажите обоснование не короче 3 символов.");
   }
   if (["override_close", "request_rework"].includes(action) && normalizedReason.length < 3) {
-    return "Укажите обоснование решения не короче 3 символов.";
+    return t("Укажите обоснование решения не короче 3 символов.");
   }
   return null;
 }

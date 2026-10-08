@@ -1,15 +1,32 @@
+import { t, getLocale, message } from "../lib/i18n";
 import { readableLimitation } from "../lib/presentationText";
 import { useEffect, useMemo, useState } from "react";
 import { Api, ApiError } from "../api";
 import type { AnalyticsOptions, AnalyticsQuery, AnalyticsReport, Role } from "../types";
 
 const zone = "Asia/Qostanay";
-const names = { shift: "Смена", day: "День", week: "Неделя", month: "Месяц", custom: "Период" } as const;
+const names = {
+  get shift() {
+    return t("Смена");
+  },
+  get day() {
+    return t("День");
+  },
+  get week() {
+    return t("Неделя");
+  },
+  get month() {
+    return t("Месяц");
+  },
+  get custom() {
+    return t("Период");
+  },
+} as const;
 const date = () => new Intl.DateTimeFormat("sv-SE", { timeZone: zone }).format(new Date());
 const duration = (value: number | null | undefined) => {
-  if (value == null) return "Недостаточно данных";
+  if (value == null) return t("Недостаточно данных");
   const m = Math.round(value / 60);
-  return m < 60 ? `${m} мин` : `${Math.floor(m / 60)} ч ${m % 60} мин`;
+  return m < 60 ? t("{0} мин", [m]) : t("{0} ч {1} мин", [Math.floor(m / 60), m % 60]);
 };
 const entries = (value: Record<string, unknown>) => Object.entries(value).filter(([, v]) => v != null);
 const shortDate = (value?: string) => value?.slice(0, 10) ?? date();
@@ -48,8 +65,8 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
     } catch (e) {
       setError(
         e instanceof ApiError && e.status === 403
-          ? "Этот отчёт недоступен для вашей роли."
-          : "Не удалось сформировать отчёт. Проверьте параметры периода и соединение.",
+          ? t("Этот отчёт недоступен для вашей роли.")
+          : t("Не удалось сформировать отчёт. Проверьте параметры периода и соединение."),
       );
     } finally {
       setLoading(false);
@@ -59,7 +76,7 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
     void api
       .analyticsOptions()
       .then(setOptions)
-      .catch(() => setError("Не удалось получить значения фильтров."));
+      .catch(() => setError(t("Не удалось получить значения фильтров.")));
     const timer = window.setTimeout(() => void refresh(), 0);
     return () => window.clearTimeout(timer);
     // initial read is ephemeral and summary is never automatic
@@ -81,7 +98,7 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      setError("Не удалось скачать XLSX. Повторите попытку.");
+      setError(t("Не удалось скачать XLSX. Повторите попытку."));
     } finally {
       setExporting(false);
     }
@@ -94,10 +111,10 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
       const detail = e instanceof ApiError ? e.detail : "";
       setError(
         detail === "summary_cooldown_30_seconds"
-          ? "Сводка уже формировалась. Подождите 30 секунд и повторите запрос."
+          ? t("Сводка уже формировалась. Подождите 30 секунд и повторите запрос.")
           : detail === "summary_capacity_reached"
-            ? "ИИ-сводки сейчас заняты. Подождите и повторите запрос."
-            : "ИИ-сводка не сформирована. Исходные показатели доступны ниже.",
+            ? t("ИИ-сводки сейчас заняты. Подождите и повторите запрос.")
+            : t("ИИ-сводка не сформирована. Исходные показатели доступны ниже."),
       );
     } finally {
       setSummarizing(false);
@@ -107,16 +124,16 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
     <section className="workspace analytics" aria-busy={loading}>
       <div className="page-head analytics-head">
         <div>
-          <p className="eyebrow">РЕЗУЛЬТАТЫ РАБОТЫ</p>
-          <h1>{role === "executor" ? "Мой отчёт" : "Отчёты смены"}</h1>
-          <p className="muted">По журналу нарядов · время Костаная</p>
+          <p className="eyebrow">{t("РЕЗУЛЬТАТЫ РАБОТЫ")}</p>
+          <h1>{role === "executor" ? t("Мой отчёт") : t("Отчёты смены")}</h1>
+          <p className="muted">{t("По журналу нарядов · время Костаная")}</p>
         </div>
         <div className="analytics-actions">
           <button className="secondary" onClick={() => void download()} disabled={!report || exporting}>
-            {exporting ? "Готовим Excel…" : "Скачать Excel"}
+            {exporting ? t("Готовим Excel…") : t("Скачать Excel")}
           </button>
           <button className="primary" onClick={() => void refresh()} disabled={loading || summarizing}>
-            {loading ? "Считаем…" : "Обновить отчёт"}
+            {loading ? t("Считаем…") : t("Обновить отчёт")}
           </button>
         </div>
       </div>
@@ -128,7 +145,7 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
         }}
       >
         <label>
-          Период
+          {t("Период")}
           <select
             value={query.period}
             onChange={(e) =>
@@ -154,20 +171,20 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
         </label>
         {query.period === "shift" && (
           <label>
-            Смена
+            {t("Смена")}
             <select
               value={query.shift ?? "day"}
               onChange={(e) => setQuery((q) => ({ ...q, shift: e.target.value as "day" | "night" }))}
             >
-              <option value="day">Дневная · 08:00–20:00</option>
-              <option value="night">Ночная · 20:00–08:00</option>
+              <option value="day">{t("Дневная · 08:00–20:00")}</option>
+              <option value="night">{t("Ночная · 20:00–08:00")}</option>
             </select>
           </label>
         )}
         {query.period === "custom" ? (
           <>
             <label>
-              С
+              {t("С")}
               <input
                 type="date"
                 value={shortDate(query.from)}
@@ -175,7 +192,7 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
               />
             </label>
             <label>
-              По
+              {t("По")}
               <input
                 type="date"
                 value={shortDate(query.to)}
@@ -185,7 +202,7 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
           </>
         ) : (
           <label>
-            Дата отчёта
+            {t("Дата отчёта")}
             <input
               type="date"
               value={query.date ?? date()}
@@ -194,13 +211,13 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
           </label>
         )}
         <Filter
-          title="Участок"
+          title={t("Участок")}
           items={options?.areas ?? []}
           value={query.area_id[0]}
           onChange={(v) => setOne("area_id", v)}
         />
         <Filter
-          title="Оборудование"
+          title={t("Оборудование")}
           items={machines}
           value={query.equipment_id[0]}
           onChange={(v) => setOne("equipment_id", v)}
@@ -208,13 +225,13 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
         {people && (
           <>
             <Filter
-              title="Исполнитель"
+              title={t("Исполнитель")}
               items={options?.executors ?? []}
               value={query.executor_id[0]}
               onChange={(v) => setOne("executor_id", v)}
             />
             <Filter
-              title="Бригада"
+              title={t("Бригада")}
               items={options?.brigades ?? []}
               value={query.brigade_id[0]}
               onChange={(v) => setOne("brigade_id", v)}
@@ -222,28 +239,29 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
           </>
         )}
         <button className="secondary" disabled={loading || summarizing}>
-          Применить
+          {t("Применить")}
         </button>
       </form>
       {pendingFilters && (
         <p className="muted report-pending">
-          Фильтры изменены. Нажмите «Применить», чтобы обновить показанный отчёт, выгрузку и ИИ-сводку.
+          {t("Фильтры изменены. Нажмите «Применить», чтобы обновить показанный отчёт, выгрузку и ИИ-сводку.")}
         </p>
       )}
       {stale && (
         <div className="banner">
-          Появились новые изменения. <button onClick={() => void refresh()}>Обновить данные</button>
+          {t("Появились новые изменения.")}{" "}
+          <button onClick={() => void refresh()}>{t("Обновить данные")}</button>
         </div>
       )}
       {error && (
         <p className="error" role="alert">
-          {error}
+          {message(error)}
         </p>
       )}
       {loading && !report && (
         <div className="empty">
           <span className="spinner" />
-          <p>Формируем отчёт по журналу нарядов…</p>
+          <p>{t("Формируем отчёт по журналу нарядов…")}</p>
         </div>
       )}
       {report && (
@@ -251,47 +269,49 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
           <div className="report-caption">
             <strong>{report.period.label}</strong>
             <span>
-              Сформирован:{" "}
-              {new Intl.DateTimeFormat("ru-RU", {
+              {t("Сформирован:")}{" "}
+              {new Intl.DateTimeFormat(getLocale(), {
                 dateStyle: "medium",
                 timeStyle: "short",
                 timeZone: zone,
               }).format(new Date(report.meta.as_of))}
             </span>
-            <span>Нарядов в расчёте: {report.meta.row_count}</span>
+            <span>
+              {t("Нарядов в расчёте:")} {report.meta.row_count}
+            </span>
           </div>
           <ReportWarnings warnings={report.meta.warnings} />
           <section className="metric-grid">
-            <Metric label="Выдано" value={report.orders.issued} />
-            <Metric label="Завершено" value={report.orders.completed} />
-            <Metric label="Закрыто" value={report.orders.closed} />
-            <Metric label="Отказы" value={report.orders.rejected} />
-            <Metric label="Незакрыто" value={report.orders.backlog} warn={report.orders.backlog > 0} />
-            <Metric label="Просрочено" value={report.orders.overdue} warn={report.orders.overdue > 0} />
+            <Metric label={t("Выдано")} value={report.orders.issued} />
+            <Metric label={t("Завершено")} value={report.orders.completed} />
+            <Metric label={t("Закрыто")} value={report.orders.closed} />
+            <Metric label={t("Отказы")} value={report.orders.rejected} />
+            <Metric label={t("Незакрыто")} value={report.orders.backlog} warn={report.orders.backlog > 0} />
+            <Metric label={t("Просрочено")} value={report.orders.overdue} warn={report.orders.overdue > 0} />
             <Metric
-              label="Реакция"
+              label={t("Реакция")}
               value={duration(report.durations.response_seconds)}
-              note="В среднем до первого ответа"
+              note={t("В среднем до первого ответа")}
             />
             <Metric
-              label="Работа"
+              label={t("Работа")}
               value={duration(report.durations.work_seconds)}
-              note="В среднем, без пауз"
+              note={t("В среднем, без пауз")}
             />
             {people && (
               <Metric
-                label="Простой"
+                label={t("Простой")}
                 value={duration(report.downtime.known_seconds)}
-                note="Только записанные интервалы"
+                note={t("Только записанные интервалы")}
               />
             )}
-            <Metric label="Активные наряды" value={report.activity.active_order_count} />
+            <Metric label={t("Активные наряды")} value={report.activity.active_order_count} />
           </section>
           <section className="analytics-section">
             <Heading
-              eye={people ? "СРАВНЕНИЕ" : "ЛИЧНЫЕ РЕЗУЛЬТАТЫ"}
-              title={people ? "Рейтинг исполнения" : "Моя оценка"}
-              note="Оценка показывает только подтверждённые компоненты; малые выборки отмечены."
+              eye={people ? t("СРАВНЕНИЕ") : t("ЛИЧНЫЕ РЕЗУЛЬТАТЫ")}
+              title={people ? t("Рейтинг исполнения") : t("Моя оценка")}
+              note={t("Оценка показывает только подтверждённые компоненты; малые выборки отмечены.")}
             />
             <Ratings report={report} privateView={role === "executor"} />
           </section>
@@ -307,9 +327,9 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
           {role !== "executor" && (
             <section className="analytics-section">
               <Heading
-                eye="СИГНАЛЫ"
-                title="Аномалии с доказательствами"
-                note="Система показывает только наблюдаемые факты."
+                eye={t("СИГНАЛЫ")}
+                title={t("Аномалии с доказательствами")}
+                note={t("Система показывает только наблюдаемые факты.")}
               />
               <Anomalies report={report} />
             </section>
@@ -317,17 +337,19 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
           {people && (
             <section className="analytics-section ai-summary">
               <Heading
-                eye="ПО ЗАПРОСУ"
-                title="ИИ-сводка мастера"
-                note="Основные выводы и рекомендации за выбранный период."
+                eye={t("ПО ЗАПРОСУ")}
+                title={t("ИИ-сводка мастера")}
+                note={t("Основные выводы и рекомендации за выбранный период.")}
               />
               <button className="secondary" onClick={() => void requestSummary()} disabled={summarizing}>
-                {summarizing ? "Формируем…" : "Сформировать ИИ-сводку"}
+                {summarizing ? t("Формируем…") : t("Сформировать ИИ-сводку")}
               </button>
               {summary && (
                 <article className="summary-result">
                   <p>{summary.text}</p>
-                  {summary.source !== "openai" && <small>Обзор показателей без ИИ-интерпретации.</small>}
+                  {summary.source !== "openai" && (
+                    <small>{t("Обзор показателей без ИИ-интерпретации.")}</small>
+                  )}
                   {!!summary.limitations?.length && (
                     <small>{summary.limitations.map(readableLimitation).join(" ")}</small>
                   )}
@@ -355,7 +377,7 @@ function Filter({
     <label>
       {title}
       <select value={value ?? ""} onChange={(e) => onChange(e.target.value)}>
-        <option value="">Все доступные</option>
+        <option value="">{t("Все доступные")}</option>
         {items.map((i) => (
           <option key={i.id} value={i.id}>
             {i.code ? `${i.code} · ` : ""}
@@ -402,14 +424,14 @@ function Ratings({ report, privateView }: { report: AnalyticsReport; privateView
   if (!employee.length && !brigade.length)
     return (
       <div className="empty">
-        <h3>Рейтинг пока не рассчитан</h3>
-        <p>Для периода недостаточно подтверждённых данных.</p>
+        <h3>{t("Рейтинг пока не рассчитан")}</h3>
+        <p>{t("Для периода недостаточно подтверждённых данных.")}</p>
       </div>
     );
   return (
     <div className="ratings-grid">
-      <RatingTable title={privateView ? "Моя оценка" : "Исполнители"} rows={employee} />
-      {!privateView && <RatingTable title="Бригады" rows={brigade} />}{" "}
+      <RatingTable title={privateView ? t("Моя оценка") : t("Исполнители")} rows={employee} />
+      {!privateView && <RatingTable title={t("Бригады")} rows={brigade} />}{" "}
       {report.ratings.limitations.length > 0 && (
         <p className="muted rating-note">{report.ratings.limitations.join(" ")}</p>
       )}
@@ -417,40 +439,86 @@ function Ratings({ report, privateView }: { report: AnalyticsReport; privateView
   );
 }
 const componentLabels: Record<string, string> = {
-  quality: "Качество",
-  timeliness: "Срок",
-  rework: "Доработки",
-  volume: "Объём",
-  refusal: "Отказы",
+  get quality() {
+    return t("Качество");
+  },
+  get timeliness() {
+    return t("Срок");
+  },
+  get rework() {
+    return t("Доработки");
+  },
+  get volume() {
+    return t("Объём");
+  },
+  get refusal() {
+    return t("Отказы");
+  },
 };
 const anomalyLabels: Record<string, string> = {
-  recurring_fault: "Повторяемость неисправности",
-  after_ppr: "После ППР",
-  material_outlier: "Отклонение материалов",
-  rework_concentration: "Концентрация доработок",
-  low: "Низкий",
-  medium: "Средний",
-  high: "Высокий",
+  get recurring_fault() {
+    return t("Повторяемость неисправности");
+  },
+  get after_ppr() {
+    return t("После ППР");
+  },
+  get material_outlier() {
+    return t("Отклонение материалов");
+  },
+  get rework_concentration() {
+    return t("Концентрация доработок");
+  },
+  get low() {
+    return t("Низкий");
+  },
+  get medium() {
+    return t("Средний");
+  },
+  get high() {
+    return t("Высокий");
+  },
 };
 const evidenceLabels: Record<string, string> = {
-  order_ids: "Наряды",
-  count: "Количество",
-  denominator: "Основание",
-  numerator: "Числитель",
-  equipment_id: "Оборудование",
-  material_id: "Материал",
-  rate: "Доля",
-  baseline_rate: "Средняя доля",
-  baseline_median: "Обычный расход (медиана)",
-  total: "Всего",
+  get order_ids() {
+    return t("Наряды");
+  },
+  get count() {
+    return t("Количество");
+  },
+  get denominator() {
+    return t("Основание");
+  },
+  get numerator() {
+    return t("Числитель");
+  },
+  get equipment_id() {
+    return t("Оборудование");
+  },
+  get material_id() {
+    return t("Материал");
+  },
+  get rate() {
+    return t("Доля");
+  },
+  get baseline_rate() {
+    return t("Средняя доля");
+  },
+  get baseline_median() {
+    return t("Обычный расход (медиана)");
+  },
+  get total() {
+    return t("Всего");
+  },
 };
 function componentName(name: string) {
   return componentLabels[name] ?? name;
 }
 function evidenceValue(value: unknown) {
   if (Array.isArray(value))
-    return value.length > 3 ? `${value.slice(0, 3).join(", ")} и ещё ${value.length - 3}` : value.join(", ");
-  return typeof value === "object" ? "Составное доказательство" : String(value);
+    return value.length > 3
+      ? t("{0} и ещё {1}", [value.slice(0, 3).join(", "), value.length - 3])
+      : value.join(", ");
+  return typeof value === "object" ? t("Составное доказательство") : String(value);
 }
 function RatingTable({ title, rows }: { title: string; rows: AnalyticsReport["ratings"]["employees"] }) {
   const max = Math.max(1, ...rows.map((r) => r.score ?? 0));
@@ -462,9 +530,9 @@ function RatingTable({ title, rows }: { title: string; rows: AnalyticsReport["ra
           <div className="rating-name">
             <strong>{row.subject_name}</strong>
             <small>
-              Нарядов: {row.sample_size}
+              {t("Нарядов:")} {row.sample_size}
               {row.unavailable_components.length
-                ? ` · нет: ${row.unavailable_components.map(componentName).join(", ")}`
+                ? t(" · нет: {0}", [row.unavailable_components.map(componentName).join(", ")])
                 : ""}
             </small>
           </div>
@@ -473,7 +541,7 @@ function RatingTable({ title, rows }: { title: string; rows: AnalyticsReport["ra
           </div>
           <b>{row.score == null ? "—" : Math.round(row.score)}</b>
           <details>
-            <summary>Состав оценки</summary>
+            <summary>{t("Состав оценки")}</summary>
             <ul className="component-list">
               {entries(row.components).map(([key, value]) => {
                 const item = value as {
@@ -486,12 +554,12 @@ function RatingTable({ title, rows }: { title: string; rows: AnalyticsReport["ra
                   <li key={key}>
                     <strong>
                       {componentName(key)}:{" "}
-                      {item.value == null ? "нет данных" : `${Math.round(item.value * 100)}%`}
+                      {item.value == null ? t("нет данных") : `${Math.round(item.value * 100)}%`}
                     </strong>
                     {item.numerator != null && item.denominator != null && (
                       <span>
                         {" "}
-                        · {item.numerator} из {item.denominator}
+                        · {item.numerator} {t("из")} {item.denominator}
                       </span>
                     )}
                     {item.detail && <small>{item.detail}</small>}
@@ -541,14 +609,18 @@ function Materials({ report }: { report: AnalyticsReport }) {
   const usage = report.materials.usage;
   return (
     <div>
-      <Heading eye="РЕСУРСЫ" title="Материалы" note="Расход разделён по материалу и единице." />
+      <Heading
+        eye={t("РЕСУРСЫ")}
+        title={t("Материалы")}
+        note={t("Расход разделён по материалу и единице.")}
+      />
       <div className="compact-table">
         {usage.length ? (
           <>
             <div className="table-head">
-              <span>Материал</span>
-              <span>Расход</span>
-              <span>Нарядов</span>
+              <span>{t("Материал")}</span>
+              <span>{t("Расход")}</span>
+              <span>{t("Нарядов")}</span>
             </div>
             {usage.map((row, index) => (
               <div className="table-row" key={row.material_id + row.unit + index}>
@@ -561,12 +633,12 @@ function Materials({ report }: { report: AnalyticsReport }) {
             ))}
           </>
         ) : (
-          <p className="muted">Расхода материалов в выбранном периоде нет.</p>
+          <p className="muted">{t("Расхода материалов в выбранном периоде нет.")}</p>
         )}
       </div>
-      {render("По участкам", report.materials.by_area as [])}
-      {render("По оборудованию", report.materials.by_equipment as [])}
-      {render("По исполнителям", report.materials.by_executor as [])}
+      {render(t("По участкам"), report.materials.by_area as [])}
+      {render(t("По оборудованию"), report.materials.by_equipment as [])}
+      {render(t("По исполнителям"), report.materials.by_executor as [])}
     </div>
   );
 }
@@ -575,16 +647,16 @@ function Downtime({ report }: { report: AnalyticsReport }) {
   return (
     <div>
       <Heading
-        eye="ОБОРУДОВАНИЕ"
-        title="Зафиксированный простой"
-        note="Только явно внесённые интервалы, не выводится из статусов."
+        eye={t("ОБОРУДОВАНИЕ")}
+        title={t("Зафиксированный простой")}
+        note={t("Только явно внесённые интервалы, не выводится из статусов.")}
       />
       <div className="downtime-total">
         <span>
-          Плановый: <strong>{duration(report.downtime.planned_seconds)}</strong>
+          {t("Плановый:")} <strong>{duration(report.downtime.planned_seconds)}</strong>
         </span>
         <span>
-          Неплановый: <strong>{duration(report.downtime.unplanned_seconds)}</strong>
+          {t("Неплановый:")} <strong>{duration(report.downtime.unplanned_seconds)}</strong>
         </span>
       </div>
       <div className="compact-table">
@@ -594,17 +666,19 @@ function Downtime({ report }: { report: AnalyticsReport }) {
               <strong>{row.equipment_name}</strong>
               <span>{duration(row.known_seconds)}</span>
               <span>
-                {row.unknown_order_count ? `Нет записи: ${row.unknown_order_count}` : "Интервал записан"}
+                {row.unknown_order_count
+                  ? t("Нет записи: {0}", [row.unknown_order_count])
+                  : t("Интервал записан")}
               </span>
             </div>
           ))
         ) : (
-          <p className="muted">Нет записанных интервалов простоя.</p>
+          <p className="muted">{t("Нет записанных интервалов простоя.")}</p>
         )}
       </div>
       {Object.keys(report.downtime.by_fault).length > 0 && (
         <p className="muted downtime-causes">
-          По неисправностям:{" "}
+          {t("По неисправностям:")}{" "}
           {Object.entries(report.downtime.by_fault)
             .map(([fault, value]) => `${fault} — ${duration(value)}`)
             .join(" · ")}
@@ -625,7 +699,7 @@ function Anomalies({ report }: { report: AnalyticsReport }) {
           </div>
           <div>
             <p className="anomaly-formula">
-              <strong>Правило:</strong> {item.formula}
+              <strong>{t("Правило:")}</strong> {item.formula}
             </p>
             <dl>
               {entries(item.evidence)
@@ -643,8 +717,8 @@ function Anomalies({ report }: { report: AnalyticsReport }) {
     </div>
   ) : (
     <div className="empty">
-      <h3>Аномалий не найдено</h3>
-      <p>В периоде нет достаточных доказательств для сигнала.</p>
+      <h3>{t("Аномалий не найдено")}</h3>
+      <p>{t("В периоде нет достаточных доказательств для сигнала.")}</p>
     </div>
   );
 }
@@ -653,17 +727,17 @@ function Activity({ report }: { report: AnalyticsReport }) {
   return (
     <section>
       <Heading
-        eye="СМЕННАЯ ЗАГРУЗКА"
-        title="Активная работа"
-        note="Показаны только подтверждённые интервалы по нарядам."
+        eye={t("СМЕННАЯ ЗАГРУЗКА")}
+        title={t("Активная работа")}
+        note={t("Показаны только подтверждённые интервалы по нарядам.")}
       />
       <div className="compact-table">
         {rows.length ? (
           <>
             <div className="table-head">
-              <span>Исполнитель</span>
-              <span>Работа / пауза</span>
-              <span>Нарядов</span>
+              <span>{t("Исполнитель")}</span>
+              <span>{t("Работа / пауза")}</span>
+              <span>{t("Нарядов")}</span>
             </div>
             {rows.map((row) => (
               <div className="table-row" key={row.employee_id}>
@@ -676,7 +750,7 @@ function Activity({ report }: { report: AnalyticsReport }) {
             ))}
           </>
         ) : (
-          <p className="muted">Активных интервалов в выбранном периоде нет.</p>
+          <p className="muted">{t("Активных интервалов в выбранном периоде нет.")}</p>
         )}
       </div>
     </section>
@@ -684,7 +758,7 @@ function Activity({ report }: { report: AnalyticsReport }) {
 }
 
 function ReportWarnings({ warnings }: { warnings: string[] }) {
-  const immediate = warnings.filter((warning) => warning.includes("ещё не наблюдался"));
+  const immediate = warnings.filter((warning) => warning.includes(t("ещё не наблюдался")));
   const methodology = warnings.filter((warning) => !immediate.includes(warning));
   return (
     <>
@@ -695,7 +769,10 @@ function ReportWarnings({ warnings }: { warnings: string[] }) {
       ))}
       {methodology.length > 0 && (
         <details className="report-limitations">
-          <summary>Методика и ограничения ({methodology.length})</summary>
+          <summary>
+            {t("Методика и ограничения (")}
+            {methodology.length})
+          </summary>
           {methodology.map((warning) => (
             <p key={warning}>{warning}</p>
           ))}
