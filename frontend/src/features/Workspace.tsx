@@ -559,12 +559,14 @@ function OrderRow({
     </article>
   );
 }
-function CreateOrderDialog({
+export function CreateOrderDialog({
   catalog,
   workers,
   onClose,
   onCreate,
   onSuggest,
+  initialAreaId,
+  initialEquipmentId,
 }: {
   catalog: Catalog;
   workers: Workload[];
@@ -576,13 +578,15 @@ function CreateOrderDialog({
     description: string;
     fault_code_id?: string | null;
   }) => Promise<OrderSuggestions>;
+  initialAreaId?: string;
+  initialEquipmentId?: string;
 }) {
-  const initialArea = catalog.areas.find((item) => item.is_active !== false)?.id ?? "";
+  const initialArea = initialAreaId ?? catalog.areas.find((item) => item.is_active !== false)?.id ?? "";
   const [input, setInput] = useState({
     work_type: "unplanned",
     description: "",
     area_id: initialArea,
-    equipment_id: "",
+    equipment_id: initialEquipmentId ?? "",
     fault_code_id: "",
     executor_id: "",
     priority: "normal",
@@ -1074,6 +1078,7 @@ export function ReferenceView({
   onCatalogChange,
   onEmployees,
   onEmployeeOrders,
+  onEquipmentQr,
   section,
   onSectionChange,
   directoryFilters,
@@ -1086,6 +1091,7 @@ export function ReferenceView({
   onCatalogChange: () => Promise<void>;
   onEmployees?: () => void;
   onEmployeeOrders?: (employeeId: string) => void;
+  onEquipmentQr?: (equipmentId: string) => void;
   section: DirectorySection | null;
   onSectionChange: (section: DirectorySection | null) => void;
   directoryFilters: DirectoryFilters;
@@ -1417,6 +1423,11 @@ export function ReferenceView({
                     >
                       {stateLabel(item.is_active !== false)}
                     </span>
+                    {(role === "master" || role === "admin") && onEquipmentQr && (
+                      <button className="text-button" type="button" onClick={() => onEquipmentQr(item.id)}>
+                        QR-код
+                      </button>
+                    )}
                     {canManageCatalog && (
                       <button
                         className="text-button"

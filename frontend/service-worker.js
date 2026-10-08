@@ -33,7 +33,7 @@ self.addEventListener("fetch", (event) => {
         request.method === "GET" &&
         request.mode === "navigate" &&
         url.origin === self.location.origin &&
-        /^\/(orders|reference|workload|analytics|employees)(\/|$)/.test(url.pathname)
+        /^\/(orders|reference|workload|analytics|employees|equipment)(\/|$)/.test(url.pathname)
     ) {
         event.respondWith(
             fetch(request).catch(() => caches.open(SHELL).then((cache) => cache.match("/index.html"))),

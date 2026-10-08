@@ -8,7 +8,8 @@ import { OrderDetailDialog, type ActionOutcome } from "./features/OrderDetail";
 import { NotificationButton, NotificationsDialog } from "./features/Notifications";
 import { DeviceSetup } from "./features/DeviceSetup";
 import { RealtimeConnection } from "./lib/realtime";
-import { OrdersView, ReferenceView, WorkloadView } from "./features/Workspace";
+import { CreateOrderDialog, OrdersView, ReferenceView, WorkloadView } from "./features/Workspace";
+import { EquipmentCard } from "./features/EquipmentCard";
 import { EmployeesView } from "./features/Employees";
 import { AnalyticsView } from "./features/Analytics";
 import {
@@ -25,6 +26,7 @@ import type {
   ActionRequest,
   Catalog,
   Employee,
+  Equipment,
   EventItem,
   MasterOption,
   OrderPage,
@@ -110,15 +112,21 @@ export default function App() {
   );
   const [user, setUser] = useState<User | null>(() => (initialToken ? storedUser() : null));
   const [data, setData] = useState<Dashboard | null>(null);
+  const [equipmentForOrder, setEquipmentForOrder] = useState<Equipment | null>(null);
   const appLocation = useAppLocation();
   const route = readRoute(appLocation);
   const view = route.view;
   const selected = route.orderId;
+  useEffect(() => {
+    if (equipmentForOrder && route.equipmentId !== equipmentForOrder.id) setEquipmentForOrder(null);
+  }, [equipmentForOrder, route.equipmentId]);
   const setView = (next: View) => navigate("/" + next);
   const setSelected = (id: string | null) => (id ? navigate("/orders/" + id) : closeOrderPage());
   useEffect(() => {
     if (!user) return;
     const current = readRoute(appLocation);
+    // Equipment QR cards are a protected detail route for every role.
+    if (current.equipmentId) return;
     if (user.role === "admin" && current.view === "reference" && current.section === "employees") {
       navigate("/employees", true);
       return;
@@ -170,9 +178,10 @@ export default function App() {
     [api],
   );
   const invalidate = useCallback(
-    async (actorId?: string) => {
+    async (actorId?: string, preserveEquipmentRoute = true) => {
       authGeneration.current += 1;
       const actor = actorId ?? actorIdRef.current ?? user?.id ?? storedUser()?.id;
+      const equipmentRoute = readRoute(appLocation).equipmentId ? appLocation : null;
       sessionStorage.removeItem(tokenKey);
       sessionStorage.removeItem(expiryKey);
       sessionStorage.removeItem(userKey);
@@ -181,12 +190,13 @@ export default function App() {
       actorIdRef.current = null;
       setUser(null);
       setData(null);
+      setEquipmentForOrder(null);
       setPending([]);
       setSavedAt(null);
-      navigate("/", true);
+      navigate(preserveEquipmentRoute && equipmentRoute ? equipmentRoute : "/", true);
       if (actor) await clearActor(actor).catch(() => undefined);
     },
-    [user?.id],
+    [appLocation, user?.id],
   );
   useEffect(() => {
     if (!token && expiredActor.current) {
@@ -440,7 +450,7 @@ export default function App() {
   const changeFilters = (next: OrderFilters) => navigate(orderFiltersUrl(next), true);
   const loadedOrderRoute = useRef("");
   useEffect(() => {
-    if (!user || route.view !== "orders" || route.orderId) {
+    if (!user || route.view !== "orders" || route.orderId || route.equipmentId) {
       loadedOrderRoute.current = "";
       return;
     }
@@ -448,7 +458,7 @@ export default function App() {
     if (loadedOrderRoute.current === key) return;
     loadedOrderRoute.current = key;
     void refreshRef.current(user);
-  }, [appLocation, route.orderId, route.view, user]);
+  }, [appLocation, route.equipmentId, route.orderId, route.view, user]);
   const openEmployeeOrders = (employeeId: string) => {
     if (!user || !["master", "manager"].includes(user.role)) return;
     navigate(
@@ -456,6 +466,23 @@ export default function App() {
         ...readOrderFilters("/orders", user),
         executor_id: employeeId,
         master_id: "all",
+      }),
+    );
+  };
+  const openEquipmentOrders = (equipmentId: string) => {
+    if (!user || !["executor", "manager"].includes(user.role)) return;
+    navigate(
+      orderFiltersUrl({
+        ...readOrderFilters("/orders", user),
+        area_id: "",
+        equipment_id: equipmentId,
+        executor_id: "",
+        master_id: "all",
+        priority: "",
+        overdue: false,
+        query: "",
+        attention: false,
+        offset: 0,
       }),
     );
   };
@@ -505,7 +532,7 @@ export default function App() {
     try {
       await api.logout();
     } finally {
-      await invalidate(actor.id);
+      await invalidate(actor.id, false);
     }
   }
   async function retry(id: string) {
@@ -527,6 +554,12 @@ export default function App() {
   const currentNav = navigation[user.role];
   const visibleView = permittedView(user.role, view);
   const activeOrders = data?.orderFilterKey === orderFilterKey(filters, user) ? data.orders : null;
+  const equipmentFromRoute = route.equipmentId
+    ? (data?.catalog.equipment.find((item) => item.id === route.equipmentId) ?? null)
+    : null;
+  const equipmentArea = equipmentFromRoute
+    ? (data?.catalog.areas.find((item) => item.id === equipmentFromRoute.area_id) ?? null)
+    : null;
   return (
     <div className="app-shell">
       <aside className="side-nav">
@@ -671,7 +704,27 @@ export default function App() {
             </div>
           </section>
         )}
-        {visibleView === "orders" && (
+        {route.equipmentId &&
+          (data?.catalog ? (
+            <EquipmentCard
+              equipment={equipmentFromRoute}
+              area={equipmentArea}
+              role={user.role}
+              closeLabel={user.role === "admin" ? "К оборудованию" : "К нарядам"}
+              onClose={() => navigate(user.role === "admin" ? "/reference/equipment" : "/orders")}
+              onCreateOrder={() => {
+                if (equipmentFromRoute) setEquipmentForOrder(equipmentFromRoute);
+              }}
+              onShowOrders={() => {
+                if (equipmentFromRoute) openEquipmentOrders(equipmentFromRoute.id);
+              }}
+            />
+          ) : (
+            <section className="workspace">
+              <p>Загрузка карточки оборудования…</p>
+            </section>
+          ))}
+        {visibleView === "orders" && !route.equipmentId && (
           <OrdersView
             role={user.role}
             page={activeOrders}
@@ -695,16 +748,19 @@ export default function App() {
             loading={loading}
           />
         )}{" "}
-        {visibleView === "workload" && (
+        {visibleView === "workload" && !route.equipmentId && (
           <WorkloadView
             workers={data?.workload ?? []}
             onOpen={setSelected}
             onEmployeeOrders={openEmployeeOrders}
           />
         )}{" "}
-        {visibleView === "analytics" && <AnalyticsView api={api} role={user.role} revision={liveRevision} />}{" "}
+        {visibleView === "analytics" && !route.equipmentId && (
+          <AnalyticsView api={api} role={user.role} revision={liveRevision} />
+        )}{" "}
         {visibleView === "employees" &&
           user.role === "admin" &&
+          !route.equipmentId &&
           (data?.catalog ? (
             <EmployeesView
               api={api}
@@ -715,7 +771,7 @@ export default function App() {
           ) : (
             <p>{t("Загрузка данных сотрудников…")}</p>
           ))}
-        {visibleView === "reference" && (
+        {visibleView === "reference" && !route.equipmentId && (
           <ReferenceView
             role={user.role}
             catalog={data?.catalog ?? null}
@@ -724,6 +780,7 @@ export default function App() {
             onCatalogChange={refresh}
             onEmployees={() => setView("employees")}
             onEmployeeOrders={openEmployeeOrders}
+            onEquipmentQr={(equipmentId) => navigate("/equipment/" + equipmentId)}
             section={route.section}
             onSectionChange={(section) => navigate(directoryUrl(section))}
             directoryFilters={route.directoryFilters}
@@ -756,6 +813,24 @@ export default function App() {
           revision={liveRevision}
         />
       )}
+      {equipmentForOrder &&
+        route.equipmentId === equipmentForOrder.id &&
+        data?.catalog &&
+        user.role === "master" && (
+          <CreateOrderDialog
+            catalog={data.catalog}
+            workers={data.workload}
+            initialAreaId={equipmentForOrder.area_id}
+            initialEquipmentId={equipmentForOrder.id}
+            onClose={() => setEquipmentForOrder(null)}
+            onCreate={async (input) => {
+              await api.create(input);
+              setEquipmentForOrder(null);
+              await refresh();
+            }}
+            onSuggest={(input) => api.suggestions(input)}
+          />
+        )}
       {selected && data && user.role !== "admin" && (
         <OrderDetailDialog
           key={selected}

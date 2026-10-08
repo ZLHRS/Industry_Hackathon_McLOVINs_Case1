@@ -49,6 +49,9 @@ function setup(windows: ReturnType<typeof client>[] = []) {
 }
 
 describe("notification click in the shipped service worker", () => {
+  it("keeps an equipment QR deep link in the offline application shell", () => {
+    expect(source).toContain("orders|reference|workload|analytics|employees|equipment");
+  });
   it("focuses a suspended app before navigation and uses the focused client", async () => {
     const old = client();
     const focused = client();

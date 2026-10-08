@@ -43,18 +43,17 @@ export function readRoute(value: string) {
     view === "reference" && sections.includes(parts[1] as DirectorySection)
       ? (parts[1] as DirectorySection)
       : null;
-  const orderId =
-    view === "orders" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parts[1] ?? "")
-      ? parts[1]
-      : null;
+  const isUuid = (value: string | undefined) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value ?? "");
+  const orderId = parts[0] === "orders" && isUuid(parts[1]) ? parts[1] : null;
+  const equipmentId = parts[0] === "equipment" && isUuid(parts[1]) ? parts[1] : null;
   const state = url.searchParams.get("state");
   const directoryFilters: DirectoryFilters = {
     query: url.searchParams.get("q") ?? "",
     state: state === "archived" || state === "all" ? state : "active",
     area: url.searchParams.get("area") ?? "",
   };
-  return { view, section, orderId, directoryFilters };
+  return { view, section, orderId, equipmentId, directoryFilters };
 }
 export function directoryUrl(section: DirectorySection | null, filters?: DirectoryFilters) {
   const params = new URLSearchParams();

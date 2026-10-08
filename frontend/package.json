@@ -18,6 +18,7 @@
     "format:check": "prettier --check src e2e package.json vite.config.ts vitest.config.ts playwright.config.ts eslint.config.js service-worker.js"
   },
   "dependencies": {
+    "qrcode-generator": "2.0.4",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
@@ -32,6 +33,7 @@
     "eslint-plugin-react-refresh": "0.5.7",
     "fake-indexeddb": "6.2.5",
     "globals": "17.13.0",
+    "jsqr": "1.4.0",
     "prettier": "3.9.9",
     "typescript": "6.0.3",
     "typescript-eslint": "8.71.1",

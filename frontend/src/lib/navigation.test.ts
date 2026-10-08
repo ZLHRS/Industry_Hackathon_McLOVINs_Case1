@@ -38,3 +38,10 @@ it("preserves Cyrillic search, special characters and archive filters in directo
   expect(parsed.directoryFilters).toEqual(filters);
   expect(readRoute("/orders/not-an-id").orderId).toBeNull();
 });
+
+it("recognizes an equipment QR link without treating it as an order", () => {
+  const id = "00112233-4455-6677-8899-aabbccddeeff";
+  const route = readRoute("/equipment/" + id);
+  expect(route.equipmentId).toBe(id);
+  expect(route.orderId).toBeNull();
+});
