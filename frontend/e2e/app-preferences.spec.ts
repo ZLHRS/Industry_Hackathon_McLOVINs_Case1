@@ -55,6 +55,11 @@ test("one settings menu replaces page banners and dialog language controls", asy
   await expect(page.locator(".app-main .device-setup")).toHaveCount(0);
   await expect(page.locator(".app-main .language-switcher")).toHaveCount(0);
   await expect(page.locator(".language-switcher")).toHaveCount(1);
+  const desktopToggle = await toggle.boundingBox();
+  const profile = await page.locator(".user-card").boundingBox();
+  expect(desktopToggle!.x).toBeLessThanOrEqual(20);
+  expect(desktopToggle!.x + desktopToggle!.width).toBeLessThanOrEqual(272);
+  expect(profile!.y + profile!.height).toBeLessThanOrEqual(desktopToggle!.y);
   await toggle.click();
   await expect(panel.getByRole("button", { name: "Установить приложение", exact: true })).toBeVisible();
   await expect(panel).toContainText("компьютере");
@@ -65,6 +70,10 @@ test("one settings menu replaces page banners and dialog language controls", asy
   expect(installBox!.y + installBox!.height).toBeLessThanOrEqual(languageBox!.y);
   await page.screenshot({ path: info.outputPath("settings-1440.png") });
   await page.setViewportSize({ width: 390, height: 844 });
+  const mobileToggle = await toggle.boundingBox();
+  const navigation = await page.locator(".bottom-nav").boundingBox();
+  expect(mobileToggle!.x).toBeLessThanOrEqual(20);
+  expect(mobileToggle!.y + mobileToggle!.height).toBeLessThanOrEqual(navigation!.y);
   await page.screenshot({ path: info.outputPath("settings-390.png") });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await panel.getByLabel("Язык / Тіл / Language").focus();
