@@ -21,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def run(*, api_port: int, web_port: int, seed: bool, skip_build: bool, worker: bool) -> None:
+    if sys.platform not in {"linux", "darwin"}:
+        raise PhoneError("Run this command on Linux/WSL or macOS")
     require_free_ports(api_port, web_port)
     if not (ROOT / "frontend/node_modules").is_dir():
         raise PhoneError("Install frontend dependencies first: bash scripts/frontend.sh ci")

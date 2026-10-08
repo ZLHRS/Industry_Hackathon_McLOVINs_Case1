@@ -22,7 +22,7 @@ DATA = BASE / "data"
 PORT = 55432
 
 
-def postgres_runtime() -> tuple[Path, Path | None]:
+def postgres_runtime(*, required_major: str | None = None) -> tuple[Path, Path | None]:
     """Prefer the workspace runtime; never connect to an installed system cluster."""
     configured = os.environ.get("NARYADAI_PG_BIN")
     candidates = [Path(configured)] if configured else [BIN]
@@ -32,15 +32,29 @@ def postgres_runtime() -> tuple[Path, Path | None]:
         if sys.platform == "darwin":
             candidates.extend(
                 [
-                    Path("/Library/PostgreSQL/17/bin"),
-                    Path("/opt/homebrew/opt/postgresql@17/bin"),
                     Path("/opt/homebrew/opt/postgresql@16/bin"),
                     Path("/usr/local/opt/postgresql@16/bin"),
+                    Path("/Library/PostgreSQL/16/bin"),
+                    Path("/opt/homebrew/opt/postgresql@17/bin"),
+                    Path("/usr/local/opt/postgresql@17/bin"),
+                    Path("/Library/PostgreSQL/17/bin"),
                 ]
             )
     for candidate in candidates:
         if all((candidate / executable).is_file() for executable in ("pg_ctl", "initdb")):
-            return candidate, SHARE if candidate == BIN else None
+            if required_major is None:
+                return candidate, SHARE if candidate == BIN else None
+            installed = subprocess.check_output(
+                [str(candidate / "postgres"), "--version"], text=True
+            )
+            major = re.search(r"\b(\d+)\.\d+", installed)
+            if major is not None and major.group(1) == required_major:
+                return candidate, SHARE if candidate == BIN else None
+    if required_major is not None:
+        raise SystemExit(
+            "No PostgreSQL binary matching the existing cluster major was found; "
+            "set NARYADAI_PG_BIN to its bin directory."
+        )
     raise SystemExit(
         "PostgreSQL binaries not found. On Ubuntu run bootstrap; on macOS install "
         "PostgreSQL 16/17 or set NARYADAI_PG_BIN to its bin directory."
@@ -102,7 +116,10 @@ def main() -> None:
         run("dpkg-deb", "-x", str(candidates[0]), str(BASE / "runtime"))
         run(str(BIN / "postgres"), "--version")
         return
-    binary, share = postgres_runtime()
+    cluster_version = (DATA / "PG_VERSION")
+    binary, share = postgres_runtime(
+        required_major=cluster_version.read_text().strip() if cluster_version.is_file() else None
+    )
     if (DATA / "PG_VERSION").is_file():
         installed = subprocess.check_output([str(binary / "postgres"), "--version"], text=True)
         major = re.search(r"\b(\d+)\.\d+", installed)
@@ -114,6 +131,14 @@ def main() -> None:
         result = subprocess.run([str(binary / "pg_ctl"), "-D", str(DATA), "status"], check=False)
         raise SystemExit(result.returncode)
     if args.action == "stop":
+        status = subprocess.run(
+            [str(binary / "pg_ctl"), "-D", str(DATA), "status"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if status.returncode == 3:
+            return
         run(str(binary / "pg_ctl"), "-D", str(DATA), "-m", "fast", "-w", "stop")
         return
     password_path = BASE / "password"

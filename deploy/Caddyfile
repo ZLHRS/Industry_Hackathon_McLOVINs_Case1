@@ -25,7 +25,7 @@
 		root * /srv
 		@assets path /assets/*
 		header @assets Cache-Control "public, max-age=31536000, immutable"
-		@worker path /sw.js /index.html / /manifest.webmanifest /orders /orders/* /reference /reference/* /workload /analytics /employees
+		@worker path /sw.js /index.html / /manifest.webmanifest /orders /orders/* /reference /reference/* /workload /analytics /employees /equipment /equipment/*
 		header @worker Cache-Control "no-cache"
 		try_files {path} /index.html
 		file_server
@@ -59,7 +59,7 @@ http://:8081 {
 			root * /srv
 			@assets path /assets/*
 			header @assets Cache-Control "public, max-age=31536000, immutable"
-			@worker path /sw.js /index.html / /manifest.webmanifest /orders /orders/* /reference /reference/* /workload /analytics /employees
+			@worker path /sw.js /index.html / /manifest.webmanifest /orders /orders/* /reference /reference/* /workload /analytics /employees /equipment /equipment/*
 			header @worker Cache-Control "no-cache"
 			try_files {path} /index.html
 			file_server

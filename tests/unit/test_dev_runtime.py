@@ -2,6 +2,7 @@
 
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock
 
 import pytest
@@ -30,7 +31,7 @@ def test_cluster_version_mismatch_refuses_even_stop(
     monkeypatch.setattr(_MODULE, "BASE", tmp_path)
     monkeypatch.setattr(_MODULE, "DATA", data)
     monkeypatch.setattr(_MODULE.sys, "argv", ["dev_database.py", "stop"])
-    monkeypatch.setattr(_MODULE, "postgres_runtime", lambda: (tmp_path, None))
+    monkeypatch.setattr(_MODULE, "postgres_runtime", lambda **_: (tmp_path, None))
     monkeypatch.setattr(
         _MODULE.subprocess,
         "check_output",
@@ -53,7 +54,7 @@ def test_existing_cluster_without_password_is_never_reinitialized(
     monkeypatch.setattr(_MODULE, "BASE", tmp_path)
     monkeypatch.setattr(_MODULE, "DATA", data)
     monkeypatch.setattr(_MODULE.sys, "argv", ["dev_database.py", "start"])
-    monkeypatch.setattr(_MODULE, "postgres_runtime", lambda: (tmp_path, None))
+    monkeypatch.setattr(_MODULE, "postgres_runtime", lambda **_: (tmp_path, None))
     monkeypatch.setattr(
         _MODULE.subprocess,
         "check_output",
@@ -65,6 +66,56 @@ def test_existing_cluster_without_password_is_never_reinitialized(
         _MODULE.main()
     run.assert_not_called()
     assert not (tmp_path / "password").exists()
+
+
+def test_macos_runtime_selection_matches_the_existing_cluster_major(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pg16 = Path("/Library/PostgreSQL/16/bin")
+    pg17 = Path("/Library/PostgreSQL/17/bin")
+    monkeypatch.delenv("NARYADAI_PG_BIN", raising=False)
+    monkeypatch.setattr(_MODULE.sys, "platform", "darwin")
+    monkeypatch.setattr(_MODULE.shutil, "which", lambda _: None)
+    monkeypatch.setattr(
+        Path,
+        "is_file",
+        lambda path: path.parent in {pg16, pg17} and path.name in {"pg_ctl", "initdb"},
+    )
+    monkeypatch.setattr(
+        _MODULE.subprocess,
+        "check_output",
+        lambda command, **_: "postgres (PostgreSQL) "
+        + ("16.4" if str(pg16) in command[0] else "17.2"),
+    )
+
+    assert _MODULE.postgres_runtime(required_major="17") == (pg17, None)
+    assert _MODULE.postgres_runtime(required_major="16") == (pg16, None)
+
+
+def test_stop_is_idempotent_when_the_project_cluster_is_already_stopped(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "PG_VERSION").write_text("16\n")
+    monkeypatch.setattr(_MODULE, "BASE", tmp_path)
+    monkeypatch.setattr(_MODULE, "DATA", data)
+    monkeypatch.setattr(_MODULE.sys, "argv", ["dev_database.py", "stop"])
+    monkeypatch.setattr(_MODULE, "postgres_runtime", lambda **_: (tmp_path, None))
+    monkeypatch.setattr(
+        _MODULE.subprocess,
+        "check_output",
+        lambda *args, **kwargs: "postgres (PostgreSQL) 16.4\n",
+    )
+    monkeypatch.setattr(
+        _MODULE.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=3)
+    )
+    run = Mock()
+    monkeypatch.setattr(_MODULE, "run", run)
+
+    _MODULE.main()
+
+    run.assert_not_called()
 
 
 @pytest.mark.parametrize("mismatch", ["password", "host", "shell"])

@@ -1,11 +1,21 @@
+import importlib.util
+import sys
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from itertools import pairwise
+from pathlib import Path
 
 import pytest
 
 from naryadai.demo import generate_demo_dataset
 from naryadai.demo.__main__ import main
+
+_SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
+sys.path.insert(0, str(_SCRIPTS))
+_DEMO_SPEC = importlib.util.spec_from_file_location("demo_script", _SCRIPTS / "demo.py")
+assert _DEMO_SPEC is not None and _DEMO_SPEC.loader is not None
+_DEMO = importlib.util.module_from_spec(_DEMO_SPEC)
+_DEMO_SPEC.loader.exec_module(_DEMO)
 
 ANCHOR = date(2026, 10, 5)
 
@@ -139,3 +149,10 @@ def test_cli_rejects_invalid_date_and_missing_secret(monkeypatch: pytest.MonkeyP
     monkeypatch.delenv("NARYADAI_DEMO_SECRET", raising=False)
     with pytest.raises(SystemExit, match="2"):
         main(["--anchor", "2026-10-05"])
+
+
+def test_demo_rejects_unsupported_platform_before_startup(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_DEMO.sys, "platform", "win32")
+
+    with pytest.raises(_DEMO.PhoneError, match="Linux/WSL or macOS"):
+        _DEMO.run(api_port=8000, web_port=5173, seed=False, skip_build=False, worker=False)

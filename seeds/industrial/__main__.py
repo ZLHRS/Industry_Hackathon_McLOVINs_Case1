@@ -6,7 +6,6 @@ import argparse
 import asyncio
 import json
 import os
-import secrets
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,6 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from naryadai.config import Settings
 from naryadai.infrastructure.database import Database
 
+from . import DEFAULT_SEED_SECRET
 from .storage import ROOT, SeedError, maintain, status
 
 
@@ -52,7 +52,7 @@ async def run(args: argparse.Namespace) -> None:
             from .generator import generate_dataset
 
             dataset = generate_dataset(anchor=args.anchor, seed=args.seed)
-            secret = os.environ.get("NARYADAI_SEED_SECRET") or secrets.token_urlsafe(18)
+            secret = os.environ.get("NARYADAI_SEED_SECRET") or DEFAULT_SEED_SECRET
             credentials.parent.mkdir(exist_ok=True, mode=0o700)
             temporary = credentials.with_name(".seed-credentials-" + uuid4().hex)
             with temporary.open("x", encoding="utf-8") as stream:
