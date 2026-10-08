@@ -651,6 +651,7 @@ export default function App() {
               await api.create(input);
               await refresh();
             }}
+            onSuggest={(input) => api.suggestions(input)}
             onHistory={async (equipmentId) => {
               const page = await api.equipmentHistory(equipmentId);
               setData((current) => (current ? { ...current, orders: page } : current));

@@ -21,6 +21,11 @@ from naryadai.application.queries import (
     order_events,
     workload,
 )
+from naryadai.application.suggestions import (
+    SuggestionRequest,
+    SuggestionsView,
+    work_order_suggestions,
+)
 from naryadai.auth.dependencies import DatabaseDep, PrincipalDep
 from naryadai.domain.lifecycle import WorkOrderStatus
 from naryadai.infrastructure.models import Priority, WorkType
@@ -106,6 +111,13 @@ async def orders(
 @router.get("/work-orders/masters", response_model=list[MasterOption])
 async def order_masters(principal: PrincipalDep, database: DatabaseDep) -> list[MasterOption]:
     return await master_options(database, principal)
+
+
+@router.post("/work-orders/suggestions", response_model=SuggestionsView)
+async def suggestions(
+    body: SuggestionRequest, principal: PrincipalDep, database: DatabaseDep
+) -> SuggestionsView:
+    return await work_order_suggestions(database, principal, body)
 
 
 @router.get("/work-orders/{order_id}", response_model=OrderDetail)

@@ -10,7 +10,17 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "../components/Dialog";
 import { Api, ApiError } from "../api";
 import { local, ruPriority, ruStatus } from "./OrderDetail";
-import type { Catalog, CreateOrder, MasterOption, Order, OrderPage, Role, Workload } from "../types";
+import type {
+  Catalog,
+  CreateOrder,
+  MasterOption,
+  Order,
+  OrderPage,
+  OrderSuggestionExecutor,
+  OrderSuggestions,
+  Role,
+  Workload,
+} from "../types";
 
 type CatalogEditorKind = "area" | "equipment" | "brigade" | "material" | "fault-code" | "time-norm";
 
@@ -54,6 +64,7 @@ export function OrdersView({
   onOpen,
   onCreate,
   onHistory,
+  onSuggest,
   loading,
 }: {
   role: Role;
@@ -89,6 +100,12 @@ export function OrdersView({
   onOpen: (id: string) => void;
   onCreate: (input: CreateOrder) => Promise<void>;
   onHistory: (equipmentId: string) => Promise<void>;
+  onSuggest: (input: {
+    area_id: string;
+    equipment_id: string;
+    description: string;
+    fault_code_id?: string | null;
+  }) => Promise<OrderSuggestions>;
   loading: boolean;
 }) {
   const [creating, setCreating] = useState(false);
@@ -440,6 +457,7 @@ export function OrdersView({
             await onCreate(input);
             setCreating(false);
           }}
+          onSuggest={onSuggest}
         />
       )}
     </section>
@@ -543,54 +561,100 @@ function CreateOrderDialog({
   workers,
   onClose,
   onCreate,
+  onSuggest,
 }: {
   catalog: Catalog;
   workers: Workload[];
   onClose: () => void;
   onCreate: (input: CreateOrder) => Promise<void>;
+  onSuggest: (input: {
+    area_id: string;
+    equipment_id: string;
+    description: string;
+    fault_code_id?: string | null;
+  }) => Promise<OrderSuggestions>;
 }) {
   const initialArea = catalog.areas.find((item) => item.is_active !== false)?.id ?? "";
-  const recommendedWorker = [...workers]
-    .filter((person) => person.is_on_shift && person.area_ids?.includes(initialArea))
-    .sort((left, right) => {
-      const availability = { free: 0, queued: 1, busy: 2, off_shift: 3 };
-      return (
-        availability[left.availability] - availability[right.availability] ||
-        left.queue_length - right.queue_length ||
-        left.paused_count - right.paused_count
-      );
-    })[0];
   const [input, setInput] = useState({
     work_type: "unplanned",
     description: "",
     area_id: initialArea,
     equipment_id: "",
-    executor_id: recommendedWorker?.employee_id ?? "",
+    fault_code_id: "",
+    executor_id: "",
     priority: "normal",
-    // A deadline is an operational decision. Never silently turn an illustrative
-    // two-hour value into a real order deadline.
     deadline: "",
     comment: "",
   });
   const [error, setError] = useState("");
+  const [suggestionError, setSuggestionError] = useState("");
+  const [suggestions, setSuggestions] = useState<OrderSuggestions | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
+  const requestId = useRef(0);
   const equipment = useMemo(
     () => catalog.equipment.filter((item) => item.is_active !== false && item.area_id === input.area_id),
     [catalog, input.area_id],
   );
-  const suggestedWorker = useMemo(
-    () =>
-      [...workers]
-        .filter((person) => person.is_on_shift && person.area_ids?.includes(input.area_id))
-        .sort((left, right) => {
-          const availability = { free: 0, queued: 1, busy: 2, off_shift: 3 };
-          return (
-            availability[left.availability] - availability[right.availability] ||
-            left.queue_length - right.queue_length ||
-            left.paused_count - right.paused_count
-          );
-        })[0],
-    [workers, input.area_id],
+  const suggestionKey = [
+    input.area_id,
+    input.equipment_id,
+    input.description.trim(),
+    input.fault_code_id,
+  ].join("|");
+  const [receivedKey, setReceivedKey] = useState("");
+  const selectedEquipment = catalog.equipment.find((item) => item.id === input.equipment_id);
+  const selectedNorm = catalog.time_norms.find(
+    (item) =>
+      item.fault_code_id === input.fault_code_id && item.equipment_type === selectedEquipment?.equipment_type,
+  )?.minutes;
+  const [selectedSuggestedExecutor, setSelectedSuggestedExecutor] = useState<OrderSuggestionExecutor | null>(
+    null,
   );
+  const manualExecutorExists = workers.some((item) => item.employee_id === input.executor_id);
+  const updateInput = (next: typeof input, invalidatesSuggestions = false) => {
+    if (invalidatesSuggestions) {
+      requestId.current += 1;
+      setSuggesting(false);
+      setSuggestionError("");
+    }
+    setInput(next);
+  };
+  useEffect(
+    () => () => {
+      requestId.current += 1;
+    },
+    [],
+  );
+
+  async function requestSuggestions() {
+    if (!input.area_id || !input.equipment_id || !input.description.trim()) {
+      setSuggestionError("Выберите участок и оборудование, затем опишите работу.");
+      return;
+    }
+    const id = ++requestId.current;
+    const key = suggestionKey;
+    setSuggesting(true);
+    setSuggestionError("");
+    try {
+      const result = await onSuggest({
+        area_id: input.area_id,
+        equipment_id: input.equipment_id,
+        description: input.description.trim(),
+        fault_code_id: input.fault_code_id || null,
+      });
+      if (id !== requestId.current || key !== suggestionKey) return;
+      setSuggestions(result);
+      setReceivedKey(key);
+    } catch {
+      if (id === requestId.current) {
+        setSuggestions(null);
+        setSuggestionError("Подбор недоступен. Заполните поля вручную или повторите попытку.");
+      }
+    } finally {
+      if (id === requestId.current) setSuggesting(false);
+    }
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError("");
@@ -603,7 +667,8 @@ function CreateOrderDialog({
         ...input,
         work_type: input.work_type as CreateOrder["work_type"],
         priority: input.priority as CreateOrder["priority"],
-        deadline: `${input.deadline}:00+05:00`,
+        deadline: input.deadline + ":00+05:00",
+        fault_code_id: input.fault_code_id || undefined,
         comment: input.comment || undefined,
       });
     } catch {
@@ -612,42 +677,35 @@ function CreateOrderDialog({
   }
   return (
     <Dialog title="Выдать наряд" onClose={onClose}>
-      <form className="dialog-form guided-order-form" onSubmit={(e) => void submit(e)}>
+      <form className="dialog-form guided-order-form" onSubmit={(event) => void submit(event)}>
         <div className="form-progress" aria-label="Шаги выдачи наряда">
           <span>
             <b>1</b> Где работа
           </span>
           <span>
-            <b>2</b> Кому
+            <b>2</b> Что сделать
           </span>
           <span>
-            <b>3</b> Что сделать
+            <b>3</b> Кому
           </span>
         </div>
         <p className="form-hint">
-          Выберите оборудование, исполнителя, описание и реальный срок. Система не подставляет срок сама.
+          Система показывает варианты, но не выбирает исполнителя, шифр или срок вместо мастера.
         </p>
         <label>
           Участок
           <select
             required
             value={input.area_id}
-            onChange={(e) => {
-              const areaId = e.target.value;
-              const candidates = [...workers]
-                .filter((person) => person.is_on_shift && person.area_ids?.includes(areaId))
-                .sort(
-                  (a, b) =>
-                    Number(a.availability !== "free") - Number(b.availability !== "free") ||
-                    a.queue_length - b.queue_length,
+            onChange={(event) =>
+              (() => {
+                setSelectedSuggestedExecutor(null);
+                updateInput(
+                  { ...input, area_id: event.target.value, equipment_id: "", executor_id: "" },
+                  true,
                 );
-              setInput({
-                ...input,
-                area_id: areaId,
-                equipment_id: "",
-                executor_id: candidates[0]?.employee_id ?? "",
-              });
-            }}
+              })()
+            }
           >
             {catalog.areas
               .filter((item) => item.is_active !== false)
@@ -663,7 +721,7 @@ function CreateOrderDialog({
           <select
             required
             value={input.equipment_id}
-            onChange={(e) => setInput({ ...input, equipment_id: e.target.value })}
+            onChange={(event) => updateInput({ ...input, equipment_id: event.target.value }, true)}
           >
             <option value="">Выберите оборудование</option>
             {equipment.map((item) => (
@@ -674,71 +732,173 @@ function CreateOrderDialog({
           </select>
         </label>
         <label>
-          Исполнитель
-          <select
-            required
-            value={input.executor_id}
-            onChange={(e) => setInput({ ...input, executor_id: e.target.value })}
-          >
-            <option value="">Выберите исполнителя</option>
-            {workers
-              .filter((person) => person.area_ids?.includes(input.area_id))
-              .map((person) => (
-                <option key={person.employee_id} value={person.employee_id} disabled={!person.is_on_shift}>
-                  {person.display_name} · {person.specialty} · {person.grade} разряд ·{" "}
-                  {person.availability === "off_shift"
-                    ? "Не на смене"
-                    : person.current_order_number
-                      ? `В работе ${person.current_order_number}`
-                      : person.availability === "busy"
-                        ? "В работе"
-                        : person.availability === "free"
-                          ? "Свободен"
-                          : "Ожидает работы"}
-                  {person.queue_length > 0 ? ` · В очереди ${person.queue_length}` : ""}
-                </option>
-              ))}
-          </select>
-        </label>
-        {suggestedWorker && (
-          <aside className="load-suggestion" aria-label="Подсказка по загрузке">
-            <div>
-              <span className="eyebrow">ПОДСКАЗКА ПО ЗАГРУЗКЕ</span>
-              <strong>{suggestedWorker.display_name}</strong>
-              <small>
-                {suggestedWorker.availability === "free"
-                  ? "Свободен в смене"
-                  : suggestedWorker.availability === "queued"
-                    ? `В очереди: ${suggestedWorker.queue_length}`
-                    : "Занят, но с наименьшей очередью"}
-                {suggestedWorker.paused_count ? ` · пауз: ${suggestedWorker.paused_count}` : ""}
-              </small>
-            </div>
-            <button
-              className="secondary"
-              type="button"
-              onClick={() => setInput({ ...input, executor_id: suggestedWorker.employee_id })}
-            >
-              Выбрать рекомендованного
-            </button>
-            <p>Подсказка учитывает смену и текущую загрузку. Допуск к работе проверяет мастер.</p>
-          </aside>
-        )}
-        <label>
           Описание
           <textarea
             required
             minLength={1}
             value={input.description}
-            onChange={(e) => setInput({ ...input, description: e.target.value })}
+            onChange={(event) => updateInput({ ...input, description: event.target.value }, true)}
           />
+        </label>
+        <label>
+          Шифр неисправности
+          <select
+            value={input.fault_code_id}
+            onChange={(event) => updateInput({ ...input, fault_code_id: event.target.value }, true)}
+          >
+            <option value="">Не выбран</option>
+            {catalog.fault_codes.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.code} · {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {selectedNorm !== undefined ? (
+          <p className="suggestion-norm">
+            Ориентир трудоёмкости: {selectedNorm} мин. Это не срок выполнения.
+          </p>
+        ) : (
+          input.fault_code_id && (
+            <p className="muted suggestion-note">Для выбранного шифра и типа оборудования нормы пока нет.</p>
+          )
+        )}
+        <section className="order-suggestions" aria-label="Подбор вариантов">
+          {input.fault_code_id && (
+            <p className="suggestion-selected-fault">
+              Подбор исполнителя по выбранному шифру. Чтобы найти другой шифр, очистите это поле.
+            </p>
+          )}
+          <div className="order-suggestions-head">
+            <div>
+              <h3>Подбор вариантов</h3>
+              <p>Учитывает участок, оборудование, описание и текущую нагрузку.</p>
+            </div>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => void requestSuggestions()}
+              disabled={suggesting}
+            >
+              {suggesting ? "Подбираем…" : "Подобрать по описанию"}
+            </button>
+          </div>
+          {suggestionError && (
+            <p className="error" role="alert">
+              {suggestionError}
+            </p>
+          )}
+          {suggestions && receivedKey !== suggestionKey && (
+            <p className="muted">Данные изменились. Подберите варианты снова.</p>
+          )}
+          {suggestions && receivedKey === suggestionKey && (
+            <div className="suggestion-results">
+              {!input.fault_code_id && suggestions.faults.length > 0 && (
+                <section>
+                  <h4>Шифры неисправности</h4>
+                  {suggestions.faults.map((fault) => (
+                    <article className="suggestion-card" key={fault.fault_code_id}>
+                      <div>
+                        <strong>
+                          {fault.code} · {fault.name}
+                        </strong>
+                        {fault.reasons.length > 0 && <small>{fault.reasons.join(" · ")}</small>}
+                        {fault.norm_minutes !== null && (
+                          <small>Ориентир трудоёмкости: {fault.norm_minutes} мин</small>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        className="text-button"
+                        onClick={() => updateInput({ ...input, fault_code_id: fault.fault_code_id }, true)}
+                      >
+                        Выбрать шифр
+                      </button>
+                    </article>
+                  ))}
+                </section>
+              )}
+              {suggestions.executors.length > 0 && (
+                <section>
+                  <h4>Исполнители</h4>
+                  {suggestions.executors.map((person) => (
+                    <article className="suggestion-card" key={person.employee_id}>
+                      <div>
+                        <strong>
+                          {person.display_name} · {person.specialty} · {person.grade} разряд
+                        </strong>
+                        {person.reasons.length > 0 && <small>{person.reasons.join(" · ")}</small>}
+                        <small>
+                          {person.availability === "free"
+                            ? "Свободен"
+                            : person.availability === "queued"
+                              ? "В очереди"
+                              : "Занят"}
+                          {person.queue_length > 0 && <> · очередь: {person.queue_length}</>}
+                          {person.paused_count > 0 && <> · пауз: {person.paused_count}</>}
+                        </small>
+                      </div>
+                      <button
+                        type="button"
+                        className="text-button"
+                        onClick={() => {
+                          setSelectedSuggestedExecutor(person);
+                          updateInput({ ...input, executor_id: person.employee_id });
+                        }}
+                      >
+                        Выбрать исполнителя
+                      </button>
+                    </article>
+                  ))}
+                </section>
+              )}
+              {suggestions.notes.map((note, index) => (
+                <p className="muted suggestion-note" key={index}>
+                  {note}
+                </p>
+              ))}
+            </div>
+          )}
+        </section>
+        <label>
+          Исполнитель
+          <select
+            required
+            value={input.executor_id}
+            onChange={(event) => {
+              setSelectedSuggestedExecutor(null);
+              updateInput({ ...input, executor_id: event.target.value });
+            }}
+          >
+            <option value="">Выберите исполнителя</option>
+            {selectedSuggestedExecutor && !manualExecutorExists && (
+              <option value={selectedSuggestedExecutor.employee_id}>
+                {selectedSuggestedExecutor.display_name} · {selectedSuggestedExecutor.specialty} ·{" "}
+                {selectedSuggestedExecutor.grade} разряд
+              </option>
+            )}
+            {workers
+              .filter((person) => person.area_ids?.includes(input.area_id))
+              .map((person) => (
+                <option key={person.employee_id} value={person.employee_id} disabled={!person.is_on_shift}>
+                  {person.display_name} · {person.specialty} · {person.grade} разряд ·{" "}
+                  {person.availability === "free"
+                    ? "Свободен"
+                    : person.availability === "queued"
+                      ? "В очереди"
+                      : person.availability === "busy"
+                        ? "В работе"
+                        : "Не на смене"}
+                </option>
+              ))}
+          </select>
         </label>
         <div className="two-col">
           <label>
             Тип
             <select
               value={input.work_type}
-              onChange={(e) => setInput({ ...input, work_type: e.target.value })}
+              onChange={(event) => updateInput({ ...input, work_type: event.target.value })}
             >
               <option value="unplanned">Внеплановый</option>
               <option value="planned">Плановый</option>
@@ -746,7 +906,10 @@ function CreateOrderDialog({
           </label>
           <label>
             Приоритет
-            <select value={input.priority} onChange={(e) => setInput({ ...input, priority: e.target.value })}>
+            <select
+              value={input.priority}
+              onChange={(event) => updateInput({ ...input, priority: event.target.value })}
+            >
               {Object.entries(ruPriority).map(([key, value]) => (
                 <option key={key} value={key}>
                   {value}
@@ -755,17 +918,13 @@ function CreateOrderDialog({
             </select>
           </label>
         </div>
-        <p className="muted form-action-count">
-          Исполнитель предложен по участку и загрузке — проверьте его допуск перед выдачей. Срок задаёт
-          мастер.
-        </p>
         <label>
           Срок (Asia/Almaty)
           <input
             type="datetime-local"
             required
             value={input.deadline}
-            onChange={(e) => setInput({ ...input, deadline: e.target.value })}
+            onChange={(event) => updateInput({ ...input, deadline: event.target.value })}
           />
         </label>
         <div className="deadline-presets" aria-label="Быстрый выбор срока">
@@ -774,7 +933,7 @@ function CreateOrderDialog({
             type="button"
             className="secondary"
             onClick={() =>
-              setInput({ ...input, deadline: almatyInputDate(new Date(Date.now() + 60 * 60_000)) })
+              updateInput({ ...input, deadline: almatyInputDate(new Date(Date.now() + 60 * 60_000)) })
             }
           >
             Через 1 час
@@ -783,7 +942,7 @@ function CreateOrderDialog({
             type="button"
             className="secondary"
             onClick={() =>
-              setInput({ ...input, deadline: almatyInputDate(new Date(Date.now() + 2 * 60 * 60_000)) })
+              updateInput({ ...input, deadline: almatyInputDate(new Date(Date.now() + 2 * 60 * 60_000)) })
             }
           >
             Через 2 часа
@@ -791,14 +950,17 @@ function CreateOrderDialog({
           <button
             type="button"
             className="secondary"
-            onClick={() => setInput({ ...input, deadline: endOfCurrentShift() })}
+            onClick={() => updateInput({ ...input, deadline: endOfCurrentShift() })}
           >
             До конца смены
           </button>
         </div>
         <label>
           Комментарий для исполнителя
-          <input value={input.comment} onChange={(e) => setInput({ ...input, comment: e.target.value })} />
+          <input
+            value={input.comment}
+            onChange={(event) => updateInput({ ...input, comment: event.target.value })}
+          />
         </label>
         {error && <p className="error">{error}</p>}
         <button className="primary">Выдать наряд</button>

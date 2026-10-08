@@ -26,8 +26,11 @@ from naryadai.infrastructure.models import (
     FaultCode,
     Material,
     OutboxEvent,
+    Priority,
+    TimeNorm,
     WorkOrder,
     WorkOrderEvent,
+    WorkType,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -866,3 +869,292 @@ async def test_attention_filter_counts_all_pages_without_archived_or_foreign_ord
         )
     ).json()
     assert hidden["total"] == hidden["attention_count"] == 0
+
+
+async def test_suggestions_are_scoped_explainable_and_read_only(api, database):
+    now = datetime.now(UTC)
+    async with database.sessions.begin() as session:
+        leak = FaultCode(code="HYD001", name="Утечка масла", specialty="mechanic")
+        electric = FaultCode(code="ELEC001", name="Перегрев двигателя", specialty="electrician")
+        session.add_all((leak, electric))
+        await session.flush()
+        session.add_all(
+            (
+                TimeNorm(fault_code_id=leak.id, equipment_type="pump", minutes=37),
+                TimeNorm(fault_code_id=electric.id, equipment_type="pump", minutes=55),
+            )
+        )
+        for existing in (api["users"]["executor"], api["users"]["coworker"]):
+            employee = await session.get(Employee, existing)
+            assert employee is not None
+            employee.is_on_shift = False
+        candidates = []
+        for login, name, specialty in (
+            ("rank-alpha", "Альфа", "mechanic"),
+            ("rank-beta", "Бета", "mechanic"),
+            ("rank-gamma", "Гамма", "mechanic"),
+            ("rank-electric", "Электрик", "electrician"),
+        ):
+            employee = Employee(
+                login=login,
+                display_name=name,
+                role="executor",
+                specialty=specialty,
+                grade=4,
+                password_hash="x",
+            )
+            session.add(employee)
+            await session.flush()
+            session.add(EmployeeArea(employee_id=employee.id, area_id=api["areas"][0].id))
+            candidates.append(employee)
+        await session.flush()
+
+        sequence = 0
+        for candidate, score in zip(candidates[:3], (5, 3, 4), strict=True):
+            for number in range(3):
+                closed_at = now - timedelta(days=number + 1)
+                order = WorkOrder(
+                    number=f"SUG-{candidate.login}-{number}",
+                    work_type=WorkType.UNPLANNED,
+                    description="Historical quality",
+                    area_id=api["areas"][0].id,
+                    equipment_id=api["machines"][0].id,
+                    # The first worker proves attribution comes from completion,
+                    # not the mutable current executor field.
+                    executor_id=(
+                        api["users"]["coworker"] if candidate is candidates[0] else candidate.id
+                    ),
+                    master_id=api["users"]["master"],
+                    priority=Priority.NORMAL,
+                    status=WorkOrderStatus.CLOSED,
+                    issued_at=closed_at - timedelta(hours=2),
+                    deadline=closed_at - timedelta(hours=1),
+                    started_at=closed_at - timedelta(hours=1, minutes=30),
+                    completed_at=closed_at - timedelta(minutes=30),
+                    closed_at=closed_at,
+                    fault_code_id=leak.id,
+                    version=2,
+                    attempt=1,
+                    last_submission_version=1,
+                )
+                session.add(order)
+                await session.flush()
+                review = AIReview(
+                    work_order_id=order.id,
+                    order_version=1,
+                    score=score,
+                    master_score=score if number == 0 else None,
+                    needs_master_review=False,
+                    explanation="Closed history",
+                    model_name="test",
+                    created_at=closed_at,
+                )
+                session.add(review)
+                await session.flush()
+                sequence += 1
+                session.add(
+                    WorkOrderEvent(
+                        work_order_id=order.id,
+                        sequence=1,
+                        order_version=1,
+                        actor_id=candidate.id,
+                        actor_role=ActorRole.EXECUTOR,
+                        action="complete",
+                        from_status=WorkOrderStatus.IN_PROGRESS,
+                        to_status=WorkOrderStatus.COMPLETED,
+                        occurred_at=closed_at - timedelta(minutes=30),
+                        details={"submission_version": 1},
+                    )
+                )
+                session.add(
+                    WorkOrderEvent(
+                        work_order_id=order.id,
+                        sequence=2,
+                        order_version=2,
+                        actor_id=api["users"]["master"],
+                        actor_role=ActorRole.MASTER,
+                        action="close",
+                        from_status=WorkOrderStatus.AI_REVIEW,
+                        to_status=WorkOrderStatus.CLOSED,
+                        occurred_at=closed_at,
+                        details={"review_id": str(review.id), "submission_version": 1},
+                    )
+                )
+        await session.flush()
+        before = await session.scalar(select(func.count()).select_from(WorkOrderEvent))
+
+    body = {
+        "area_id": str(api["areas"][0].id),
+        "equipment_id": str(api["machines"][0].id),
+        "description": "сильно подтекает масло",
+        "fault_code_id": str(leak.id),
+    }
+    response = await api["client"].post(
+        "/api/v1/work-orders/suggestions", json=body, headers=api["headers"]["master"]
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["selected_norm_minutes"] == 37 and data["required_specialty"] == "mechanic"
+    assert data["faults"] == [
+        {
+            "fault_code_id": str(leak.id),
+            "code": "HYD001",
+            "name": "Утечка масла",
+            "specialty": "mechanic",
+            "reasons": ["Шифр неисправности выбран мастером."],
+            "norm_minutes": 37,
+        }
+    ]
+    assert [row["display_name"] for row in data["executors"]] == ["Альфа", "Гамма", "Бета"]
+    assert (
+        data["executors"][0]["quality_score"] == 5
+        and data["executors"][0]["quality_sample_count"] == 3
+    )
+    assert all(row["specialty"] == "mechanic" for row in data["executors"])
+    async with database.sessions.begin() as session:
+        assert await session.scalar(select(func.count()).select_from(WorkOrderEvent)) == before
+        alpha_review = await session.scalar(
+            select(AIReview)
+            .join(WorkOrder, WorkOrder.id == AIReview.work_order_id)
+            .where(WorkOrder.number == "SUG-rank-alpha-0")
+        )
+        assert alpha_review is not None
+        alpha_review.master_score = 1
+
+    master_preferred = await api["client"].post(
+        "/api/v1/work-orders/suggestions", json=body, headers=api["headers"]["master"]
+    )
+    assert [row["display_name"] for row in master_preferred.json()["executors"]] == [
+        "Гамма",
+        "Альфа",
+        "Бета",
+    ]
+    assert master_preferred.json()["executors"][1]["quality_score"] == 3.67
+    async with database.sessions.begin() as session:
+        novice = Employee(
+            login="rank-newcomer",
+            display_name="А новичок",  # noqa: RUF001
+            role="executor",
+            specialty="mechanic",
+            grade=3,
+            password_hash="x",
+        )
+        session.add(novice)
+        await session.flush()
+        session.add(EmployeeArea(employee_id=novice.id, area_id=api["areas"][0].id))
+    neutral = await api["client"].post(
+        "/api/v1/work-orders/suggestions", json=body, headers=api["headers"]["master"]
+    )
+    assert neutral.json()["executors"][0]["display_name"] == "А новичок"  # noqa: RUF001
+    assert neutral.json()["executors"][0]["quality_score"] is None
+    assert neutral.json()["executors"][0]["quality_sample_count"] == 0
+    assert any("качество не меняло порядок" in note for note in neutral.json()["notes"])
+
+    by_text = await api["client"].post(
+        "/api/v1/work-orders/suggestions",
+        json=body | {"fault_code_id": None, "description": "перегрелся двигатель"},
+        headers=api["headers"]["master"],
+    )
+    assert by_text.status_code == 200
+    assert by_text.json()["faults"][0]["code"] == "ELEC001"
+    assert by_text.json()["required_specialty"] is None
+    unknown = await api["client"].post(
+        "/api/v1/work-orders/suggestions",
+        json=body | {"fault_code_id": None, "description": "квантовый арбуз"},
+        headers=api["headers"]["master"],
+    )
+    assert unknown.status_code == 200 and unknown.json()["faults"] == []
+    for role in ("executor", "manager", "admin"):
+        assert (
+            await api["client"].post(
+                "/api/v1/work-orders/suggestions", json=body, headers=api["headers"][role]
+            )
+        ).status_code == 403
+    assert (
+        await api["client"].post(
+            "/api/v1/work-orders/suggestions", json=body, headers=api["headers"]["foreign"]
+        )
+    ).status_code == 404
+    assert (
+        await api["client"].post(
+            "/api/v1/work-orders/suggestions",
+            json=body | {"equipment_id": str(api["machines"][1].id)},
+            headers=api["headers"]["master"],
+        )
+    ).status_code == 404
+    assert (
+        await api["client"].post(
+            "/api/v1/work-orders/suggestions",
+            json=body | {"fault_code_id": str(uuid4())},
+            headers=api["headers"]["master"],
+        )
+    ).status_code == 404
+
+
+async def test_suggestions_do_not_mark_cross_area_worker_free(api, database):
+    now = datetime.now(UTC)
+    async with database.sessions.begin() as session:
+        off_shift = await session.get(Employee, api["users"]["executor"])
+        assert off_shift is not None
+        off_shift.is_on_shift = False
+        no_match = FaultCode(
+            code="ELEC-NO-MATCH", name="Перегрев двигателя", specialty="electrician"
+        )
+        session.add_all(
+            (
+                no_match,
+                TimeNorm(fault_code_id=api["fault"].id, equipment_type="crusher", minutes=12),
+            )
+        )
+        foreign_job = WorkOrder(
+            number="SUG-FOREIGN-BUSY",
+            work_type=WorkType.UNPLANNED,
+            description="Other area work",
+            area_id=api["areas"][1].id,
+            equipment_id=api["machines"][1].id,
+            executor_id=api["users"]["coworker"],
+            master_id=api["users"]["foreign"],
+            priority=Priority.NORMAL,
+            status=WorkOrderStatus.IN_PROGRESS,
+            issued_at=now - timedelta(minutes=20),
+            deadline=now + timedelta(hours=2),
+            started_at=now - timedelta(minutes=10),
+            version=1,
+            attempt=1,
+        )
+        session.add(foreign_job)
+    response = await api["client"].post(
+        "/api/v1/work-orders/suggestions",
+        json={
+            "area_id": str(api["areas"][0].id),
+            "equipment_id": str(api["machines"][0].id),
+            "description": "leak",
+            "fault_code_id": str(api["fault"].id),
+        },
+        headers=api["headers"]["master"],
+    )
+    assert response.status_code == 200, response.text
+    coworker = next(
+        row
+        for row in response.json()["executors"]
+        if row["employee_id"] == str(api["users"]["coworker"])
+    )
+    assert coworker["availability"] == "busy"
+    assert "других участков" in " ".join(coworker["reasons"])
+    assert response.json()["selected_norm_minutes"] is None
+    assert str(api["users"]["executor"]) not in {
+        row["employee_id"] for row in response.json()["executors"]
+    }
+    no_specialist = await api["client"].post(
+        "/api/v1/work-orders/suggestions",
+        json={
+            "area_id": str(api["areas"][0].id),
+            "equipment_id": str(api["machines"][0].id),
+            "description": "перегрев",
+            "fault_code_id": str(no_match.id),
+        },
+        headers=api["headers"]["master"],
+    )
+    assert no_specialist.status_code == 200
+    assert no_specialist.json()["executors"] == []
+    assert no_specialist.json()["selected_norm_minutes"] is None

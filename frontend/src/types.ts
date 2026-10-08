@@ -276,6 +276,34 @@ export interface Mutation {
   version: number;
   status: Status;
 }
+export interface OrderSuggestionFault {
+  fault_code_id: string;
+  code: string;
+  name: string;
+  specialty: string;
+  reasons: string[];
+  norm_minutes: number | null;
+}
+export interface OrderSuggestionExecutor {
+  employee_id: string;
+  display_name: string;
+  specialty: string;
+  grade: number;
+  is_on_shift: boolean;
+  availability: "free" | "busy" | "queued" | "off_shift";
+  queue_length: number;
+  paused_count: number;
+  quality_score: number | null;
+  quality_sample_count: number;
+  reasons: string[];
+}
+export interface OrderSuggestions {
+  faults: OrderSuggestionFault[];
+  selected_norm_minutes: number | null;
+  required_specialty: string | null;
+  executors: OrderSuggestionExecutor[];
+  notes: string[];
+}
 export interface CreateOrder {
   work_type: WorkType;
   description: string;

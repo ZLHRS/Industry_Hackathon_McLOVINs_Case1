@@ -89,3 +89,70 @@
 .orders-workspace .status-tabs button {
   flex: 1;
 }
+
+.order-suggestions {
+  display: grid;
+  gap: 0.8rem;
+  border: 1px solid #cbd5d8;
+  border-left: 3px solid #1d6c91;
+  background: #f7faf9;
+  padding: 0.9rem;
+}
+.order-suggestions-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.order-suggestions h3,
+.order-suggestions h4 {
+  margin: 0;
+}
+.order-suggestions p {
+  margin: 0.3rem 0 0;
+}
+.suggestion-results {
+  display: grid;
+  gap: 0.75rem;
+}
+.suggestion-results section {
+  display: grid;
+  gap: 0.5rem;
+}
+.suggestion-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 0.8rem;
+  border-top: 1px solid #d8e1df;
+  padding-top: 0.65rem;
+}
+.suggestion-card > div {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.suggestion-card small {
+  color: #596062;
+  line-height: 1.35;
+}
+.suggestion-card .text-button {
+  flex-shrink: 0;
+}
+.suggestion-norm {
+  color: #234957;
+  font-weight: 700;
+}
+.suggestion-note {
+  font-size: 0.86rem;
+}
+@media (max-width: 560px) {
+  .order-suggestions-head,
+  .suggestion-card {
+    flex-direction: column;
+  }
+  .order-suggestions-head .secondary,
+  .suggestion-card .text-button {
+    width: 100%;
+  }
+}

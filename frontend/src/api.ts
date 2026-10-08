@@ -470,6 +470,18 @@ export class Api {
   equipmentHistory(id: string, offset = 0) {
     return this.request<OrderPage>(`/equipment/${id}/history?offset=${offset}`);
   }
+  suggestions(input: {
+    area_id: string;
+    equipment_id: string;
+    description: string;
+    fault_code_id?: string | null;
+  }) {
+    return this.request<import("./types").OrderSuggestions>("/work-orders/suggestions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  }
   create(payload: CreateOrder, key?: string) {
     const body = canonical(payload);
     return this.mutate("/work-orders", { headers: { "Content-Type": "application/json" }, body }, body, key);
