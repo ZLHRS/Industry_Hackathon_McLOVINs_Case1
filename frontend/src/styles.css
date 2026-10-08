@@ -2334,6 +2334,14 @@ textarea:hover {
   background: #fff;
   color: #52726a;
 }
+.kanban-column-overdue {
+  border: 1px solid #e3b3ad;
+  background: #fff6f4;
+}
+.kanban-column-overdue > h2 {
+  border-bottom-color: #c5453e;
+  color: #8f2924;
+}
 .kanban-column .order-row {
   margin-bottom: 0.65rem;
 }
@@ -2497,7 +2505,16 @@ textarea:hover {
   text-underline-offset: 0.18rem;
 }
 .availability.free {
-  background: var(--teal);
+  background: #238646;
+}
+.availability.busy {
+  background: #c58a10;
+}
+.availability.queued {
+  background: #1d6c91;
+}
+.availability.off_shift {
+  background: #858a8b;
 }
 .analytics-filters,
 .analytics-section,

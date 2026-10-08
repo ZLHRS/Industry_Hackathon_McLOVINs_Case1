@@ -1,4 +1,5 @@
 import { suggestionText } from "../lib/suggestionText";
+import { boardColumnOrders, belongsToOverdueBoardColumn, currentBusyOrderNumber } from "./workspaceBoard";
 import { t, message } from "../lib/i18n";
 import {
   activeOrderStatuses as activeStatuses,
@@ -523,23 +524,32 @@ function Kanban({
   onOpen: (id: string) => void;
   onHistory: (equipmentId: string) => Promise<void>;
 }) {
-  const columns: Array<[string, string[]]> = [
+  const columns: Array<[string, Order["status"][]]> = [
     [t("К выдаче"), ["issued", "accepted", "queued"]],
     [t("В работе"), ["in_progress", "paused"]],
     [t("На проверке"), ["completed", "ai_review"]],
     [t("Доработка и отказы"), ["rework", "rejected"]],
     [t("Закрытые"), ["closed"]],
     [t("Отменённые"), ["cancelled"]],
-  ] satisfies Array<[string, string[]]>;
-  const visibleColumns = columns.filter(([, statuses]) =>
-    orders.some((order) => statuses.includes(order.status)),
-  );
+  ] satisfies Array<[string, Order["status"][]]>;
+  const overdue = orders.filter(belongsToOverdueBoardColumn);
+  const visibleColumns = [
+    ...(overdue.length
+      ? [{ title: t("Просроченные"), items: overdue, className: "kanban-column-overdue" }]
+      : []),
+    ...columns
+      .map(([title, statuses]) => ({
+        title,
+        items: boardColumnOrders(orders, statuses),
+        className: undefined,
+      }))
+      .filter(({ items }) => items.length),
+  ];
   return (
     <div className="kanban" aria-label={t("Доска нарядов")}>
-      {visibleColumns.map(([title, statuses]) => {
-        const items = orders.filter((order) => statuses.includes(order.status));
+      {visibleColumns.map(({ title, items, className }) => {
         return (
-          <section key={title} className="kanban-column">
+          <section key={title} className={`kanban-column${className ? ` ${className}` : ""}`}>
             <h2>
               {title} <small>{items.length}</small>
             </h2>
@@ -876,48 +886,63 @@ export function CreateOrderDialog({
               {activeSuggestions.executors.length > 0 && (
                 <section>
                   <h4>{t("Исполнители")}</h4>
-                  {activeSuggestions.executors.map((person) => (
-                    <button
-                      className="suggestion-card quick-choice quick-executor-choice"
-                      key={person.employee_id}
-                      type="button"
-                      data-testid={`quick-executor-${person.employee_id}`}
-                      aria-pressed={input.executor_id === person.employee_id}
-                      disabled={!person.is_on_shift}
-                      onClick={() => chooseExecutor(person)}
-                    >
-                      <div>
-                        <strong>
-                          {person.display_name} · {person.specialty} · {person.grade} {t("разряд")}
-                        </strong>
-                        {person.reasons.length > 0 && (
-                          <small>{person.reasons.map(suggestionText).join(" · ")}</small>
-                        )}
-                        <small>
-                          {person.availability === "free"
-                            ? t("Свободен")
-                            : person.availability === "queued"
-                              ? t("В очереди")
-                              : t("Занят")}
-                          {person.queue_length > 0 && (
-                            <>
-                              {" "}
-                              {t("· очередь:")} {person.queue_length}
-                            </>
+                  {activeSuggestions.executors.map((person) => {
+                    const workloadPerson = workers.find(
+                      (worker) => worker.employee_id === person.employee_id,
+                    );
+                    const currentOrderNumber =
+                      person.availability === "busy" && workloadPerson
+                        ? currentBusyOrderNumber(workloadPerson)
+                        : null;
+                    return (
+                      <button
+                        className="suggestion-card quick-choice quick-executor-choice"
+                        key={person.employee_id}
+                        type="button"
+                        data-testid={`quick-executor-${person.employee_id}`}
+                        aria-pressed={input.executor_id === person.employee_id}
+                        disabled={!person.is_on_shift}
+                        onClick={() => chooseExecutor(person)}
+                      >
+                        <div>
+                          <strong>
+                            {person.display_name} · {person.specialty} · {person.grade} {t("разряд")}
+                          </strong>
+                          {person.reasons.length > 0 && (
+                            <small>{person.reasons.map(suggestionText).join(" · ")}</small>
                           )}
-                          {person.paused_count > 0 && (
-                            <>
-                              {" "}
-                              {t("· пауз:")} {person.paused_count}
-                            </>
-                          )}
-                        </small>
-                      </div>
-                      <span className="quick-choice-action">
-                        {input.executor_id === person.employee_id ? t("Выбрано") : t("Выбрать")}
-                      </span>
-                    </button>
-                  ))}
+                          <small>
+                            {person.availability === "free"
+                              ? t("Свободен")
+                              : person.availability === "queued"
+                                ? t("В очереди")
+                                : t("Занят")}
+                            {person.queue_length > 0 && (
+                              <>
+                                {" "}
+                                {t("· очередь:")} {person.queue_length}
+                              </>
+                            )}
+                            {person.paused_count > 0 && (
+                              <>
+                                {" "}
+                                {t("· пауз:")} {person.paused_count}
+                              </>
+                            )}
+                            {currentOrderNumber && (
+                              <>
+                                {" "}
+                                {t("· текущий наряд:")} {currentOrderNumber}
+                              </>
+                            )}
+                          </small>
+                        </div>
+                        <span className="quick-choice-action">
+                          {input.executor_id === person.employee_id ? t("Выбрано") : t("Выбрать")}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </section>
               )}
               {activeSuggestions.notes.map((note, index) => (
@@ -1120,6 +1145,9 @@ export function CreateOrderDialog({
                           : person.availability === "busy"
                             ? t("В работе")
                             : t("Не на смене")}
+                      {currentBusyOrderNumber(person)
+                        ? ` · ${t("текущий наряд:")} ${currentBusyOrderNumber(person)}`
+                        : ""}
                     </option>
                   ))}
               </select>

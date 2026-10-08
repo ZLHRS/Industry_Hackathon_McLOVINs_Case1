@@ -273,7 +273,9 @@ async def test_concurrent_outbox_workers_fan_out_only_once(database):
         assert await session.scalar(select(func.count()).select_from(Notification)) == 1
 
 
-async def test_acceptance_advisory_excludes_candidate_and_reassignment_resets_timer(database):
+async def test_acceptance_advisory_recommends_only_executor_without_active_work_and_resets_timer(
+    database,
+):
     now = datetime.now(UTC)
     order_id, executor_id, master_id, _manager_id = await _order(
         database, status=WorkOrderStatus.ISSUED, deadline=now + timedelta(hours=1)
@@ -281,17 +283,61 @@ async def test_acceptance_advisory_excludes_candidate_and_reassignment_resets_ti
     async with database.sessions.begin() as session:
         order = await session.get(WorkOrder, order_id, with_for_update=True)
         assert order is not None
-        candidate = Employee(
-            login=f"candidate-{uuid4().hex[:10]}",
+        unavailable = []
+        for status in (
+            WorkOrderStatus.ISSUED,
+            WorkOrderStatus.ACCEPTED,
+            WorkOrderStatus.QUEUED,
+            WorkOrderStatus.IN_PROGRESS,
+            WorkOrderStatus.PAUSED,
+            WorkOrderStatus.REWORK,
+        ):
+            candidate = Employee(
+                login=f"candidate-{status.value}-{uuid4().hex[:8]}",
+                display_name=f"Занят: {status.value}",
+                role="executor",
+                specialty="mechanic",
+                grade=4,
+                password_hash="x",
+            )
+            session.add(candidate)
+            unavailable.append((candidate, status))
+        free_candidate = Employee(
+            login=f"candidate-free-{uuid4().hex[:10]}",
             display_name="Свободный исполнитель",
             role="executor",
             specialty="mechanic",
             grade=3,
             password_hash="x",
         )
-        session.add(candidate)
+        session.add(free_candidate)
         await session.flush()
-        session.add(EmployeeArea(employee_id=candidate.id, area_id=order.area_id))
+        session.add_all(
+            EmployeeArea(employee_id=candidate.id, area_id=order.area_id)
+            for candidate, _status in unavailable
+        )
+        session.add(EmployeeArea(employee_id=free_candidate.id, area_id=order.area_id))
+        session.add_all(
+            WorkOrder(
+                number=f"ACTIVE-{status.value}-{uuid4().hex[:8]}",
+                work_type=WorkType.UNPLANNED,
+                description="Candidate already has active work",
+                area_id=order.area_id,
+                equipment_id=order.equipment_id,
+                executor_id=candidate.id,
+                master_id=order.master_id,
+                priority=Priority.NORMAL,
+                status=status,
+                issued_at=(now + timedelta(minutes=1) if status is WorkOrderStatus.ISSUED else now),
+                deadline=now + timedelta(hours=1),
+                started_at=(
+                    now if status in {WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.PAUSED} else None
+                ),
+                attempt=1,
+                version=1,
+            )
+            for candidate, status in unavailable
+        )
         order.issued_at = now - timedelta(minutes=11)
 
     policy = NotificationPolicy(acceptance_minutes=10)
@@ -305,7 +351,7 @@ async def test_acceptance_advisory_excludes_candidate_and_reassignment_resets_ti
             ).all()
         )
         assert [notification.employee_id for notification in notifications] == [master_id]
-        assert notifications[0].payload["candidate_id"] != str(executor_id)
+        assert notifications[0].payload["candidate_id"] == str(free_candidate.id)
         assert notifications[0].payload["candidate_name"] == "Свободный исполнитель"
 
     async with database.sessions.begin() as session:

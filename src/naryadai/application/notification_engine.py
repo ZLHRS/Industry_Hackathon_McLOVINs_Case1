@@ -366,7 +366,9 @@ async def _acceptance_basis(session: AsyncSession, order: WorkOrder) -> datetime
 async def _candidate(
     session: AsyncSession, order: WorkOrder, specialty: str, minimum_grade: int
 ) -> Employee | None:
-    busy = select(WorkOrder.executor_id).where(WorkOrder.status == WorkOrderStatus.IN_PROGRESS)
+    unavailable = select(WorkOrder.executor_id).where(
+        WorkOrder.status.in_(_ACTIVE_DEADLINE_STATUSES)
+    )
     return cast(
         Employee | None,
         await session.scalar(
@@ -380,7 +382,7 @@ async def _candidate(
                 Employee.specialty == specialty,
                 Employee.grade >= minimum_grade,
                 Employee.id != order.executor_id,
-                Employee.id.not_in(busy),
+                Employee.id.not_in(unavailable),
             )
             .order_by(Employee.grade.desc(), Employee.login)
             .limit(1)
@@ -471,7 +473,7 @@ async def scan_deadlines(database: Database, *, now: datetime, policy: Notificat
                                 "candidate_name": candidate_name,
                                 "candidate_reason": (
                                     "На смене, активен, допущен к участку, соответствует "  # noqa: RUF001
-                                    "специальности и разряду, нет наряда в работе."
+                                    "специальности и разряду, нет активных нарядов."
                                 ),
                             },
                             now=now,

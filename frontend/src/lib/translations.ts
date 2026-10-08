@@ -1,5 +1,7 @@
 /** Interface copy only. User-entered and server-authored content is never translated here. */
 export const translations: Record<string, { kk: string; en: string }> = {
+  "· текущий наряд:": { kk: "· ағымдағы наряд:", en: "· current work order:" },
+  "текущий наряд:": { kk: "ағымдағы наряд:", en: "current work order:" },
   "Выберите оборудование, опишите работу и назначьте исполнителя со сроком.": {
     kk: "Жабдықты таңдаңыз, жұмысты сипаттаңыз және орындаушы мен мерзімді белгілеңіз.",
     en: "Choose equipment, describe the work, then assign a technician and deadline.",
