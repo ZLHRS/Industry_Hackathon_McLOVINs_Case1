@@ -1,10 +1,5 @@
 import { t, message as translateMessage } from "../lib/i18n";
-import { useEffect, useState } from "react";
-
-type InstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
-};
+import type { useDeviceInstallation } from "../lib/useDeviceInstallation";
 
 function isAppleMobile() {
   const userAgent = navigator.userAgent;
@@ -13,66 +8,28 @@ function isAppleMobile() {
   );
 }
 
-function isStandalone() {
-  return (
-    window.matchMedia("(display-mode: standalone)").matches ||
-    (navigator as Navigator & { standalone?: boolean }).standalone === true
-  );
-}
-
-/** Honest installation guidance: only offers a browser prompt when one was supplied. */
-export function DeviceSetup() {
-  const [prompt, setPrompt] = useState<InstallPromptEvent>();
-  const [installed, setInstalled] = useState(
-    () => (typeof window !== "undefined" && isStandalone()) || false,
-  );
-  const [message, setMessage] = useState("");
-
-  useEffect(() => {
-    const deferred = (event: Event) => {
-      event.preventDefault();
-      setPrompt(event as InstallPromptEvent);
-    };
-    const complete = () => {
-      setPrompt(undefined);
-      setInstalled(true);
-      setMessage(t("Приложение установлено. Уведомления включаются отдельно в журнале уведомлений."));
-    };
-    window.addEventListener("beforeinstallprompt", deferred);
-    window.addEventListener("appinstalled", complete);
-    return () => {
-      window.removeEventListener("beforeinstallprompt", deferred);
-      window.removeEventListener("appinstalled", complete);
-    };
-  }, []);
-
-  async function install() {
-    if (!prompt) return;
-    await prompt.prompt();
-    const choice = await prompt.userChoice;
-    setPrompt(undefined);
-    setMessage(
-      choice.outcome === "accepted"
-        ? t("Установка подтверждена браузером.")
-        : t("Установка отменена. Можно продолжить в браузере."),
-    );
-  }
-
+export function DeviceSetup({
+  hidden = false,
+  installation,
+}: {
+  hidden?: boolean;
+  installation: ReturnType<typeof useDeviceInstallation>;
+}) {
+  const { prompt, installed, message, install } = installation;
   if (installed) return null;
-  if (!prompt && !isAppleMobile() && !message) return null;
   return (
-    <aside className="device-setup" aria-label={t("Установка приложения")}>
+    <aside className="device-setup" aria-label={t("Установка приложения")} hidden={hidden}>
       <div>
-        <strong>{t("Работа с телефона")}</strong>
+        <strong>{t("Приложение на устройстве")}</strong>
         <p>
           {translateMessage(message) ||
             (isAppleMobile()
-              ? t(
-                  "Чтобы установить ТехНаряд на iPhone или iPad: откройте меню «Поделиться» в Safari и выберите «На экран Домой».",
-                )
-              : t(
-                  "Установите приложение, чтобы открывать наряды с домашнего экрана и получать фоновые уведомления после отдельного разрешения.",
-                ))}
+              ? t("iPhone/iPad: в Safari выберите «Поделиться» → «На экран Домой».")
+              : prompt
+                ? t("На компьютере и телефоне — отдельным приложением. Уведомления включаются отдельно.")
+                : t(
+                    "На компьютере и телефоне — отдельным приложением. Уведомления включаются отдельно. В браузере откройте меню и выберите «Установить приложение».",
+                  ))}
         </p>
       </div>
       {prompt && (

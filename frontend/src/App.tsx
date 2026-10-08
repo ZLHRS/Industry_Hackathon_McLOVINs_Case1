@@ -1,12 +1,12 @@
 import { t, getLocale, useLanguage, message } from "./lib/i18n";
-import { LanguageSwitcher } from "./components/LanguageSwitcher";
+import { AppPreferences } from "./components/AppPreferences";
+import { useDeviceInstallation } from "./lib/useDeviceInstallation";
 import { navigation, permittedView, canViewWorkload, type View } from "./lib/roleAccess";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Api, ApiError, clearMutationKeys } from "./api";
 import { Login } from "./features/Login";
 import { OrderDetailDialog, type ActionOutcome } from "./features/OrderDetail";
 import { NotificationButton, NotificationsDialog } from "./features/Notifications";
-import { DeviceSetup } from "./features/DeviceSetup";
 import { RealtimeConnection } from "./lib/realtime";
 import { CreateOrderDialog, OrdersView, ReferenceView, WorkloadView } from "./features/Workspace";
 import { EquipmentCard } from "./features/EquipmentCard";
@@ -101,6 +101,7 @@ function storedToken() {
 
 export default function App() {
   useLanguage();
+  const installation = useDeviceInstallation();
   const initialToken = storedToken();
   const expiredActor = useRef<string | null>(initialToken ? null : (storedUser()?.id ?? null));
   const [token, setToken] = useState<string | null>(initialToken);
@@ -604,7 +605,6 @@ export default function App() {
           ))}
         </nav>
         <div className="user-card">
-          <LanguageSwitcher />
           {user.role === "admin" ? (
             <strong>{user.display_name}</strong>
           ) : (
@@ -648,9 +648,6 @@ export default function App() {
         </div>
       </header>{" "}
       <main className="app-main">
-        <div className="mobile-language">
-          <LanguageSwitcher />
-        </div>
         {history.state?.technaryad && history.state?.parent && (
           <nav className="page-navigation" aria-label={t("Навигация страницы")}>
             <button type="button" className="text-button" onClick={() => history.back()}>
@@ -673,7 +670,6 @@ export default function App() {
             <NotificationButton count={unreadCount} onOpen={() => setInboxOpen(true)} />
           </div>
         )}
-        {user.role !== "admin" && <DeviceSetup />}
         {(notice || savedAt || error) && (
           <div className={error ? "banner error-banner" : "banner"} role={error ? "alert" : "status"}>
             {message(error || notice)}
@@ -822,6 +818,7 @@ export default function App() {
           />
         )}
       </main>
+      <AppPreferences installation={installation} />
       <nav
         className="bottom-nav"
         aria-label={t("Мобильная навигация")}

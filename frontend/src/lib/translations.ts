@@ -1,5 +1,29 @@
 /** Interface copy only. User-entered and server-authored content is never translated here. */
 export const translations: Record<string, { kk: string; en: string }> = {
+  "Приложение и язык": { kk: "Қолданба және тіл", en: "App and language" },
+  Язык: { kk: "Тіл", en: "Language" },
+  "Приложение на устройстве": { kk: "Құрылғыдағы қолданба", en: "App on this device" },
+  "iPhone/iPad: в Safari выберите «Поделиться» → «На экран Домой».": {
+    kk: "iPhone/iPad: Safari-де «Бөлісу» → «Басты экранға» таңдаңыз.",
+    en: "iPhone/iPad: in Safari choose “Share” → “Add to Home Screen”.",
+  },
+  "Установите для быстрого запуска и уведомлений после отдельного разрешения.": {
+    kk: "Жылдам ашу және бөлек рұқсаттан кейінгі хабарландырулар үшін орнатыңыз.",
+    en: "Install for quick launch and notifications after separate permission.",
+  },
+  "На компьютере и телефоне — отдельным приложением. Уведомления включаются отдельно.": {
+    kk: "Компьютерде де, телефонда да — бөлек қолданба ретінде. Хабарландырулар бөлек қосылады.",
+    en: "Use it as a standalone app on computers and phones. Notifications are enabled separately.",
+  },
+  "На компьютере и телефоне — отдельным приложением. Уведомления включаются отдельно. В браузере откройте меню и выберите «Установить приложение».":
+    {
+      kk: "Компьютерде де, телефонда да — бөлек қолданба ретінде. Хабарландырулар бөлек қосылады. Браузер мәзірінен «Қолданбаны орнату» таңдаңыз.",
+      en: "Use it as a standalone app on computers and phones. Notifications are enabled separately. In the browser menu, choose “Install app”.",
+    },
+  "Не удалось открыть установку. Попробуйте ещё раз.": {
+    kk: "Орнатуды ашу мүмкін болмады. Қайталап көріңіз.",
+    en: "Could not open installation. Try again.",
+  },
   "· текущий наряд:": { kk: "· ағымдағы наряд:", en: "· current work order:" },
   "текущий наряд:": { kk: "ағымдағы наряд:", en: "current work order:" },
   "Выберите оборудование, опишите работу и назначьте исполнителя со сроком.": {
