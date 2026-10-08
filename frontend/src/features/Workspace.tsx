@@ -3,6 +3,7 @@ import { t, message } from "../lib/i18n";
 import {
   activeOrderStatuses as activeStatuses,
   archivedOrderStatuses as archiveStatuses,
+  type OrderFilters,
 } from "../lib/orderFilters";
 import { roleLabels } from "../lib/roleAccess";
 import type { DirectoryFilters, DirectorySection } from "../lib/navigation";
@@ -75,30 +76,8 @@ export function OrdersView({
   workload: Workload[];
   masters: MasterOption[];
   currentUserId: string;
-  filters: {
-    status: string[];
-    priority: string;
-    overdue: boolean;
-    area_id: string;
-    equipment_id: string;
-    executor_id: string;
-    master_id: string;
-    query: string;
-    attention: boolean;
-    offset: number;
-  };
-  onFilters: (next: {
-    status: string[];
-    priority: string;
-    overdue: boolean;
-    area_id: string;
-    equipment_id: string;
-    executor_id: string;
-    master_id: string;
-    query: string;
-    attention: boolean;
-    offset: number;
-  }) => void;
+  filters: OrderFilters;
+  onFilters: (next: OrderFilters) => void;
   onOpen: (id: string) => void;
   onCreate: (input: CreateOrder) => Promise<void>;
   onHistory: (equipmentId: string) => Promise<void>;
@@ -158,6 +137,7 @@ export function OrdersView({
       master_id: role === "master" ? currentUserId : "",
       query: "",
       attention: false,
+      sort: "priority",
       overdue: false,
       offset: 0,
     });
@@ -256,6 +236,21 @@ export function OrdersView({
             aria-label={t("Поиск наряда")}
           />
         </label>
+        <label className="order-sort-control">
+          <span>{t("Сортировка")}</span>
+          <select
+            aria-label={t("Сортировка")}
+            value={filters.sort}
+            onChange={(e) =>
+              onFilters({ ...filters, sort: e.target.value as OrderFilters["sort"], offset: 0 })
+            }
+          >
+            <option value="priority">{t("По приоритету")}</option>
+            <option value="deadline">{t("Ближайший срок")}</option>
+            <option value="newest">{t("Сначала новые")}</option>
+            <option value="oldest">{t("Сначала старые")}</option>
+          </select>
+        </label>
         <button
           className="filter-toggle"
           type="button"
@@ -333,7 +328,7 @@ export function OrdersView({
             </select>
           </label>
         )}
-        {(role === "master" || role === "manager") && (
+        {(role === "master" || role === "manager" || role === "executor") && (
           <label>
             {t("Мастер")}
             <select
@@ -342,7 +337,7 @@ export function OrdersView({
               onChange={(e) =>
                 onFilters({
                   ...filters,
-                  master_id: e.target.value || (role === "master" ? "all" : ""),
+                  master_id: e.target.value || (role === "master" || role === "manager" ? "all" : ""),
                   offset: 0,
                 })
               }
@@ -420,6 +415,8 @@ export function OrdersView({
             </button>
           )}
         </div>
+      ) : archiveTab ? (
+        <HistoryGrid orders={visibleOrders} catalog={catalog} onOpen={onOpen} />
       ) : role !== "executor" ? (
         <Kanban orders={visibleOrders} catalog={catalog} onOpen={onOpen} onHistory={onHistory} />
       ) : (
@@ -430,27 +427,7 @@ export function OrdersView({
         </div>
       )}
 
-      {page && page.total > page.limit && (
-        <div className="pagination">
-          <button
-            className="secondary"
-            disabled={page.offset === 0}
-            onClick={() => onFilters({ ...filters, offset: Math.max(0, page.offset - page.limit) })}
-          >
-            {t("Назад")}
-          </button>
-          <span>
-            {page.offset + 1}–{Math.min(page.offset + page.items.length, page.total)} {t("из")} {page.total}
-          </span>
-          <button
-            className="secondary"
-            disabled={page.offset + page.limit >= page.total}
-            onClick={() => onFilters({ ...filters, offset: page.offset + page.limit })}
-          >
-            {t("Далее")}
-          </button>
-        </div>
-      )}
+      {page && page.total > page.limit && <Pagination page={page} filters={filters} onFilters={onFilters} />}
       {creating && catalog && (
         <CreateOrderDialog
           catalog={catalog}
@@ -464,6 +441,74 @@ export function OrdersView({
         />
       )}
     </section>
+  );
+}
+
+function HistoryGrid({
+  orders,
+  catalog,
+  onOpen,
+}: {
+  orders: Order[];
+  catalog: Catalog | null;
+  onOpen: (id: string) => void;
+}) {
+  return (
+    <div className="order-history-grid" aria-label={t("История нарядов")}>
+      {orders.map((order) => (
+        <OrderRow key={order.id} order={order} catalog={catalog} onOpen={onOpen} />
+      ))}
+    </div>
+  );
+}
+
+function Pagination({
+  page,
+  filters,
+  onFilters,
+}: {
+  page: OrderPage;
+  filters: OrderFilters;
+  onFilters: (next: OrderFilters) => void;
+}) {
+  const pages = Math.ceil(page.total / page.limit);
+  const current = Math.floor(page.offset / page.limit) + 1;
+  const numbers = Array.from(
+    new Set(
+      [1, 2, current - 1, current, current + 1, pages - 1, pages].filter(
+        (number) => number >= 1 && number <= pages,
+      ),
+    ),
+  ).sort((first, second) => first - second);
+  const goTo = (number: number) => onFilters({ ...filters, offset: (number - 1) * page.limit });
+  return (
+    <nav className="pagination" aria-label={t("Страницы нарядов")}>
+      <button className="secondary" disabled={current === 1} onClick={() => goTo(current - 1)}>
+        {t("Назад")}
+      </button>
+      <div className="pagination-pages" aria-label={t("Номер страницы")}>
+        {numbers.map((number, index) => (
+          <span key={number} className="pagination-entry">
+            {index > 0 && number - numbers[index - 1] > 1 && <span aria-hidden="true">…</span>}
+            <button
+              type="button"
+              className={number === current ? "is-current" : ""}
+              aria-label={t("Страница {0}", [number])}
+              aria-current={number === current ? "page" : undefined}
+              onClick={() => goTo(number)}
+            >
+              {number}
+            </button>
+          </span>
+        ))}
+      </div>
+      <span className="pagination-summary">
+        {page.offset + 1}–{Math.min(page.offset + page.items.length, page.total)} {t("из")} {page.total}
+      </span>
+      <button className="secondary" disabled={current === pages} onClick={() => goTo(current + 1)}>
+        {t("Далее")}
+      </button>
+    </nav>
   );
 }
 

@@ -13,6 +13,7 @@ from naryadai.application.queries import (
     MasterOption,
     OrderDetail,
     OrderPage,
+    OrderSort,
     WorkloadView,
     equipment_history,
     list_orders,
@@ -87,6 +88,7 @@ async def orders(
     overdue: bool | None = None,
     q: str | None = Query(default=None, max_length=120),
     attention: bool = False,
+    sort: OrderSort = "priority",
     offset: int = Query(default=0, ge=0, le=100_000),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> OrderPage:
@@ -103,6 +105,7 @@ async def orders(
         overdue=overdue,
         q=q,
         attention=attention,
+        sort=sort,
         offset=offset,
         limit=limit,
     )

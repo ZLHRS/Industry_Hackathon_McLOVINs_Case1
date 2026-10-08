@@ -21,6 +21,7 @@ export type OrderFilters = {
   master_id: string;
   query: string;
   attention: boolean;
+  sort: "priority" | "deadline" | "newest" | "oldest";
   offset: number;
 };
 type Actor = Pick<User, "id" | "role">;
@@ -50,9 +51,16 @@ export function readOrderFilters(location: string, actor: Actor | null): OrderFi
           : uuid(master) || actor.id
         : actor?.role === "manager"
           ? uuid(master) || "all"
-          : "",
+          : actor?.role === "executor"
+            ? uuid(master)
+            : "",
     query: (params.get("q") ?? "").slice(0, 200),
     attention: params.get("attention") === "true",
+    sort: (["priority", "deadline", "newest", "oldest"] as const).includes(
+      params.get("sort") as "priority" | "deadline" | "newest" | "oldest",
+    )
+      ? (params.get("sort") as OrderFilters["sort"])
+      : "priority",
     offset: Number.isSafeInteger(offset) && offset >= 0 ? offset : 0,
   };
 }
@@ -61,6 +69,7 @@ export function orderFiltersUrl(filters: OrderFilters): string {
   if (filters.status.join(",") === archivedOrderStatuses.join(",")) params.set("status", "history");
   for (const name of ["master_id", "executor_id", "area_id", "equipment_id", "priority"] as const)
     if (filters[name]) params.set(name, filters[name]);
+  if (filters.sort !== "priority") params.set("sort", filters.sort);
   if (filters.query) params.set("q", filters.query);
   if (filters.overdue) params.set("overdue", "true");
   if (filters.attention) params.set("attention", "true");
@@ -73,6 +82,8 @@ export function orderFilterKey(filters: OrderFilters, actor: Actor): string {
     status: [...filters.status].sort(),
     executor_id: actor.role === "executor" ? actor.id : filters.executor_id,
     master_id:
-      ["master", "manager"].includes(actor.role) && filters.master_id !== "all" ? filters.master_id : "",
+      ["master", "manager", "executor"].includes(actor.role) && filters.master_id !== "all"
+        ? filters.master_id
+        : "",
   });
 }

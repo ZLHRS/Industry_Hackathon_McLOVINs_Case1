@@ -202,6 +202,9 @@ class MasterOption(BaseModel):
     display_name: str
 
 
+OrderSort = Literal["priority", "deadline", "newest", "oldest"]
+
+
 class WorkloadView(BaseModel):
     employee_id: UUID
     area_ids: list[UUID] = Field(default_factory=list)
@@ -301,6 +304,7 @@ async def list_orders(
     overdue: bool | None = None,
     q: str | None = None,
     attention: bool = False,
+    sort: OrderSort = "priority",
     offset: int = 0,
     limit: int = 50,
 ) -> OrderPage:
@@ -308,20 +312,25 @@ async def list_orders(
     predicates = [visible_orders(principal)]
     if master_id is not None:
         if principal.role == "executor":
-            raise OperationError(403, "master_filter_not_permitted")
-        # A filter may only name a master visible from at least one of the
-        # caller's areas.  Inactive masters stay available for historical and
-        # archived orders; the scope check still prevents UUID probing across
-        # sites.
-        master_is_scoped = (
-            select(Employee.id)
-            .join(EmployeeArea, EmployeeArea.employee_id == Employee.id)
-            .where(
-                Employee.id == master_id,
-                Employee.role == "master",
-                EmployeeArea.area_id.in_(principal.area_ids),
+            # An executor may narrow their own orders by actual issuer only.
+            # The same visibility predicate makes known-but-invisible and
+            # unknown master UUIDs indistinguishable.
+            master_is_scoped = select(WorkOrder.id).where(
+                visible_orders(principal), WorkOrder.master_id == master_id
             )
-        )
+        else:
+            # A master or manager filter may only name a master visible from at least one
+            # of the caller's areas. Inactive masters stay available for historical and
+            # archived orders; the scope check still prevents UUID probing across sites.
+            master_is_scoped = (
+                select(Employee.id)
+                .join(EmployeeArea, EmployeeArea.employee_id == Employee.id)
+                .where(
+                    Employee.id == master_id,
+                    Employee.role == "master",
+                    EmployeeArea.area_id.in_(principal.area_ids),
+                )
+            )
         predicates.append(WorkOrder.master_id == master_id)
     if q and (query := q.strip()):
         # Search before paging and aggregation, with literal user input and the same RBAC scope.
@@ -365,12 +374,23 @@ async def list_orders(
         predicates.append(condition if overdue else ~condition)
     if attention:
         predicates.append(needs_attention)
-    ordering = case(
+    priority_ordering = case(
         (WorkOrder.priority == Priority.EMERGENCY, 0),
         (WorkOrder.priority == Priority.HIGH, 1),
         (WorkOrder.priority == Priority.NORMAL, 2),
         else_=3,
     )
+    orders_query = select(WorkOrder).where(*predicates)
+    if sort == "priority":
+        orders_query = orders_query.order_by(
+            priority_ordering, WorkOrder.deadline, WorkOrder.issued_at, WorkOrder.id
+        )
+    elif sort == "deadline":
+        orders_query = orders_query.order_by(WorkOrder.deadline, WorkOrder.id)
+    elif sort == "newest":
+        orders_query = orders_query.order_by(WorkOrder.issued_at.desc(), WorkOrder.id)
+    else:
+        orders_query = orders_query.order_by(WorkOrder.issued_at, WorkOrder.id)
     async with database.sessions.begin() as session:
         # Counts and page refer to one snapshot even while another client changes a status.
         await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
@@ -385,11 +405,7 @@ async def list_orders(
             select(func.count()).select_from(WorkOrder).where(*predicates, needs_attention)
         )
         orders = await session.scalars(
-            select(WorkOrder)
-            .where(*predicates)
-            .order_by(ordering, WorkOrder.deadline, WorkOrder.issued_at, WorkOrder.id)
-            .offset(offset)
-            .limit(limit)
+            orders_query.offset(offset).limit(limit)
         )
         return OrderPage(
             items=[order_view(row, now) for row in orders],
@@ -402,19 +418,27 @@ async def list_orders(
 
 
 async def master_options(database: Database, principal: Principal) -> list[MasterOption]:
-    """List scoped masters, including inactive historical issuers, without staff data."""
+    """List masters a caller may use to narrow their visible work orders."""
 
-    ensure_role(principal, "master", "manager")
-    async with database.sessions() as session:
-        rows = await session.execute(
+    ensure_role(principal, "master", "manager", "executor")
+    if principal.role == "executor":
+        query = (
+            select(Employee.id, Employee.display_name)
+            .join(WorkOrder, WorkOrder.master_id == Employee.id)
+            .where(visible_orders(principal))
+        )
+    else:
+        query = (
             select(Employee.id, Employee.display_name)
             .join(EmployeeArea, EmployeeArea.employee_id == Employee.id)
             .where(
                 Employee.role == "master",
                 EmployeeArea.area_id.in_(principal.area_ids),
             )
-            .distinct()
-            .order_by(Employee.display_name, Employee.id)
+        )
+    async with database.sessions() as session:
+        rows = await session.execute(
+            query.distinct().order_by(Employee.display_name, Employee.id)
         )
         return [
             MasterOption(id=employee_id, display_name=display_name)

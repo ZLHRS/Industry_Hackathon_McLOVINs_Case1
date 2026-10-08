@@ -158,6 +158,28 @@ describe("mutation recovery after a committed response is lost", () => {
   });
 });
 
+describe("work order listing", () => {
+  it("serializes history pagination, sorting, and executor master scope in one request", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ items: [], total: 0, counts: {} })));
+    vi.stubGlobal("fetch", fetcher);
+    await new Api(() => "session").orders({
+      status: ["closed", "cancelled"],
+      executor_id: "executor",
+      master_id: "master",
+      sort: "deadline",
+      offset: 24,
+      limit: 24,
+    });
+    const [url] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    const query = new URL(url, "https://technaryad.invalid").searchParams;
+    expect(query.getAll("status")).toEqual(["closed", "cancelled"]);
+    expect(query.get("master_id")).toBe("master");
+    expect(query.get("sort")).toBe("deadline");
+    expect(query.get("offset")).toBe("24");
+    expect(query.get("limit")).toBe("24");
+  });
+});
+
 describe("central authentication and private photo boundaries", () => {
   it("invalidates on every authenticated 401, including image downloads", async () => {
     const onUnauthorized = vi.fn(async () => undefined);

@@ -149,12 +149,7 @@ test("master defaults to own orders, work/history stay distinct, worker link sho
   await expect(reworkColumn.getByText(reworkTitle, { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "История", exact: true }).click();
   await expect(page.getByText(archivedTitle, { exact: true })).toBeVisible();
-  await expect(
-    page
-      .locator(".kanban-column")
-      .filter({ has: page.getByRole("heading", { name: /^Закрытые/ }) })
-      .getByText(closedTitle, { exact: true }),
-  ).toBeVisible();
+  await expect(page.locator(".order-history-grid").getByText(closedTitle, { exact: true })).toBeVisible();
   await expect(page.getByText(ownTitle, { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "В работе", exact: true }).click();
   await expect(page.getByText(ownTitle, { exact: true })).toBeVisible();
@@ -195,12 +190,7 @@ test("master defaults to own orders, work/history stay distinct, worker link sho
   await expect(page.getByLabel("Мастер", { exact: true })).toHaveValue("");
   await expect(page.getByText(ownTitle, { exact: true })).toHaveCount(0);
   await expect(page.getByText(archivedTitle, { exact: true })).toBeVisible();
-  await expect(
-    page
-      .locator(".kanban-column")
-      .filter({ has: page.getByRole("heading", { name: /^Закрытые/ }) })
-      .getByText(closedTitle, { exact: true }),
-  ).toBeVisible();
+  await expect(page.locator(".order-history-grid").getByText(closedTitle, { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("button", { name: "История", exact: true })).toHaveAttribute(
     "aria-pressed",
@@ -226,36 +216,27 @@ test("master defaults to own orders, work/history stay distinct, worker link sho
   );
 });
 
-test("manager can filter masters while executor ignores privileged copied filters", async ({
-  page,
-  request,
-}) => {
+test("manager and executor retain allowed master filters after reload", async ({ page, request }) => {
   const master = await auth(request, state.master_login);
   const masterId = (await (await request.get("/api/v1/auth/me", { headers: headers(master) })).json()).id;
   await login(page, state.manager_login);
-  await expect(page.getByLabel("Мастер", { exact: true })).toHaveValue("");
   await page.getByLabel("Мастер", { exact: true }).selectOption(masterId);
   await page.reload();
   await expect(page.getByLabel("Мастер", { exact: true })).toHaveValue(masterId);
   await page.getByRole("button", { name: /Выйти/ }).click();
   await expect(page.getByLabel("Логин", { exact: true })).toBeVisible();
-  await page.goto(`/orders?master_id=${masterId}`);
-  const invalidRequests: string[] = [];
-  page.on("request", (req) => {
-    const url = new URL(req.url());
-    if (url.pathname === "/api/v1/work-orders" && url.searchParams.has("master_id"))
-      invalidRequests.push(url.pathname);
-    if (url.pathname === "/api/v1/work-orders/masters") invalidRequests.push(url.pathname);
-  });
+  await page.goto(`/orders?master_id=${masterId}&executor_id=${crypto.randomUUID()}`);
   await page.getByLabel("Логин", { exact: true }).fill(state.executor_login);
   await page.getByLabel("Пароль", { exact: true }).fill(state.secret);
   await page.getByRole("button", { name: "Войти", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Мои наряды", exact: true })).toBeVisible();
   await expect(page.locator(".order-row").first()).toBeVisible();
-  await expect(page.getByLabel("Мастер", { exact: true })).toHaveCount(0);
-  expect(invalidRequests).toEqual([]);
+  await expect(page.getByLabel("Мастер", { exact: true })).toHaveValue(masterId);
+  await expect(page.getByLabel("Исполнитель", { exact: true })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByLabel("Мастер", { exact: true })).toHaveValue(masterId);
+  await expect(page.locator(".order-row").first()).toBeVisible();
 });
-
 test("offline snapshot never appears under a different master filter", async ({ page, context }) => {
   await login(page, state.master_login);
   const ownId = await page.getByLabel("Мастер", { exact: true }).inputValue();

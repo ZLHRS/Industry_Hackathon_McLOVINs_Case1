@@ -10,6 +10,20 @@
 .orders-filter-actions .filter-toggle {
   margin-bottom: 0;
 }
+.order-sort-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #526661;
+  font-size: 0.82rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+.order-sort-control select {
+  min-height: 44px;
+  max-width: 10.75rem;
+  padding: 0.45rem 1.8rem 0.45rem 0.6rem;
+}
 .reset-order-filters {
   min-height: 44px;
   white-space: nowrap;
@@ -21,6 +35,72 @@
 }
 .orders-summary strong {
   color: #25282a;
+}
+.orders-workspace .order-history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 0.85rem;
+}
+.order-history-grid .order-row {
+  display: block;
+  min-width: 0;
+}
+.order-history-grid .order-hit {
+  width: 100%;
+  grid-template-columns: 1fr;
+  gap: 0.45rem;
+  padding: 0.85rem;
+}
+.order-history-grid .order-main,
+.order-history-grid .order-number,
+.order-history-grid .status,
+.order-history-grid .deadline {
+  grid-column: 1;
+  grid-row: auto;
+  justify-self: start;
+  text-align: left;
+}
+.order-history-grid .deadline {
+  color: #5f706c;
+}
+.orders-workspace .pagination {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.55rem;
+}
+.pagination-pages {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+.pagination-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.pagination-pages button {
+  min-width: 2.35rem;
+  min-height: 2.35rem;
+  border: 1px solid #b8cbc5;
+  border-radius: 0.45rem;
+  background: #fff;
+  color: #1d554d;
+  font: inherit;
+  font-weight: 750;
+}
+.pagination-pages button:hover {
+  background: #eef7f4;
+}
+.pagination-pages button.is-current {
+  border-color: #176b5e;
+  background: #176b5e;
+  color: #fff;
+}
+.pagination-summary {
+  color: #566965;
+  font-size: 0.88rem;
+  white-space: nowrap;
 }
 .orders-empty .secondary {
   margin-top: 0.25rem;
@@ -49,6 +129,13 @@
     flex: 1;
     width: auto;
   }
+  .order-sort-control {
+    flex: 1;
+  }
+  .order-sort-control select {
+    min-width: 0;
+    width: 100%;
+  }
   .reset-order-filters {
     min-height: 48px;
     padding: 0 0.35rem;
@@ -62,6 +149,29 @@
   .orders-filter-actions .filter-toggle,
   .reset-order-filters {
     width: 100%;
+  }
+  .order-sort-control {
+    justify-content: space-between;
+    width: 100%;
+  }
+  .orders-workspace .order-history-grid {
+    grid-template-columns: 1fr;
+  }
+  .orders-workspace .pagination {
+    justify-content: stretch;
+  }
+  .orders-workspace .pagination > .secondary {
+    flex: 1;
+  }
+  .pagination-pages {
+    order: 3;
+    justify-content: center;
+    width: 100%;
+  }
+  .pagination-summary {
+    order: 4;
+    width: 100%;
+    text-align: center;
   }
 }
 

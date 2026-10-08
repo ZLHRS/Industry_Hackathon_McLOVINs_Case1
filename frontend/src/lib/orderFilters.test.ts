@@ -24,6 +24,7 @@ describe("order filter navigation and offline identity", () => {
       area_id: other,
       equipment_id: other,
       priority: "high",
+      sort: "deadline" as const,
       query: "Насос & №2",
       attention: true,
       overdue: true,
@@ -45,13 +46,20 @@ describe("order filter navigation and offline identity", () => {
       other,
     );
   });
-  it("does not pass copied privileged filters to an executor", () => {
+  it("keeps the executor's permitted master filter but ignores a copied executor", () => {
     const filters = readOrderFilters(`/orders?master_id=${other}&executor_id=${other}`, {
       ...master,
       role: "executor",
     });
-    expect(filters.master_id).toBe("");
+    expect(filters.master_id).toBe(other);
     expect(filters.executor_id).toBe("");
+  });
+  it("defaults to priority sorting and round trips a requested server sort", () => {
+    expect(readOrderFilters("/orders", master).sort).toBe("priority");
+    const filters = { ...readOrderFilters("/orders?sort=deadline", master), offset: 24 };
+    expect(orderFiltersUrl(filters)).toContain("sort=deadline");
+    expect(readOrderFilters(orderFiltersUrl(filters), master)).toEqual(filters);
+    expect(readOrderFilters("/orders?sort=untrusted", master).sort).toBe("priority");
   });
   it("ignores malformed filters and directory query parameters", () => {
     expect(readOrderFilters("/orders?master_id=invalid&offset=-1&priority=bad", master)).toEqual(
@@ -71,6 +79,7 @@ describe("order filter navigation and offline identity", () => {
       { status: archivedOrderStatuses },
       { query: "насос" },
       { priority: "high" },
+      { sort: "deadline" as const },
     ])
       expect(orderFilterKey({ ...filters, ...changed }, master)).not.toBe(key);
     expect(orderFilterKey({ ...filters, status: [...filters.status].reverse() }, master)).toBe(key);

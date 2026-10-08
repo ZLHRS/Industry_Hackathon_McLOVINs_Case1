@@ -2026,6 +2026,30 @@ textarea:hover {
   color: #cfddd9;
   text-decoration-color: #63847d;
 }
+.user-card .user-current-orders,
+.mobile-header .mobile-current-orders {
+  cursor: pointer;
+  font-weight: 750;
+  text-align: left;
+}
+.user-card .user-current-orders {
+  min-height: 0;
+  padding: 0;
+  color: #f3fbf8;
+  font-size: 1rem;
+}
+.mobile-header .mobile-current-orders {
+  min-height: 0;
+  max-width: 9rem;
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #b7ccc6;
+  font: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .app-main {
   max-width: 1720px;
   padding: clamp(1.4rem, 3.2vw, 3rem);

@@ -238,6 +238,73 @@ async def test_reads_filters_pagination_counts_and_equipment_history(api, databa
     assert (await client.get("/api/v1/work-orders?limit=201", headers=headers)).status_code == 422
 
 
+async def test_work_order_sorts_before_pagination_with_stable_uuid_ties(api, database):
+    now = datetime.now(UTC) + timedelta(days=3)
+    first = await issue(api, create_body(api, priority="high"))
+    second = await issue(api, create_body(api, priority="emergency"))
+    third = await issue(api, create_body(api, priority="normal"))
+    fourth = await issue(api, create_body(api, priority="normal"))
+    async with database.sessions.begin() as session:
+        await session.execute(
+            update(WorkOrder)
+            .where(WorkOrder.id == UUID(first["order_id"]))
+            .values(issued_at=now, deadline=now + timedelta(hours=8))
+        )
+        await session.execute(
+            update(WorkOrder)
+            .where(WorkOrder.id == UUID(second["order_id"]))
+            .values(issued_at=now + timedelta(hours=3), deadline=now + timedelta(hours=5))
+        )
+        for item in (third, fourth):
+            await session.execute(
+                update(WorkOrder)
+                .where(WorkOrder.id == UUID(item["order_id"]))
+                .values(issued_at=now + timedelta(hours=1), deadline=now + timedelta(hours=4))
+            )
+
+    tied_ids = sorted([third["order_id"], fourth["order_id"]])
+    expected = {
+        "priority": [second["order_id"], first["order_id"], *tied_ids],
+        "deadline": [*tied_ids, second["order_id"], first["order_id"]],
+        "newest": [second["order_id"], *tied_ids, first["order_id"]],
+        "oldest": [first["order_id"], *tied_ids, second["order_id"]],
+    }
+
+    async def page_ids(sort: str | None) -> tuple[list[str], dict[str, object]]:
+        params = {"limit": 2}
+        if sort is not None:
+            params["sort"] = sort
+        first_page = await api["client"].get(
+            "/api/v1/work-orders", params=params, headers=api["headers"]["master"]
+        )
+        assert first_page.status_code == 200, first_page.text
+        params["offset"] = 2
+        second_page = await api["client"].get(
+            "/api/v1/work-orders", params=params, headers=api["headers"]["master"]
+        )
+        assert second_page.status_code == 200, second_page.text
+        return (
+            [item["id"] for item in first_page.json()["items"]]
+            + [item["id"] for item in second_page.json()["items"]],
+            first_page.json(),
+        )
+
+    default_ids, default_page = await page_ids(None)
+    assert default_ids == expected["priority"]
+    assert default_page["total"] == 4
+    assert default_page["counts"]["issued"] == 4
+    for sort, expected_ids in expected.items():
+        ids, page = await page_ids(sort)
+        assert ids == expected_ids
+        assert page["total"] == 4
+        assert page["counts"]["issued"] == 4
+    assert (
+        await api["client"].get(
+            "/api/v1/work-orders", params={"sort": "invalid"}, headers=api["headers"]["master"]
+        )
+    ).status_code == 422
+
+
 async def test_master_filter_and_scoped_master_options(api, database):
     client = api["client"]
     first = await issue(api)
@@ -255,6 +322,13 @@ async def test_master_filter_and_scoped_master_options(api, database):
     )
     assert response.status_code == 201, response.text
     third = response.json()
+    response = await client.post(
+        "/api/v1/work-orders",
+        json=create_body(api, executor_id=str(api["users"]["executor"])),
+        headers=api["headers"]["colleague"] | {"Idempotency-Key": str(uuid4())},
+    )
+    assert response.status_code == 201, response.text
+    executor_colleague_order = response.json()
     async with database.sessions.begin() as session:
         colleague = await session.get(Employee, api["users"]["colleague"])
         assert colleague is not None
@@ -266,9 +340,14 @@ async def test_master_filter_and_scoped_master_options(api, database):
         {"id": str(api["users"]["colleague"]), "display_name": "colleague"},
         {"id": str(api["users"]["master"]), "display_name": "master"},
     ]
-    assert (
-        await client.get("/api/v1/work-orders/masters", headers=api["headers"]["executor"])
-    ).status_code == 403
+    executor_masters = await client.get(
+        "/api/v1/work-orders/masters", headers=api["headers"]["executor"]
+    )
+    assert executor_masters.status_code == 200
+    assert executor_masters.json() == [
+        {"id": str(api["users"]["colleague"]), "display_name": "colleague"},
+        {"id": str(api["users"]["master"]), "display_name": "master"},
+    ]
 
     master_page = await client.get(
         "/api/v1/work-orders",
@@ -295,8 +374,8 @@ async def test_master_filter_and_scoped_master_options(api, database):
         headers=api["headers"]["master"],
     )
     assert colleague_all.status_code == 200
-    assert colleague_all.json()["total"] == 2
-    assert colleague_all.json()["counts"]["issued"] == 2
+    assert colleague_all.json()["total"] == 3
+    assert colleague_all.json()["counts"]["issued"] == 3
     assert colleague_all.json()["attention_count"] == 1
     assert colleague_all.json()["items"][0]["id"] == third["order_id"]
 
@@ -307,13 +386,22 @@ async def test_master_filter_and_scoped_master_options(api, database):
             headers=api["headers"]["master"],
         )
     ).status_code == 404
-    assert (
-        await client.get(
-            "/api/v1/work-orders",
-            params={"master_id": str(api["users"]["master"])},
-            headers=api["headers"]["executor"],
-        )
-    ).status_code == 403
+    executor_page = await client.get(
+        "/api/v1/work-orders",
+        params={"master_id": str(api["users"]["colleague"])},
+        headers=api["headers"]["executor"],
+    )
+    assert executor_page.status_code == 200
+    assert executor_page.json()["total"] == 1
+    assert executor_page.json()["items"][0]["id"] == executor_colleague_order["order_id"]
+    for master_id in (api["users"]["foreign"], uuid4()):
+        assert (
+            await client.get(
+                "/api/v1/work-orders",
+                params={"master_id": str(master_id)},
+                headers=api["headers"]["executor"],
+            )
+        ).status_code == 404
 
 
 @pytest.mark.parametrize("reference", ["material", "fault"])

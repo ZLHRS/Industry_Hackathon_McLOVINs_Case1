@@ -36,7 +36,13 @@ import type {
 import "./styles.css";
 import { useAppLocation, readRoute, navigate, directoryUrl, closeOrderPage } from "./lib/navigation";
 
-import { readOrderFilters, orderFiltersUrl, orderFilterKey, type OrderFilters } from "./lib/orderFilters";
+import {
+  archivedOrderStatuses,
+  readOrderFilters,
+  orderFiltersUrl,
+  orderFilterKey,
+  type OrderFilters,
+} from "./lib/orderFilters";
 
 type Dashboard = {
   orderFilterKey?: string;
@@ -242,6 +248,8 @@ export default function App() {
       if (!actor) return;
       const currentFilters = requestedFilters ?? readOrderFilters(appLocation, actor);
       const currentFilterKey = orderFilterKey(currentFilters, actor);
+      const historyPage = currentFilters.status.join(",") === archivedOrderStatuses.join(",");
+      const limit = historyPage ? 24 : 50;
       const guard = authGeneration.current;
       const request = ++refreshGeneration.current;
       setLoading(true);
@@ -265,19 +273,26 @@ export default function App() {
                 equipment_id: currentFilters.equipment_id || undefined,
                 executor_id: actor.role === "executor" ? actor.id : currentFilters.executor_id || undefined,
                 master_id:
-                  ["master", "manager"].includes(actor.role) && currentFilters.master_id !== "all"
+                  ["master", "manager", "executor"].includes(actor.role) && currentFilters.master_id !== "all"
                     ? currentFilters.master_id || undefined
                     : undefined,
                 q: currentFilters.query || undefined,
                 attention: currentFilters.attention || undefined,
+                sort: currentFilters.sort,
                 offset: currentFilters.offset,
-                limit: 50,
+                limit,
               }),
           canViewWorkload(actor.role) ? api.workload() : Promise.resolve([]),
           actor.role === "master" ? api.employees() : Promise.resolve([]),
-          ["master", "manager"].includes(actor.role) ? api.masters() : Promise.resolve([]),
+          ["master", "manager", "executor"].includes(actor.role) ? api.masters() : Promise.resolve([]),
         ]);
         if (guard !== authGeneration.current || request !== refreshGeneration.current) return;
+        if (orders.items.length === 0 && currentFilters.offset > 0 && currentFilters.offset >= orders.total) {
+          const lastOffset =
+            orders.total > 0 ? Math.floor((orders.total - 1) / orders.limit) * orders.limit : 0;
+          navigate(orderFiltersUrl({ ...currentFilters, offset: lastOffset }), true);
+          return;
+        }
         const dashboard = { catalog, orders, workload, employees, masters, orderFilterKey: currentFilterKey };
         setData(dashboard);
         setSavedAt(null);
@@ -448,6 +463,10 @@ export default function App() {
     };
   }, [api, user]);
   const changeFilters = (next: OrderFilters) => navigate(orderFiltersUrl(next), true);
+  const openOwnOrders = () => {
+    if (!user || user.role === "admin") return;
+    navigate(orderFiltersUrl(readOrderFilters("/orders", user)), true);
+  };
   const loadedOrderRoute = useRef("");
   useEffect(() => {
     if (!user || route.view !== "orders" || route.orderId || route.equipmentId) {
@@ -586,7 +605,13 @@ export default function App() {
         </nav>
         <div className="user-card">
           <LanguageSwitcher />
-          <strong>{user.display_name}</strong>
+          {user.role === "admin" ? (
+            <strong>{user.display_name}</strong>
+          ) : (
+            <button className="user-current-orders" type="button" onClick={openOwnOrders}>
+              {user.display_name}
+            </button>
+          )}
           <small>
             {user.role === "master"
               ? t("Мастер")
@@ -608,9 +633,15 @@ export default function App() {
           <strong>{t("ТехНаряд")}</strong>
         </div>
         <div>
-          <small>
-            {user.display_name} · {user.role === "executor" ? t("смена") : t("контур")}
-          </small>
+          {user.role === "admin" ? (
+            <small>
+              {user.display_name} · {t("контур")}
+            </small>
+          ) : (
+            <button className="mobile-current-orders" type="button" onClick={openOwnOrders}>
+              {user.display_name} · {user.role === "executor" ? t("смена") : t("контур")}
+            </button>
+          )}
           <button aria-label={t("Выйти из учётной записи")} onClick={() => void signOut()}>
             {t("Выйти")}
           </button>
@@ -740,11 +771,14 @@ export default function App() {
               await refresh();
             }}
             onSuggest={(input) => api.suggestions(input)}
-            onHistory={async (equipmentId) => {
-              const page = await api.equipmentHistory(equipmentId);
-              setData((current) => (current ? { ...current, orders: page } : current));
-              setView("orders");
-            }}
+            onHistory={async (equipmentId) =>
+              changeFilters({
+                ...filters,
+                status: archivedOrderStatuses,
+                equipment_id: equipmentId,
+                offset: 0,
+              })
+            }
             loading={loading}
           />
         )}{" "}
