@@ -13,6 +13,7 @@ async function openForm(page: Page) {
   await page.getByRole("button", { name: "Войти", exact: true }).click();
   await page.getByRole("button", { name: "Выдать наряд", exact: true }).click();
   const dialog = page.getByRole("dialog");
+  await dialog.getByText("Дополнительные параметры", { exact: true }).click();
   await dialog.getByRole("combobox", { name: "Участок", exact: true }).selectOption(state.area_id);
   await dialog.getByRole("combobox", { name: "Оборудование", exact: true }).selectOption(state.equipment_id);
   return dialog;
@@ -35,33 +36,33 @@ test("issuance suggestions require confirmation and persist the selected fault",
   await expect(worker).toHaveValue("");
   await expect(fault).toHaveValue("");
   const description = `Перегрев двигателя, требуется проверка ${crypto.randomUUID().slice(0, 8)}`;
-  await dialog.getByRole("textbox", { name: "Описание", exact: true }).fill(description);
   const responsePromise = page.waitForResponse((r) => r.url().endsWith("/work-orders/suggestions"));
-  await dialog.getByRole("button", { name: "Подобрать по описанию", exact: true }).click();
+  await dialog.getByRole("textbox", { name: "Описание", exact: true }).fill(description);
   const response = await responsePromise;
   expect(response.status()).toBe(200);
   const result = await response.json();
   expect(result.faults.length).toBeGreaterThan(0);
   const suggested = result.faults[0];
-  await expect(dialog.getByRole("button", { name: "Выбрать шифр", exact: true }).first()).toBeVisible();
+  const suggestedFault = dialog
+    .locator(".advanced-fault-suggestions")
+    .getByRole("button", { name: `${suggested.code} · ${suggested.name}` });
+  await expect(suggestedFault).toBeVisible();
   await expect(fault).toHaveValue("");
   await expect(worker).toHaveValue("");
   await page.screenshot({ path: info.outputPath("suggestions-desktop.png") });
-  await dialog.getByRole("button", { name: "Выбрать шифр", exact: true }).first().click();
+  const executorResponse = page.waitForResponse((r) => r.url().endsWith("/work-orders/suggestions"));
+  await suggestedFault.click();
   await expect(fault).toHaveValue(suggested.fault_code_id);
   await expect(worker).toHaveValue("");
   await expect(dialog.getByLabel("Срок (Asia/Almaty)", { exact: true })).toHaveValue("");
-  const executorResponse = page.waitForResponse((r) => r.url().endsWith("/work-orders/suggestions"));
-  await dialog.getByRole("button", { name: "Подобрать по описанию", exact: true }).click();
   const confirmed = await (await executorResponse).json();
   expect(confirmed.required_specialty).toBe(suggested.specialty);
   expect(confirmed.selected_norm_minutes).toBe(suggested.norm_minutes);
   expect(confirmed.executors.length).toBeGreaterThan(0);
-  await expect(
-    dialog.getByRole("button", { name: "Выбрать исполнителя", exact: true }).first(),
-  ).toBeVisible();
+  const suggestedExecutor = dialog.getByTestId(`quick-executor-${confirmed.executors[0].employee_id}`);
+  await expect(suggestedExecutor).toBeVisible();
   await expect(worker).toHaveValue("");
-  await dialog.getByRole("button", { name: "Выбрать исполнителя", exact: true }).first().click();
+  await suggestedExecutor.click();
   await expect(worker).toHaveValue(confirmed.executors[0].employee_id);
   await dialog
     .locator(".order-suggestions")
@@ -73,10 +74,7 @@ test("issuance suggestions require confirmation and persist the selected fault",
     await dialog.getByRole("textbox", { name: "Описание", exact: true }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath(`suggestions-${width}.png`) });
     if (width === 390) {
-      await dialog
-        .getByRole("button", { name: "Выбрать исполнителя", exact: true })
-        .first()
-        .scrollIntoViewIfNeeded();
+      await suggestedExecutor.scrollIntoViewIfNeeded();
       await page.screenshot({ path: info.outputPath("executor-reasons-mobile.png") });
     }
   }
@@ -103,10 +101,6 @@ test("issuance suggestions require confirmation and persist the selected fault",
 
 test("unavailable suggestions preserve manual choices and allow issuing", async ({ page }) => {
   const dialog = await openForm(page);
-  await dialog.getByRole("textbox", { name: "Описание", exact: true }).fill("Проверка привода вручную");
-  await dialog
-    .getByRole("combobox", { name: "Исполнитель", exact: true })
-    .selectOption(state.selected_executor_id);
   await page.route("**/api/v1/work-orders/suggestions", (route) =>
     route.fulfill({
       status: 503,
@@ -114,14 +108,19 @@ test("unavailable suggestions preserve manual choices and allow issuing", async 
       body: JSON.stringify({ detail: "Подсказки временно недоступны" }),
     }),
   );
-  await dialog.getByRole("button", { name: "Подобрать по описанию", exact: true }).click();
+  const unavailable = page.waitForResponse((r) => r.url().endsWith("/work-orders/suggestions"));
+  await dialog.getByRole("textbox", { name: "Описание", exact: true }).fill("Проверка привода вручную");
+  expect((await unavailable).status()).toBe(503);
   await expect(dialog.getByText(/Подбор недоступен/)).toBeVisible();
-  await expect(dialog.getByRole("combobox", { name: "Исполнитель", exact: true })).toHaveValue(
-    state.selected_executor_id,
-  );
   await dialog
     .getByRole("combobox", { name: "Шифр неисправности", exact: true })
     .selectOption(state.fault_code_id);
+  await dialog
+    .getByRole("combobox", { name: "Исполнитель", exact: true })
+    .selectOption(state.selected_executor_id);
+  await expect(dialog.getByRole("combobox", { name: "Исполнитель", exact: true })).toHaveValue(
+    state.selected_executor_id,
+  );
   await dialog.getByRole("button", { name: "Через 2 часа", exact: true }).click();
   const createdPromise = page.waitForResponse(
     (r) => r.url().endsWith("/api/v1/work-orders") && r.request().method() === "POST",
@@ -140,7 +139,10 @@ test("late suggestion response cannot overwrite a newer description or selection
   const received = new Promise<void>((resolve) => {
     requested = resolve;
   });
+  let requests = 0;
   await page.route("**/api/v1/work-orders/suggestions", async (route) => {
+    requests += 1;
+    if (requests !== 1) return route.continue();
     requested();
     await gate;
     await route.fulfill({
@@ -162,16 +164,24 @@ test("late suggestion response cannot overwrite a newer description or selection
     });
   });
   await dialog.getByRole("textbox", { name: "Описание", exact: true }).fill("Первое описание");
-  await dialog.getByRole("button", { name: "Подобрать по описанию", exact: true }).click();
   await received;
+  const newer = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/work-orders/suggestions") &&
+      response.request().postDataJSON().description === "Новое описание",
+  );
   await dialog.getByRole("textbox", { name: "Описание", exact: true }).fill("Новое описание");
   await dialog
     .getByRole("combobox", { name: "Исполнитель", exact: true })
     .selectOption(state.selected_executor_id);
-  const settled = page.waitForResponse((r) => r.url().endsWith("/work-orders/suggestions"));
+  await newer;
+  const settled = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/work-orders/suggestions") &&
+      response.request().postDataJSON().description === "Первое описание",
+  );
   release();
   await settled;
-  await expect(dialog.getByRole("button", { name: "Подобрать по описанию", exact: true })).toBeEnabled();
   await expect(dialog.getByRole("textbox", { name: "Описание", exact: true })).toHaveValue("Новое описание");
   await expect(dialog.getByRole("combobox", { name: "Исполнитель", exact: true })).toHaveValue(
     state.selected_executor_id,

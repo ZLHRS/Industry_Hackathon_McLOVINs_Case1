@@ -62,6 +62,11 @@ test("master scans a decodable QR, logs in and issues with equipment prefilled",
   await page.goto(equipmentPath);
   await page.getByRole("button", { name: "Выдать наряд", exact: true }).click();
   const dialog = page.getByRole("dialog");
+  await expect(dialog.getByTestId(`quick-equipment-${state.equipment_id}`)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await dialog.getByText("Дополнительные параметры", { exact: true }).click();
   await expect(dialog.getByRole("combobox", { name: "Участок", exact: true })).toHaveValue(state.area_id);
   await expect(dialog.getByRole("combobox", { name: "Оборудование", exact: true })).toHaveValue(
     state.equipment_id,

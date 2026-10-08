@@ -1,5 +1,42 @@
 /** Interface copy only. User-entered and server-authored content is never translated here. */
 export const translations: Record<string, { kk: string; en: string }> = {
+  "Выберите оборудование, опишите работу и назначьте исполнителя со сроком.": {
+    kk: "Жабдықты таңдаңыз, жұмысты сипаттаңыз және орындаушы мен мерзімді белгілеңіз.",
+    en: "Choose equipment, describe the work, then assign a technician and deadline.",
+  },
+  "Участок определится по оборудованию.": {
+    kk: "Учаске жабдық бойынша анықталады.",
+    en: "The area is set from the equipment.",
+  },
+  "Найти оборудование": { kk: "Жабдықты табу", en: "Find equipment" },
+  "Участок не указан": { kk: "Учаске көрсетілмеген", en: "Area not set" },
+  "Оборудование не найдено.": { kk: "Жабдық табылмады.", en: "No equipment found." },
+  "Подбор запускается после описания и не назначает исполнителя сам.": {
+    kk: "Іріктеу сипаттамадан кейін басталады және орындаушыны өзі тағайындамайды.",
+    en: "Suggestions start after the description and never assign a technician automatically.",
+  },
+  "Сначала выберите оборудование и опишите работу.": {
+    kk: "Алдымен жабдықты таңдап, жұмысты сипаттаңыз.",
+    en: "First choose equipment and describe the work.",
+  },
+  Выбрано: { kk: "Таңдалды", en: "Selected" },
+  Выбрать: { kk: "Таңдау", en: "Select" },
+  "Параметры наряда": { kk: "Наряд параметрлері", en: "Work order settings" },
+  "Выберите реальный срок: он не рассчитывается автоматически.": {
+    kk: "Нақты мерзімді таңдаңыз: ол автоматты түрде есептелмейді.",
+    en: "Choose a realistic deadline; it is not calculated automatically.",
+  },
+  "К выдаче:": { kk: "Беруге дайын:", en: "Ready to issue:" },
+  "оборудование не выбрано": { kk: "жабдық таңдалмаған", en: "equipment not selected" },
+  "исполнитель не выбран": { kk: "орындаушы таңдалмаған", en: "technician not selected" },
+  "срок не выбран": { kk: "мерзім таңдалмаған", en: "deadline not selected" },
+  "Дополнительные параметры": { kk: "Қосымша параметрлер", en: "Additional settings" },
+  "Подходящие шифры": { kk: "Сәйкес ақау кодтары", en: "Matching fault codes" },
+  "Заполните оборудование, описание и исполнителя.": {
+    kk: "Жабдықты, сипаттаманы және орындаушыны толтырыңыз.",
+    en: "Fill in equipment, description and technician.",
+  },
+  "Выдаём наряд…": { kk: "Наряд берілуде…", en: "Issuing work order…" },
   "Выберите участок и оборудование, затем опишите работу.": {
     kk: "Учаске мен жабдықты таңдап, жұмысты сипаттаңыз.",
     en: "Choose an area and equipment, then describe the work.",

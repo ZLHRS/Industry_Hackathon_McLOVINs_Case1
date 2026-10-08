@@ -72,6 +72,7 @@ test("full lifecycle: issue, before/after photos, mobile materials, master close
   const title = description();
   await page.getByRole("button", { name: "Выдать наряд", exact: true }).click();
   const dialog = page.getByRole("dialog");
+  await dialog.getByText("Дополнительные параметры", { exact: true }).click();
   await expect(dialog.getByLabel("Срок (Asia/Almaty)", { exact: true })).toHaveValue("");
   await dialog.getByRole("combobox", { name: "Участок", exact: true }).selectOption(state.area_id);
   await dialog.getByRole("combobox", { name: "Оборудование", exact: true }).selectOption(state.equipment_id);
@@ -82,7 +83,10 @@ test("full lifecycle: issue, before/after photos, mobile materials, master close
   await dialog.getByRole("button", { name: "Через 2 часа", exact: true }).click();
   const initialComment = "Согласовать остановку с мастером перед ремонтом.";
   await dialog.getByLabel("Комментарий для исполнителя", { exact: true }).fill(initialComment);
-  await dialog.getByRole("combobox", { name: "Приоритет", exact: true }).selectOption("emergency");
+  await dialog
+    .locator(".quick-order-defaults")
+    .getByRole("combobox", { name: "Приоритет", exact: true })
+    .selectOption("emergency");
   const created = page.waitForResponse(
     (response) => response.url().endsWith("/api/v1/work-orders") && response.request().method() === "POST",
   );

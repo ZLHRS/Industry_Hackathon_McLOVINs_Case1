@@ -2,14 +2,15 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-// Read-only smoke tests against the local demo. All work-order writes are intercepted.
+// Read-only smoke tests against the isolated E2E server. All work-order writes are intercepted.
 test.use({ screenshot: "off", trace: "off" });
 const languageLabel = "Язык / Тіл / Language";
-const credentials = resolve(process.cwd(), "../var/docker/industrial-credentials.txt");
-const password = () => {
-  const result = /^Password: (.+)$/m.exec(readFileSync(credentials, "utf8"));
-  if (!result) throw new Error("Local demo credentials are missing");
-  return result[1].trim();
+const state = JSON.parse(readFileSync(resolve(import.meta.dirname, "../../tmp/e2e-server.json"), "utf8")) as {
+  secret: string;
+  master_login: string;
+  executor_login: string;
+  manager_login: string;
+  admin_login: string;
 };
 const copy = {
   ru: {
@@ -40,6 +41,11 @@ const copy = {
     close: "Close",
   },
 };
+const additionalSettings = {
+  ru: "Дополнительные параметры",
+  kk: "Қосымша параметрлер",
+  en: "Additional settings",
+};
 type Language = keyof typeof copy;
 async function switchLanguage(page: Page, language: Language) {
   await page.locator(".language-switcher select:visible").first().selectOption(language);
@@ -49,7 +55,7 @@ async function login(page: Page, account: string, language: Language = "ru") {
   await page.goto("/");
   await switchLanguage(page, language);
   await page.getByLabel(copy[language].login, { exact: true }).fill(account);
-  await page.getByLabel(copy[language].password, { exact: true }).fill(password());
+  await page.getByLabel(copy[language].password, { exact: true }).fill(state.secret);
   await page.getByRole("button", { name: copy[language].signIn, exact: true }).click();
   await expect(page.locator(".app-shell")).toBeVisible();
 }
@@ -87,10 +93,11 @@ test("switching an open order form preserves draft, identifiers and request payl
       body: '{"detail":"i18n_test_no_write"}',
     });
   });
-  await login(page, "master.sadykov");
+  await login(page, state.master_login);
   await expect(page.getByRole("heading", { name: copy.ru.orders, exact: true })).toBeVisible();
   await page.getByRole("button", { name: copy.ru.issue, exact: true }).click();
   const dialog = page.getByRole("dialog");
+  await dialog.getByText("Дополнительные параметры", { exact: true }).click();
   const draft = "Қазақша тапсырма / English / Русский — <test>";
   await dialog.getByLabel("Описание", { exact: true }).fill(draft);
   const equipment = dialog.getByRole("combobox", { name: "Оборудование", exact: true });
@@ -104,6 +111,7 @@ test("switching an open order form preserves draft, identifiers and request payl
   await dialog.getByRole("button", { name: "Через 1 час", exact: true }).click();
   for (const language of ["ru", "kk", "en"] as const) {
     await dialog.getByLabel(languageLabel).selectOption(language);
+    await expect(dialog.locator("summary")).toHaveText(additionalSettings[language]);
     await expect(dialog.getByRole("textbox", { name: copy[language].description, exact: true })).toHaveValue(
       draft,
     );
@@ -125,54 +133,53 @@ test("switching an open order form preserves draft, identifiers and request payl
 test("suggestions localize immediately and invalidate old results without clearing the draft", async ({
   page,
 }) => {
-  await login(page, "master.sadykov");
+  await login(page, state.master_login);
   await page.getByRole("button", { name: copy.ru.issue, exact: true }).click();
   const dialog = page.getByRole("dialog");
+  await dialog.getByText("Дополнительные параметры", { exact: true }).click();
   await dialog.getByRole("combobox", { name: "Оборудование", exact: true }).selectOption({ index: 1 });
   const draft = "Motor overheating / Қозғалтқыш қызып кетті";
-  await dialog.getByRole("textbox", { name: "Описание", exact: true }).fill(draft);
   const responsePromise = page.waitForResponse((r) => r.url().endsWith("/work-orders/suggestions"));
-  await dialog.getByRole("button", { name: "Подобрать по описанию", exact: true }).click();
+  await dialog.getByRole("textbox", { name: "Описание", exact: true }).fill(draft);
   const response = await responsePromise;
   expect(response.status()).toBe(200);
   expect((await response.json()).faults.length).toBeGreaterThan(0);
-  for (const [language, choose] of [
-    ["en", "Choose code"],
-    ["kk", "Кодты таңдау"],
-    ["ru", "Выбрать шифр"],
-  ] as const) {
+  for (const language of ["en", "kk", "ru"] as const) {
     await dialog.getByLabel(languageLabel).selectOption(language);
-    await expect(dialog.getByRole("button", { name: choose, exact: true }).first()).toBeVisible();
+    await expect(dialog.locator("summary")).toHaveText(additionalSettings[language]);
+    await expect(dialog.locator(".advanced-fault-suggestions")).toBeVisible();
     await expect(dialog.getByRole("textbox", { name: copy[language].description, exact: true })).toHaveValue(
       draft,
     );
-    if (language === "en") await expect(dialog.locator(".suggestion-results")).toContainText("The word");
-    if (language === "kk") await expect(dialog.locator(".suggestion-results")).toContainText("сөзі");
+    if (language === "en")
+      await expect(dialog.locator(".advanced-fault-suggestions")).toContainText("The word");
+    if (language === "kk") await expect(dialog.locator(".advanced-fault-suggestions")).toContainText("сөзі");
     await page.setViewportSize({ width: 390, height: 844 });
     await noOverflow(page);
   }
   const description = dialog.getByRole("textbox", { name: "Описание", exact: true });
   await description.fill(draft + " changed");
   await description.fill(draft);
-  await expect(dialog.getByRole("button", { name: "Выбрать шифр", exact: true })).toHaveCount(0);
-  await expect(
-    dialog.getByText("Данные изменились. Подберите варианты снова.", { exact: true }),
-  ).toBeVisible();
+  await expect(dialog.locator(".advanced-fault-suggestions")).toHaveCount(0);
   await page.route("**/api/v1/work-orders/suggestions", (route) =>
     route.fulfill({ status: 503, json: { detail: "test_unavailable" } }),
   );
-  await dialog.getByRole("button", { name: "Подобрать по описанию", exact: true }).click();
+  const unavailable = page.waitForResponse((response) => response.url().endsWith("/work-orders/suggestions"));
+  await description.fill(draft + " refreshed");
+  await unavailable;
   await expect(dialog.getByRole("alert")).toContainText("Подбор недоступен");
   await dialog.getByLabel(languageLabel).selectOption("en");
   await expect(dialog.getByRole("alert")).toContainText("Suggestions are unavailable");
-  await expect(dialog.getByRole("textbox", { name: copy.en.description, exact: true })).toHaveValue(draft);
+  await expect(dialog.getByRole("textbox", { name: copy.en.description, exact: true })).toHaveValue(
+    `${draft} refreshed`,
+  );
 });
 
 for (const [role, account, routes] of [
-  ["master", "master.sadykov", ["/orders", "/workload", "/reference", "/analytics"]],
-  ["executor", "exec.amanov", ["/orders", "/analytics"]],
-  ["manager", "manager.tulegen", ["/orders", "/workload", "/analytics"]],
-  ["admin", "admin.karim", ["/employees", "/reference"]],
+  ["master", state.master_login, ["/orders", "/workload", "/reference", "/analytics"]],
+  ["executor", state.executor_login, ["/orders", "/analytics"]],
+  ["manager", state.manager_login, ["/orders", "/workload", "/analytics"]],
+  ["admin", state.admin_login, ["/employees", "/reference"]],
 ] as const) {
   test(`${role}: all permitted screens in three languages on a phone`, async ({ page }) => {
     const errors: string[] = [];

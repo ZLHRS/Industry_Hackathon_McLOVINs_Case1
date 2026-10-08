@@ -626,12 +626,17 @@ export function CreateOrderDialog({
   initialAreaId?: string;
   initialEquipmentId?: string;
 }) {
-  const initialArea = initialAreaId ?? catalog.areas.find((item) => item.is_active !== false)?.id ?? "";
+  const initialEquipment = catalog.equipment.find((item) => item.id === initialEquipmentId);
+  const initialArea =
+    initialEquipment?.area_id ??
+    initialAreaId ??
+    catalog.areas.find((item) => item.is_active !== false)?.id ??
+    "";
   const [input, setInput] = useState({
     work_type: "unplanned",
     description: "",
     area_id: initialArea,
-    equipment_id: initialEquipmentId ?? "",
+    equipment_id: initialEquipment?.id ?? "",
     fault_code_id: "",
     executor_id: "",
     priority: "normal",
@@ -642,19 +647,37 @@ export function CreateOrderDialog({
   const [suggestionError, setSuggestionError] = useState("");
   const [suggestions, setSuggestions] = useState<OrderSuggestions | null>(null);
   const [suggesting, setSuggesting] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [equipmentQuery, setEquipmentQuery] = useState("");
   const requestId = useRef(0);
-  const equipment = useMemo(
-    () => catalog.equipment.filter((item) => item.is_active !== false && item.area_id === input.area_id),
-    [catalog, input.area_id],
+  const suggestRef = useRef(onSuggest);
+  useEffect(() => {
+    suggestRef.current = onSuggest;
+  }, [onSuggest]);
+  const activeEquipment = useMemo(
+    () => catalog.equipment.filter((item) => item.is_active !== false),
+    [catalog.equipment],
   );
+  const equipment = useMemo(
+    () => activeEquipment.filter((item) => item.area_id === input.area_id),
+    [activeEquipment, input.area_id],
+  );
+  const quickEquipment = useMemo(() => {
+    const query = equipmentQuery.trim().toLocaleLowerCase();
+    if (!query) return activeEquipment;
+    return activeEquipment.filter((item) =>
+      [item.inventory_number, item.name, item.equipment_type].join(" ").toLocaleLowerCase().includes(query),
+    );
+  }, [activeEquipment, equipmentQuery]);
   const suggestionKey = [
     input.area_id,
     input.equipment_id,
     input.description.trim(),
     input.fault_code_id,
   ].join("|");
+  const canSuggest = Boolean(input.area_id && input.equipment_id && input.description.trim());
   const [receivedKey, setReceivedKey] = useState("");
-  const selectedEquipment = catalog.equipment.find((item) => item.id === input.equipment_id);
+  const selectedEquipment = activeEquipment.find((item) => item.id === input.equipment_id);
   const selectedNorm = catalog.time_norms.find(
     (item) =>
       item.fault_code_id === input.fault_code_id && item.equipment_type === selectedEquipment?.equipment_type,
@@ -679,43 +702,58 @@ export function CreateOrderDialog({
     [],
   );
 
-  async function requestSuggestions() {
-    if (!input.area_id || !input.equipment_id || !input.description.trim()) {
-      setSuggestionError(t("Выберите участок и оборудование, затем опишите работу."));
+  useEffect(() => {
+    const description = input.description.trim();
+    if (!input.area_id || !input.equipment_id || !description) {
+      requestId.current += 1;
       return;
     }
     const id = ++requestId.current;
     const key = suggestionKey;
-    setSuggesting(true);
-    setSuggestionError("");
-    try {
-      const result = await onSuggest({
-        area_id: input.area_id,
-        equipment_id: input.equipment_id,
-        description: input.description.trim(),
-        fault_code_id: input.fault_code_id || null,
-      });
-      if (id !== requestId.current || key !== suggestionKey) return;
-      setSuggestions(result);
-      setReceivedKey(key);
-    } catch {
-      if (id === requestId.current) {
-        setSuggestions(null);
-        setSuggestionError(t("Подбор недоступен. Заполните поля вручную или повторите попытку."));
-      }
-    } finally {
-      if (id === requestId.current) setSuggesting(false);
-    }
-  }
+    const timer = window.setTimeout(() => {
+      setSuggesting(true);
+      setSuggestionError("");
+      void suggestRef
+        .current({
+          area_id: input.area_id,
+          equipment_id: input.equipment_id,
+          description,
+          fault_code_id: input.fault_code_id || null,
+        })
+        .then((result) => {
+          if (id !== requestId.current || key !== suggestionKey) return;
+          setSuggestions(result);
+          setReceivedKey(key);
+        })
+        .catch(() => {
+          if (id !== requestId.current) return;
+          setSuggestions(null);
+          setSuggestionError(t("Подбор недоступен. Заполните поля вручную или повторите попытку."));
+        })
+        .finally(() => {
+          if (id === requestId.current) setSuggesting(false);
+        });
+    }, 450);
+    return () => {
+      window.clearTimeout(timer);
+      requestId.current += 1;
+    };
+  }, [input.area_id, input.description, input.equipment_id, input.fault_code_id, suggestionKey]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (submitting) return;
     setError("");
+    if (!input.equipment_id || !input.executor_id || !input.description.trim()) {
+      setError(t("Заполните оборудование, описание и исполнителя."));
+      return;
+    }
     if (!input.deadline) {
       setError(t("Укажите срок выполнения."));
       return;
     }
     try {
+      setSubmitting(true);
       await onCreate({
         ...input,
         work_type: input.work_type as CreateOrder["work_type"],
@@ -726,162 +764,128 @@ export function CreateOrderDialog({
       });
     } catch {
       setError(t("Наряд не создан. Проверьте обязательные поля и доступ участка."));
+    } finally {
+      setSubmitting(false);
     }
   }
+  function chooseEquipment(equipmentId: string) {
+    const item = activeEquipment.find((candidate) => candidate.id === equipmentId);
+    if (!item) return;
+    setSelectedSuggestedExecutor(null);
+    updateInput(
+      { ...input, area_id: item.area_id, equipment_id: item.id, executor_id: "", fault_code_id: "" },
+      true,
+    );
+  }
+  function chooseExecutor(person: OrderSuggestionExecutor) {
+    setSelectedSuggestedExecutor(person);
+    updateInput({ ...input, executor_id: person.employee_id });
+  }
+  const selectedExecutor =
+    suggestions?.executors.find((person) => person.employee_id === input.executor_id) ??
+    selectedSuggestedExecutor ??
+    workers.find((person) => person.employee_id === input.executor_id);
+  const activeSuggestions = canSuggest && receivedKey === suggestionKey ? suggestions : null;
+  const activeSuggestionError = canSuggest ? suggestionError : "";
   return (
     <Dialog title={t("Выдать наряд")} onClose={onClose}>
       <form className="dialog-form guided-order-form" onSubmit={(event) => void submit(event)}>
         <div className="form-progress" aria-label={t("Шаги выдачи наряда")}>
           <span>
-            <b>1</b> {t("Где работа")}
+            <b>1</b> {t("Оборудование")}
           </span>
           <span>
-            <b>2</b> {t("Что сделать")}
+            <b>2</b> {t("Описание")}
           </span>
           <span>
-            <b>3</b> {t("Кому")}
+            <b>3</b> {t("Исполнитель и срок")}
           </span>
         </div>
         <p className="form-hint">
-          {t("Система показывает варианты, но не выбирает исполнителя, шифр или срок вместо мастера.")}
+          {t("Выберите оборудование, опишите работу и назначьте исполнителя со сроком.")}
         </p>
-        <label>
-          {t("Участок")}
-          <select
-            required
-            value={input.area_id}
-            onChange={(event) =>
-              (() => {
-                setSelectedSuggestedExecutor(null);
-                updateInput(
-                  { ...input, area_id: event.target.value, equipment_id: "", executor_id: "" },
-                  true,
-                );
-              })()
-            }
-          >
-            {catalog.areas
-              .filter((item) => item.is_active !== false)
-              .map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.code} · {item.name}
-                </option>
-              ))}
-          </select>
-        </label>
-        <label>
-          {t("Оборудование")}
-          <select
-            required
-            value={input.equipment_id}
-            onChange={(event) => updateInput({ ...input, equipment_id: event.target.value }, true)}
-          >
-            <option value="">{t("Выберите оборудование")}</option>
-            {equipment.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.inventory_number} · {item.name}
-              </option>
+        <section className="quick-order-step" aria-labelledby="quick-equipment-heading">
+          <div className="quick-order-step-head">
+            <div>
+              <h3 id="quick-equipment-heading">1. {t("Выберите оборудование")}</h3>
+              <p>{t("Участок определится по оборудованию.")}</p>
+            </div>
+            {selectedEquipment && (
+              <span className="quick-selection" aria-live="polite">
+                {selectedEquipment.inventory_number}
+              </span>
+            )}
+          </div>
+          <label className="quick-search">
+            <span className="sr-only">{t("Найти оборудование")}</span>
+            <input
+              type="search"
+              value={equipmentQuery}
+              onChange={(event) => setEquipmentQuery(event.target.value)}
+              placeholder={t("Найти оборудование")}
+            />
+          </label>
+          <div className="quick-equipment-grid" aria-label={t("Оборудование")}>
+            {quickEquipment.map((item) => (
+              <button
+                className="quick-choice quick-equipment-choice"
+                key={item.id}
+                type="button"
+                data-testid={`quick-equipment-${item.id}`}
+                aria-pressed={input.equipment_id === item.id}
+                onClick={() => chooseEquipment(item.id)}
+              >
+                <strong>{item.inventory_number}</strong>
+                <span>{item.name}</span>
+                <small>
+                  {catalog.areas.find((area) => area.id === item.area_id)?.name ?? t("Участок не указан")}
+                </small>
+              </button>
             ))}
-          </select>
-        </label>
+          </div>
+          {quickEquipment.length === 0 && <p className="muted">{t("Оборудование не найдено.")}</p>}
+        </section>
         <label>
           {t("Описание")}
           <textarea
+            aria-label={t("Описание")}
             required
             minLength={1}
             value={input.description}
             onChange={(event) => updateInput({ ...input, description: event.target.value }, true)}
           />
         </label>
-        <label>
-          {t("Шифр неисправности")}
-          <select
-            value={input.fault_code_id}
-            onChange={(event) => updateInput({ ...input, fault_code_id: event.target.value }, true)}
-          >
-            <option value="">{t("Не выбран")}</option>
-            {catalog.fault_codes.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.code} · {item.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {selectedNorm !== undefined ? (
-          <p className="suggestion-norm">
-            {t("Ориентир трудоёмкости:")} {selectedNorm} {t("мин. Это не срок выполнения.")}
-          </p>
-        ) : (
-          input.fault_code_id && (
-            <p className="muted suggestion-note">
-              {t("Для выбранного шифра и типа оборудования нормы пока нет.")}
-            </p>
-          )
-        )}
         <section className="order-suggestions" aria-label={t("Подбор вариантов")}>
-          {input.fault_code_id && (
-            <p className="suggestion-selected-fault">
-              {t("Подбор исполнителя по выбранному шифру. Чтобы найти другой шифр, очистите это поле.")}
-            </p>
-          )}
           <div className="order-suggestions-head">
             <div>
-              <h3>{t("Подбор вариантов")}</h3>
-              <p>{t("Учитывает участок, оборудование, описание и текущую нагрузку.")}</p>
+              <h3>2. {t("Исполнитель")}</h3>
+              <p>{t("Подбор запускается после описания и не назначает исполнителя сам.")}</p>
             </div>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => void requestSuggestions()}
-              disabled={suggesting}
-            >
-              {suggesting ? t("Подбираем…") : t("Подобрать по описанию")}
-            </button>
+            {canSuggest && suggesting && <span className="suggestion-loading">{t("Подбираем…")}</span>}
           </div>
-          {suggestionError && (
+          {(!input.equipment_id || !input.description.trim()) && (
+            <p className="muted">{t("Сначала выберите оборудование и опишите работу.")}</p>
+          )}
+          {activeSuggestionError && (
             <p className="error" role="alert">
-              {message(suggestionError)}
+              {message(activeSuggestionError)}
             </p>
           )}
-          {suggestions && receivedKey !== suggestionKey && (
-            <p className="muted">{t("Данные изменились. Подберите варианты снова.")}</p>
-          )}
-          {suggestions && receivedKey === suggestionKey && (
+          {activeSuggestions && (
             <div className="suggestion-results">
-              {!input.fault_code_id && suggestions.faults.length > 0 && (
-                <section>
-                  <h4>{t("Шифры неисправности")}</h4>
-                  {suggestions.faults.map((fault) => (
-                    <article className="suggestion-card" key={fault.fault_code_id}>
-                      <div>
-                        <strong>
-                          {fault.code} · {fault.name}
-                        </strong>
-                        {fault.reasons.length > 0 && (
-                          <small>{fault.reasons.map(suggestionText).join(" · ")}</small>
-                        )}
-                        {fault.norm_minutes !== null && (
-                          <small>
-                            {t("Ориентир трудоёмкости:")} {fault.norm_minutes} {t("мин")}
-                          </small>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        className="text-button"
-                        onClick={() => updateInput({ ...input, fault_code_id: fault.fault_code_id }, true)}
-                      >
-                        {t("Выбрать шифр")}
-                      </button>
-                    </article>
-                  ))}
-                </section>
-              )}
-              {suggestions.executors.length > 0 && (
+              {activeSuggestions.executors.length > 0 && (
                 <section>
                   <h4>{t("Исполнители")}</h4>
-                  {suggestions.executors.map((person) => (
-                    <article className="suggestion-card" key={person.employee_id}>
+                  {activeSuggestions.executors.map((person) => (
+                    <button
+                      className="suggestion-card quick-choice quick-executor-choice"
+                      key={person.employee_id}
+                      type="button"
+                      data-testid={`quick-executor-${person.employee_id}`}
+                      aria-pressed={input.executor_id === person.employee_id}
+                      disabled={!person.is_on_shift}
+                      onClick={() => chooseExecutor(person)}
+                    >
                       <div>
                         <strong>
                           {person.display_name} · {person.specialty} · {person.grade} {t("разряд")}
@@ -909,21 +913,14 @@ export function CreateOrderDialog({
                           )}
                         </small>
                       </div>
-                      <button
-                        type="button"
-                        className="text-button"
-                        onClick={() => {
-                          setSelectedSuggestedExecutor(person);
-                          updateInput({ ...input, executor_id: person.employee_id });
-                        }}
-                      >
-                        {t("Выбрать исполнителя")}
-                      </button>
-                    </article>
+                      <span className="quick-choice-action">
+                        {input.executor_id === person.employee_id ? t("Выбрано") : t("Выбрать")}
+                      </span>
+                    </button>
                   ))}
                 </section>
               )}
-              {suggestions.notes.map((note, index) => (
+              {activeSuggestions.notes.map((note, index) => (
                 <p className="muted suggestion-note" key={index}>
                   {suggestionText(note)}
                 </p>
@@ -931,110 +928,228 @@ export function CreateOrderDialog({
             </div>
           )}
         </section>
-        <label>
-          {t("Исполнитель")}
-          <select
-            required
-            value={input.executor_id}
-            onChange={(event) => {
-              setSelectedSuggestedExecutor(null);
-              updateInput({ ...input, executor_id: event.target.value });
-            }}
-          >
-            <option value="">{t("Выберите исполнителя")}</option>
-            {selectedSuggestedExecutor && !manualExecutorExists && (
-              <option value={selectedSuggestedExecutor.employee_id}>
-                {selectedSuggestedExecutor.display_name} · {selectedSuggestedExecutor.specialty} ·{" "}
-                {selectedSuggestedExecutor.grade} {t("разряд")}
-              </option>
+        <section className="quick-order-step deadline-step" aria-labelledby="quick-deadline-heading">
+          <div className="quick-order-defaults" aria-label={t("Параметры наряда")}>
+            <label>
+              {t("Тип")}
+              <select
+                value={input.work_type}
+                onChange={(event) => updateInput({ ...input, work_type: event.target.value })}
+              >
+                <option value="unplanned">{t("Внеплановый")}</option>
+                <option value="planned">{t("Плановый")}</option>
+              </select>
+            </label>
+            <label>
+              {t("Приоритет")}
+              <select
+                value={input.priority}
+                onChange={(event) => updateInput({ ...input, priority: event.target.value })}
+              >
+                {Object.entries(ruPriority).map(([key, value]) => (
+                  <option key={key} value={key}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="quick-order-step-head">
+            <div>
+              <h3 id="quick-deadline-heading">3. {t("Срок")}</h3>
+              <p>{t("Выберите реальный срок: он не рассчитывается автоматически.")}</p>
+            </div>
+          </div>
+          <div className="deadline-presets" aria-label={t("Быстрый выбор срока")}>
+            <button
+              type="button"
+              className="secondary"
+              data-testid="quick-deadline-1h"
+              onClick={() =>
+                updateInput({ ...input, deadline: almatyInputDate(new Date(Date.now() + 60 * 60_000)) })
+              }
+            >
+              {t("Через 1 час")}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              data-testid="quick-deadline-2h"
+              onClick={() =>
+                updateInput({ ...input, deadline: almatyInputDate(new Date(Date.now() + 2 * 60 * 60_000)) })
+              }
+            >
+              {t("Через 2 часа")}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              data-testid="quick-deadline-shift"
+              onClick={() => updateInput({ ...input, deadline: endOfCurrentShift() })}
+            >
+              {t("До конца смены")}
+            </button>
+          </div>
+        </section>
+        <p className="quick-order-summary" data-testid="quick-order-summary" aria-live="polite">
+          <strong>{t("К выдаче:")}</strong>{" "}
+          {selectedEquipment
+            ? `${selectedEquipment.inventory_number} · ${selectedEquipment.name}`
+            : t("оборудование не выбрано")}
+          {selectedExecutor ? ` · ${selectedExecutor.display_name}` : ` · ${t("исполнитель не выбран")}`}
+          {input.deadline ? ` · ${input.deadline.replace("T", " ")}` : ` · ${t("срок не выбран")}`}
+        </p>
+        <details className="order-advanced-options">
+          <summary>{t("Дополнительные параметры")}</summary>
+          <div className="order-advanced-content">
+            <label>
+              {t("Участок")}
+              <select
+                value={input.area_id}
+                onChange={(event) => {
+                  setSelectedSuggestedExecutor(null);
+                  updateInput(
+                    {
+                      ...input,
+                      area_id: event.target.value,
+                      equipment_id: "",
+                      executor_id: "",
+                      fault_code_id: "",
+                    },
+                    true,
+                  );
+                }}
+              >
+                {catalog.areas
+                  .filter((item) => item.is_active !== false)
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.code} · {item.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              {t("Оборудование")}
+              <select value={input.equipment_id} onChange={(event) => chooseEquipment(event.target.value)}>
+                <option value="">{t("Выберите оборудование")}</option>
+                {equipment.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.inventory_number} · {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              {t("Шифр неисправности")}
+              <select
+                value={input.fault_code_id}
+                onChange={(event) => {
+                  setSelectedSuggestedExecutor(null);
+                  updateInput({ ...input, fault_code_id: event.target.value, executor_id: "" }, true);
+                }}
+              >
+                <option value="">{t("Не выбран")}</option>
+                {catalog.fault_codes.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.code} · {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {!input.fault_code_id && activeSuggestions && activeSuggestions.faults.length > 0 && (
+              <section className="advanced-fault-suggestions" aria-label={t("Шифры неисправности")}>
+                <h4>{t("Подходящие шифры")}</h4>
+                {activeSuggestions.faults.map((fault) => (
+                  <button
+                    type="button"
+                    className="text-button"
+                    key={fault.fault_code_id}
+                    onClick={() => {
+                      setSelectedSuggestedExecutor(null);
+                      updateInput({ ...input, fault_code_id: fault.fault_code_id, executor_id: "" }, true);
+                    }}
+                  >
+                    {fault.code} · {fault.name}
+                    {fault.norm_minutes !== null ? ` · ${fault.norm_minutes} ${t("мин")}` : ""}
+                    {fault.reasons.length > 0 && (
+                      <small>{fault.reasons.map(suggestionText).join(" · ")}</small>
+                    )}
+                  </button>
+                ))}
+              </section>
             )}
-            {workers
-              .filter((person) => person.area_ids?.includes(input.area_id))
-              .map((person) => (
-                <option key={person.employee_id} value={person.employee_id} disabled={!person.is_on_shift}>
-                  {person.display_name} · {person.specialty} · {person.grade} {t("разряд ·")}{" "}
-                  {person.availability === "free"
-                    ? t("Свободен")
-                    : person.availability === "queued"
-                      ? t("В очереди")
-                      : person.availability === "busy"
-                        ? t("В работе")
-                        : t("Не на смене")}
-                </option>
-              ))}
-          </select>
-        </label>
-        <div className="two-col">
-          <label>
-            {t("Тип")}
-            <select
-              value={input.work_type}
-              onChange={(event) => updateInput({ ...input, work_type: event.target.value })}
-            >
-              <option value="unplanned">{t("Внеплановый")}</option>
-              <option value="planned">{t("Плановый")}</option>
-            </select>
-          </label>
-          <label>
-            {t("Приоритет")}
-            <select
-              value={input.priority}
-              onChange={(event) => updateInput({ ...input, priority: event.target.value })}
-            >
-              {Object.entries(ruPriority).map(([key, value]) => (
-                <option key={key} value={key}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <label>
-          {t("Срок (Asia/Almaty)")}
-          <input
-            type="datetime-local"
-            required
-            value={input.deadline}
-            onChange={(event) => updateInput({ ...input, deadline: event.target.value })}
-          />
-        </label>
-        <div className="deadline-presets" aria-label={t("Быстрый выбор срока")}>
-          <span>{t("Быстрый срок после проверки мастером:")}</span>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() =>
-              updateInput({ ...input, deadline: almatyInputDate(new Date(Date.now() + 60 * 60_000)) })
-            }
-          >
-            {t("Через 1 час")}
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() =>
-              updateInput({ ...input, deadline: almatyInputDate(new Date(Date.now() + 2 * 60 * 60_000)) })
-            }
-          >
-            {t("Через 2 часа")}
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => updateInput({ ...input, deadline: endOfCurrentShift() })}
-          >
-            {t("До конца смены")}
-          </button>
-        </div>
-        <label>
-          {t("Комментарий для исполнителя")}
-          <input
-            value={input.comment}
-            onChange={(event) => updateInput({ ...input, comment: event.target.value })}
-          />
-        </label>
+            {selectedNorm !== undefined ? (
+              <p className="suggestion-norm">
+                {t("Ориентир трудоёмкости:")} {selectedNorm} {t("мин. Это не срок выполнения.")}
+              </p>
+            ) : input.fault_code_id ? (
+              <p className="muted suggestion-note">
+                {t("Для выбранного шифра и типа оборудования нормы пока нет.")}
+              </p>
+            ) : null}
+            <label>
+              {t("Исполнитель")}
+              <select
+                value={input.executor_id}
+                onChange={(event) => {
+                  setSelectedSuggestedExecutor(null);
+                  updateInput({ ...input, executor_id: event.target.value });
+                }}
+              >
+                <option value="">{t("Выберите исполнителя")}</option>
+                {selectedSuggestedExecutor && !manualExecutorExists && (
+                  <option value={selectedSuggestedExecutor.employee_id}>
+                    {selectedSuggestedExecutor.display_name} · {selectedSuggestedExecutor.specialty} ·{" "}
+                    {selectedSuggestedExecutor.grade} {t("разряд")}
+                  </option>
+                )}
+                {workers
+                  .filter((person) => person.area_ids?.includes(input.area_id))
+                  .map((person) => (
+                    <option
+                      key={person.employee_id}
+                      value={person.employee_id}
+                      disabled={!person.is_on_shift}
+                    >
+                      {person.display_name} · {person.specialty} · {person.grade} {t("разряд ·")}{" "}
+                      {person.availability === "free"
+                        ? t("Свободен")
+                        : person.availability === "queued"
+                          ? t("В очереди")
+                          : person.availability === "busy"
+                            ? t("В работе")
+                            : t("Не на смене")}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              {t("Срок (Asia/Almaty)")}
+              <input
+                type="datetime-local"
+                value={input.deadline}
+                onChange={(event) => updateInput({ ...input, deadline: event.target.value })}
+              />
+            </label>
+            <label>
+              {t("Комментарий для исполнителя")}
+              <input
+                value={input.comment}
+                onChange={(event) => updateInput({ ...input, comment: event.target.value })}
+              />
+            </label>
+          </div>
+        </details>
         {error && <p className="error">{message(error)}</p>}
-        <button className="primary">{t("Выдать наряд")}</button>
+        <button
+          className="primary"
+          data-testid="quick-submit-order"
+          disabled={submitting}
+          aria-busy={submitting}
+        >
+          {submitting ? t("Выдаём наряд…") : t("Выдать наряд")}
+        </button>
       </form>
     </Dialog>
   );
