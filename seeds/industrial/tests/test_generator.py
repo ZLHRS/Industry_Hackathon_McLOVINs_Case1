@@ -111,6 +111,50 @@ def test_history_is_coherent_bounded_and_versions_reference_submissions() -> Non
     assert all(orders[row["work_order_id"]]["status"] == "closed" for row in data["ai_reviews"])
 
 
+@pytest.mark.parametrize(
+    "anchor",
+    (
+        ANCHOR,
+        datetime(2026, 10, 8, 12, tzinfo=UTC),
+    ),
+)
+@pytest.mark.parametrize("seed", (0, 2026, 2027))
+def test_history_window_and_upcoming_demo_orders_are_stable(anchor: datetime, seed: int) -> None:
+    data = generate_dataset(anchor=anchor, seed=seed)
+    orders = data["work_orders"]
+    events = data["work_order_events"]
+
+    def issued_in_window(end: datetime) -> list[dict[str, object]]:
+        return [row for row in orders if end - timedelta(days=90) <= row["issued_at"] <= end]
+
+    assert min(row["issued_at"] for row in orders) <= anchor - timedelta(days=90)
+    assert len(issued_in_window(anchor)) >= 500
+    assert len(issued_in_window(anchor + timedelta(days=10))) >= 500
+    assert all(row["issued_at"] <= anchor for row in orders)
+    assert all(row["completed_at"] is None or row["completed_at"] <= anchor for row in orders)
+    assert all(row["closed_at"] is None or row["closed_at"] <= anchor for row in orders)
+    assert all(row["occurred_at"] <= anchor for row in events)
+    for field in ("equipment_id", "executor_id"):
+        intervals: dict[object, list[dict[str, object]]] = defaultdict(list)
+        for row in (item for item in orders if item["completed_at"] is not None):
+            intervals[row[field]].append(row)
+        for history in intervals.values():
+            history.sort(key=lambda row: row["started_at"])
+            assert all(
+                left["completed_at"] <= right["started_at"] for left, right in pairwise(history)
+            )
+
+    future_pending_days = {"issued": 12, "accepted": 13, "queued": 14}
+    upcoming = [row for row in orders if row["status"] in future_pending_days]
+    assert {row["status"] for row in upcoming} == set(future_pending_days)
+    for order in upcoming:
+        assert order["deadline"] == anchor + timedelta(days=future_pending_days[order["status"]])
+        assert order["priority"] in {"normal", "planned"}
+        assert order["started_at"] is None
+        assert order["completed_at"] is None
+        assert order["closed_at"] is None
+
+
 def test_assignees_and_materials_match_the_fault_specialty() -> None:
     data = generate_dataset(anchor=ANCHOR)
     orders = {row["id"]: row for row in data["work_orders"]}

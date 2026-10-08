@@ -46,7 +46,8 @@ def _history(
     usages: list[dict[str, Any]] = []
     reviews: list[dict[str, Any]] = []
     availability: dict[UUID, datetime] = {}
-    start_day = (anchor - timedelta(days=120)).date()
+    archived_start_day = (anchor - timedelta(days=100)).date()
+    history_start_day = (anchor - timedelta(days=80)).date()
     hot_conveyors = {equipment[0]["id"], equipment[1]["id"]}
     planned_recent: list[tuple[dict[str, Any], dict[str, Any], datetime]] = []
     active_executor_ids: set[UUID] = set()
@@ -60,7 +61,7 @@ def _history(
         )
         if work_type == "planned":
             planned_recent.append(
-                (machine, fault, datetime.combine(start_day, datetime.min.time(), UTC))
+                (machine, fault, datetime.combine(history_start_day, datetime.min.time(), UTC))
             )
         executor = _executor(index, executors, status, fault)
         if current and status in {"in_progress", "paused"}:
@@ -70,9 +71,14 @@ def _history(
             active_executor_ids.add(executor["id"])
         previous_executor = _prior_executor(executor, executors, fault["specialty"])
         master = masters[index % len(masters)]
-        candidate = datetime.combine(
-            start_day + timedelta(days=(index * 117) // 587), datetime.min.time(), UTC
-        ) + timedelta(hours=6 + (index * 29) % 12, minutes=(index * 7) % 45)
+        if index < 60:
+            candidate_day = archived_start_day + timedelta(days=(index * 9) // 59)
+        else:
+            candidate_day = history_start_day + timedelta(days=((index - 60) * 77) // 527)
+        candidate = datetime.combine(candidate_day, datetime.min.time(), UTC) + timedelta(
+            hours=6 + (index * 29) % 12,
+            minutes=(index * 7) % 45,
+        )
         if current:
             candidate = anchor - timedelta(hours=42 - 2 * (index - 588))
         started = max(
@@ -92,7 +98,10 @@ def _history(
         deadline = started + duration + timedelta(minutes=30 if index % 4 < 2 else 90)
         if not current and index % 11 == 0:
             deadline = completed - timedelta(minutes=20)
-        if current:
+        future_pending_days = {"issued": 12, "accepted": 13, "queued": 14}
+        if status in future_pending_days:
+            deadline = anchor + timedelta(days=future_pending_days[status])
+        elif current:
             deadline = anchor + timedelta(hours=2 if index % 2 == 0 else -2)
         attempt = 2 if status == "rework" or (not current and index % 47 == 0) else 1
         submission = attempt if status in {"closed", "completed", "ai_review", "rework"} else None
@@ -105,9 +114,13 @@ def _history(
             "equipment_id": machine["id"],
             "executor_id": executor["id"],
             "master_id": master["id"],
-            "priority": "planned"
-            if work_type == "planned"
-            else ("emergency", "high", "normal")[index % 3],
+            "priority": (
+                "planned"
+                if work_type == "planned"
+                else "normal"
+                if status in future_pending_days
+                else ("emergency", "high", "normal")[index % 3]
+            ),
             "status": status,
             "issued_at": issued,
             "deadline": deadline,
