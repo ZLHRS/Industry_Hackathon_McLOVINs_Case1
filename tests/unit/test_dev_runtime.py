@@ -69,7 +69,7 @@ def test_existing_cluster_without_password_is_never_reinitialized(
 
 
 def test_macos_runtime_selection_matches_the_existing_cluster_major(
-    monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pg16 = Path("/Library/PostgreSQL/16/bin")
     pg17 = Path("/Library/PostgreSQL/17/bin")
@@ -84,8 +84,9 @@ def test_macos_runtime_selection_matches_the_existing_cluster_major(
     monkeypatch.setattr(
         _MODULE.subprocess,
         "check_output",
-        lambda command, **_: "postgres (PostgreSQL) "
-        + ("16.4" if str(pg16) in command[0] else "17.2"),
+        lambda command, **_: (
+            "postgres (PostgreSQL) " + ("16.4" if str(pg16) in command[0] else "17.2")
+        ),
     )
 
     assert _MODULE.postgres_runtime(required_major="17") == (pg17, None)

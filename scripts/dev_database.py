@@ -116,7 +116,7 @@ def main() -> None:
         run("dpkg-deb", "-x", str(candidates[0]), str(BASE / "runtime"))
         run(str(BIN / "postgres"), "--version")
         return
-    cluster_version = (DATA / "PG_VERSION")
+    cluster_version = DATA / "PG_VERSION"
     binary, share = postgres_runtime(
         required_major=cluster_version.read_text().strip() if cluster_version.is_file() else None
     )

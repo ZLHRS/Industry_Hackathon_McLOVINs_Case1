@@ -404,9 +404,7 @@ async def list_orders(
         attention_count = await session.scalar(
             select(func.count()).select_from(WorkOrder).where(*predicates, needs_attention)
         )
-        orders = await session.scalars(
-            orders_query.offset(offset).limit(limit)
-        )
+        orders = await session.scalars(orders_query.offset(offset).limit(limit))
         return OrderPage(
             items=[order_view(row, now) for row in orders],
             total=sum(counts.values()),
@@ -437,9 +435,7 @@ async def master_options(database: Database, principal: Principal) -> list[Maste
             )
         )
     async with database.sessions() as session:
-        rows = await session.execute(
-            query.distinct().order_by(Employee.display_name, Employee.id)
-        )
+        rows = await session.execute(query.distinct().order_by(Employee.display_name, Employee.id))
         return [
             MasterOption(id=employee_id, display_name=display_name)
             for employee_id, display_name in rows
