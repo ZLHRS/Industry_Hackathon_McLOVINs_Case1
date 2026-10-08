@@ -195,6 +195,13 @@ class OrderPage(BaseModel):
     attention_count: int = 0
 
 
+class MasterOption(BaseModel):
+    """A safe, area-scoped option for the work-order master filter."""
+
+    id: UUID
+    display_name: str
+
+
 class WorkloadView(BaseModel):
     employee_id: UUID
     area_ids: list[UUID] = Field(default_factory=list)
@@ -288,6 +295,7 @@ async def list_orders(
     area_id: UUID | None = None,
     equipment_id: UUID | None = None,
     executor_id: UUID | None = None,
+    master_id: UUID | None = None,
     priority: Priority | None = None,
     work_type: WorkType | None = None,
     overdue: bool | None = None,
@@ -298,6 +306,23 @@ async def list_orders(
 ) -> OrderPage:
     now = datetime.now(UTC)
     predicates = [visible_orders(principal)]
+    if master_id is not None:
+        if principal.role == "executor":
+            raise OperationError(403, "master_filter_not_permitted")
+        # A filter may only name a master visible from at least one of the
+        # caller's areas.  Inactive masters stay available for historical and
+        # archived orders; the scope check still prevents UUID probing across
+        # sites.
+        master_is_scoped = (
+            select(Employee.id)
+            .join(EmployeeArea, EmployeeArea.employee_id == Employee.id)
+            .where(
+                Employee.id == master_id,
+                Employee.role == "master",
+                EmployeeArea.area_id.in_(principal.area_ids),
+            )
+        )
+        predicates.append(WorkOrder.master_id == master_id)
     if q and (query := q.strip()):
         # Search before paging and aggregation, with literal user input and the same RBAC scope.
         machines = select(Equipment.id).where(
@@ -349,6 +374,8 @@ async def list_orders(
     async with database.sessions.begin() as session:
         # Counts and page refer to one snapshot even while another client changes a status.
         await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
+        if master_id is not None and await session.scalar(master_is_scoped) is None:
+            raise OperationError(404, "master_not_found")
         counts = {status.value: 0 for status in WorkOrderStatus}
         rows = await session.execute(
             select(WorkOrder.status, func.count()).where(*predicates).group_by(WorkOrder.status)
@@ -372,6 +399,27 @@ async def list_orders(
             limit=limit,
             attention_count=attention_count or 0,
         )
+
+
+async def master_options(database: Database, principal: Principal) -> list[MasterOption]:
+    """List scoped masters, including inactive historical issuers, without staff data."""
+
+    ensure_role(principal, "master", "manager")
+    async with database.sessions() as session:
+        rows = await session.execute(
+            select(Employee.id, Employee.display_name)
+            .join(EmployeeArea, EmployeeArea.employee_id == Employee.id)
+            .where(
+                Employee.role == "master",
+                EmployeeArea.area_id.in_(principal.area_ids),
+            )
+            .distinct()
+            .order_by(Employee.display_name, Employee.id)
+        )
+        return [
+            MasterOption(id=employee_id, display_name=display_name)
+            for employee_id, display_name in rows
+        ]
 
 
 async def order_detail(database: Database, principal: Principal, order_id: UUID) -> OrderDetail:

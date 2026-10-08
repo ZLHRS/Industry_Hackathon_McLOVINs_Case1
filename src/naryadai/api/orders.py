@@ -10,11 +10,13 @@ from naryadai.application.contracts import CreateOrder, OrderAction
 from naryadai.application.orders import create_order, execute_action
 from naryadai.application.queries import (
     EventPage,
+    MasterOption,
     OrderDetail,
     OrderPage,
     WorkloadView,
     equipment_history,
     list_orders,
+    master_options,
     order_detail,
     order_events,
     workload,
@@ -74,6 +76,7 @@ async def orders(
     area_id: UUID | None = None,
     equipment_id: UUID | None = None,
     executor_id: UUID | None = None,
+    master_id: UUID | None = None,
     priority: Priority | None = None,
     work_type: WorkType | None = None,
     overdue: bool | None = None,
@@ -89,6 +92,7 @@ async def orders(
         area_id=area_id,
         equipment_id=equipment_id,
         executor_id=executor_id,
+        master_id=master_id,
         priority=priority,
         work_type=work_type,
         overdue=overdue,
@@ -97,6 +101,11 @@ async def orders(
         offset=offset,
         limit=limit,
     )
+
+
+@router.get("/work-orders/masters", response_model=list[MasterOption])
+async def order_masters(principal: PrincipalDep, database: DatabaseDep) -> list[MasterOption]:
+    return await master_options(database, principal)
 
 
 @router.get("/work-orders/{order_id}", response_model=OrderDetail)

@@ -101,6 +101,10 @@ export interface Catalog {
   materials: Material[];
   time_norms: TimeNorm[];
 }
+export interface MasterOption {
+  id: string;
+  display_name: string;
+}
 export interface Order {
   id: string;
   number: string;

@@ -207,7 +207,12 @@ async def _new_notification(
 async def _event_recipients(
     session: AsyncSession, order: WorkOrder, event: WorkOrderEvent
 ) -> tuple[list[UUID], str, str, bool, bool]:
-    """Map one relevant current-attempt event to private recipients and copy-safe text."""
+    """Map only action-worthy lifecycle events to private inbox alerts.
+
+    Realtime revisions still publish every event.  Alerts deliberately cover
+    assignments, terminal decisions, the final review for a master, and an
+    executor refusal; routine progress must not turn into push noise.
+    """
 
     if event.action in {"issue", "reassign"}:
         return (
@@ -217,36 +222,47 @@ async def _event_recipients(
             order.priority.value == "emergency",
             True,
         )
-    if event.action in {"record_ai_assessment", "mark_rework"}:
+    if event.action == "record_ai_assessment":
         return (
-            list(dict.fromkeys([order.master_id, order.executor_id])),
+            [order.master_id],
             "review_ready",
             f"Готова проверка ремонта: {order.number}",
             False,
             True,
         )
-    if event.action in {"close", "override_close", "request_rework"}:
-        rework = event.action == "request_rework"
+    if event.action in {"mark_rework", "request_rework"}:
         return (
             [order.executor_id],
             "master_decision",
-            f"Наряд {order.number}: " + ("требуется доработка" if rework else "принят мастером"),
+            f"Наряд {order.number}: требуется доработка",
             False,
-            rework,
+            True,
         )
-    if event.action == "start_ai_review":
-        # The final review event provides one notification with useful evidence.
-        return ([], "workflow", "", False, False)
-    if event.from_status == event.to_status:
-        return ([], "workflow", "", False, False)
-    status = "изменён" if event.to_status is None else _STATUS_LABELS[event.to_status]
-    return (
-        [order.master_id],
-        "workflow",
-        f"Наряд {order.number}: статус {status}",
-        False,
-        False,
-    )
+    if event.action in {"close", "override_close"}:
+        return (
+            [order.executor_id],
+            "master_decision",
+            f"Наряд {order.number}: принят мастером",
+            False,
+            False,
+        )
+    if event.action == "cancel":
+        return (
+            [order.executor_id],
+            "master_decision",
+            f"Наряд {order.number}: отменён",
+            False,
+            False,
+        )
+    if event.action == "reject":
+        return (
+            [order.master_id],
+            "refusal",
+            f"Исполнитель отказался от наряда {order.number}",
+            False,
+            True,
+        )
+    return ([], "workflow", "", False, False)
 
 
 async def _bump_current_viewers(

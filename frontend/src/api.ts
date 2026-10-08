@@ -461,6 +461,9 @@ export class Api {
   events(id: string, after = 0) {
     return this.request<EventPage>(`/work-orders/${id}/events?after_sequence=${after}`);
   }
+  masters() {
+    return this.request<import("./types").MasterOption[]>("/work-orders/masters");
+  }
   workload(areaId?: string) {
     return this.request<Workload[]>(`/workload${areaId ? `?area_id=${areaId}` : ""}`);
   }

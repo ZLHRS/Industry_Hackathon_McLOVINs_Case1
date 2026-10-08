@@ -1,3 +1,7 @@
+import {
+  activeOrderStatuses as activeStatuses,
+  archivedOrderStatuses as archiveStatuses,
+} from "../lib/orderFilters";
 import { roleLabels } from "../lib/roleAccess";
 import type { DirectoryFilters, DirectorySection } from "../lib/navigation";
 import "./workspace-ux.css";
@@ -6,20 +10,9 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "../components/Dialog";
 import { Api, ApiError } from "../api";
 import { local, ruPriority, ruStatus } from "./OrderDetail";
-import type { Catalog, CreateOrder, Order, OrderPage, Role, Workload } from "../types";
+import type { Catalog, CreateOrder, MasterOption, Order, OrderPage, Role, Workload } from "../types";
 
 type CatalogEditorKind = "area" | "equipment" | "brigade" | "material" | "fault-code" | "time-norm";
-const activeStatuses = [
-  "issued",
-  "accepted",
-  "queued",
-  "in_progress",
-  "paused",
-  "completed",
-  "ai_review",
-  "rework",
-];
-const archiveStatuses = ["closed", "cancelled", "rejected"];
 
 function almatyInputDate(value: Date) {
   return new Intl.DateTimeFormat("sv-SE", {
@@ -54,6 +47,8 @@ export function OrdersView({
   page,
   catalog,
   workload,
+  masters,
+  currentUserId,
   filters,
   onFilters,
   onOpen,
@@ -65,6 +60,8 @@ export function OrdersView({
   page: OrderPage | null;
   catalog: Catalog | null;
   workload: Workload[];
+  masters: MasterOption[];
+  currentUserId: string;
   filters: {
     status: string[];
     priority: string;
@@ -72,6 +69,7 @@ export function OrdersView({
     area_id: string;
     equipment_id: string;
     executor_id: string;
+    master_id: string;
     query: string;
     attention: boolean;
     offset: number;
@@ -83,6 +81,7 @@ export function OrdersView({
     area_id: string;
     equipment_id: string;
     executor_id: string;
+    master_id: string;
     query: string;
     attention: boolean;
     offset: number;
@@ -120,12 +119,12 @@ export function OrdersView({
   }[role];
   const activeTab = filters.status.join(",") === activeStatuses.join(",");
   const archiveTab = filters.status.join(",") === archiveStatuses.join(",");
-  const allTab = !filters.status.length;
   const additionalFilterCount = [
     Boolean(filters.priority),
     Boolean(filters.area_id),
     Boolean(filters.equipment_id),
     Boolean(filters.executor_id),
+    Boolean(filters.master_id && filters.master_id !== currentUserId && filters.master_id !== "all"),
     filters.overdue,
   ].filter(Boolean).length;
   const hasAdditionalFilters = additionalFilterCount > 0;
@@ -137,6 +136,7 @@ export function OrdersView({
       area_id: "",
       equipment_id: "",
       executor_id: "",
+      master_id: role === "master" ? currentUserId : "",
       query: "",
       attention: false,
       overdue: false,
@@ -163,7 +163,7 @@ export function OrdersView({
   const urgentCount = page?.attention_count ?? 0;
   const activeCount = (page?.counts.in_progress ?? 0) + (page?.counts.paused ?? 0);
   const emptyState = visibleOrders.length === 0;
-  const unfilteredEmpty = allTab && !hasAdditionalFilters;
+  const unfilteredEmpty = !hasAdditionalFilters && !filters.query && !filters.attention;
 
   return (
     <section className="workspace orders-workspace">
@@ -208,23 +208,20 @@ export function OrdersView({
           <button
             className={activeTab ? "active" : ""}
             aria-pressed={activeTab}
-            onClick={() => onFilters({ ...filters, status: activeStatuses, offset: 0 })}
+            onClick={() =>
+              onFilters({ ...filters, query: searchInput.trim(), status: activeStatuses, offset: 0 })
+            }
           >
-            Активные
+            В работе
           </button>
           <button
             className={archiveTab ? "active" : ""}
             aria-pressed={archiveTab}
-            onClick={() => onFilters({ ...filters, status: archiveStatuses, offset: 0 })}
+            onClick={() =>
+              onFilters({ ...filters, query: searchInput.trim(), status: archiveStatuses, offset: 0 })
+            }
           >
-            Архив
-          </button>
-          <button
-            className={allTab ? "active" : ""}
-            aria-pressed={allTab}
-            onClick={() => onFilters({ ...filters, status: [], offset: 0 })}
-          >
-            Все наряды
+            История
           </button>
         </div>
       )}
@@ -316,6 +313,32 @@ export function OrdersView({
             </select>
           </label>
         )}
+        {(role === "master" || role === "manager") && (
+          <label>
+            Мастер
+            <select
+              aria-label="Мастер"
+              value={filters.master_id === "all" ? "" : filters.master_id}
+              onChange={(e) =>
+                onFilters({
+                  ...filters,
+                  master_id: e.target.value || (role === "master" ? "all" : ""),
+                  offset: 0,
+                })
+              }
+            >
+              <option value="">Все доступные мастера</option>
+              {role === "master" && <option value={currentUserId}>Мои наряды</option>}
+              {masters
+                .filter((item) => item.id !== currentUserId)
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.display_name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
         {role !== "executor" && (
           <label>
             Исполнитель
@@ -353,15 +376,23 @@ export function OrdersView({
       {loading && <p className="muted">Обновляем наряды…</p>}
       {emptyState ? (
         <div className="empty orders-empty">
-          <h2>{unfilteredEmpty ? "Нарядов пока нет" : "По выбранным условиям нарядов нет"}</h2>
+          <h2>
+            {unfilteredEmpty
+              ? archiveTab
+                ? "История пока пуста"
+                : "Нет текущих нарядов"
+              : "По выбранным условиям нарядов нет"}
+          </h2>
           <p>
             {unfilteredEmpty
-              ? role === "master"
-                ? "Создайте первый наряд, когда появится работа на участке."
-                : "Новые наряды появятся здесь после выдачи мастером."
+              ? archiveTab
+                ? "Здесь появятся закрытые и отменённые наряды."
+                : role === "master"
+                  ? "Создайте первый наряд, когда появится работа на участке."
+                  : "Новые наряды появятся здесь после выдачи мастером."
               : hasAdditionalFilters
                 ? "Сбросьте дополнительные фильтры или выберите другой список нарядов."
-                : "Переключите список на активные, архивные или все наряды."}
+                : "Переключитесь между текущими нарядами и историей."}
           </p>
           {hasAdditionalFilters && (
             <button className="secondary" type="button" onClick={resetFilters}>
@@ -429,12 +460,17 @@ function Kanban({
   const columns: Array<[string, string[]]> = [
     ["К выдаче", ["issued", "accepted", "queued"]],
     ["В работе", ["in_progress", "paused"]],
-    ["На проверке", ["completed", "ai_review", "rework"]],
-    ["Завершено", ["closed", "cancelled", "rejected"]],
-  ];
+    ["На проверке", ["completed", "ai_review"]],
+    ["Доработка и отказы", ["rework", "rejected"]],
+    ["Закрытые", ["closed"]],
+    ["Отменённые", ["cancelled"]],
+  ] satisfies Array<[string, string[]]>;
+  const visibleColumns = columns.filter(([, statuses]) =>
+    orders.some((order) => statuses.includes(order.status)),
+  );
   return (
     <div className="kanban" aria-label="Доска нарядов">
-      {columns.map(([title, statuses]) => {
+      {visibleColumns.map(([title, statuses]) => {
         const items = orders.filter((order) => statuses.includes(order.status));
         return (
           <section key={title} className="kanban-column">
@@ -770,7 +806,15 @@ function CreateOrderDialog({
     </Dialog>
   );
 }
-export function WorkloadView({ workers, onOpen }: { workers: Workload[]; onOpen: (id: string) => void }) {
+export function WorkloadView({
+  workers,
+  onOpen,
+  onEmployeeOrders,
+}: {
+  workers: Workload[];
+  onOpen: (id: string) => void;
+  onEmployeeOrders: (employeeId: string) => void;
+}) {
   const onShift = workers.filter((person) => person.is_on_shift);
   const busy = onShift.filter((person) => person.availability === "busy").length;
   return (
@@ -797,7 +841,13 @@ export function WorkloadView({ workers, onOpen }: { workers: Workload[]; onOpen:
           <article key={person.employee_id} className="worker">
             <span className={`availability ${person.availability}`}></span>
             <div>
-              <strong>{person.display_name}</strong>
+              <button
+                type="button"
+                className="workload-person-link"
+                onClick={() => onEmployeeOrders(person.employee_id)}
+              >
+                {person.display_name}
+              </button>
               <small>
                 {person.specialty} · {person.grade} разряд
               </small>
@@ -837,6 +887,7 @@ export function ReferenceView({
   api,
   onCatalogChange,
   onEmployees,
+  onEmployeeOrders,
   section,
   onSectionChange,
   directoryFilters,
@@ -844,10 +895,11 @@ export function ReferenceView({
 }: {
   role: Role;
   catalog: Catalog | null;
-  employees: { display_name: string; role: string; is_on_shift: boolean }[];
+  employees: { id: string; display_name: string; role: string; is_on_shift: boolean }[];
   api: Api;
   onCatalogChange: () => Promise<void>;
   onEmployees?: () => void;
+  onEmployeeOrders?: (employeeId: string) => void;
   section: DirectorySection | null;
   onSectionChange: (section: DirectorySection | null) => void;
   directoryFilters: DirectoryFilters;
@@ -1311,7 +1363,17 @@ export function ReferenceView({
             {staff.map((item, index) => (
               <article className="reference-row" key={`${item.display_name}-${index}`}>
                 <div>
-                  <strong>{item.display_name}</strong>
+                  {item.role === "executor" && onEmployeeOrders ? (
+                    <button
+                      type="button"
+                      className="reference-person-link"
+                      onClick={() => onEmployeeOrders(item.id)}
+                    >
+                      {item.display_name}
+                    </button>
+                  ) : (
+                    <strong>{item.display_name}</strong>
+                  )}
                   <span>{roleLabels[item.role as Role] ?? "Сотрудник"}</span>
                 </div>
                 <div className="reference-row-meta">

@@ -30,7 +30,7 @@ async function login(page: Page, account: string) {
 }
 test("worker resets hidden filters without leaving archive and reads next step", async ({ page }, info) => {
   await login(page, state.executor_login);
-  await page.getByRole("button", { name: "Архив", exact: true }).click();
+  await page.getByRole("button", { name: "История", exact: true }).click();
   await page.getByRole("button", { name: "Фильтры", exact: true }).click();
   await page.getByLabel("Приоритет", { exact: true }).selectOption("high");
   const toggle = page.getByRole("button", { name: "Фильтры: выбрано 1", exact: true });
@@ -38,7 +38,7 @@ test("worker resets hidden filters without leaving archive and reads next step",
   await toggle.click();
   await expect(page.getByLabel("Приоритет", { exact: true })).toBeHidden();
   await page.getByRole("button", { name: "Сбросить фильтры", exact: true }).first().click();
-  await expect(page.getByRole("button", { name: "Архив", exact: true })).toHaveAttribute(
+  await expect(page.getByRole("button", { name: "История", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
@@ -51,7 +51,7 @@ test("worker resets hidden filters without leaving archive and reads next step",
   await expect(dialog.locator(".timeline")).toBeVisible();
   await page.screenshot({ path: info.outputPath("worker-detail-mobile.png") });
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Активные", exact: true }).click();
+  await page.getByRole("button", { name: "В работе", exact: true }).click();
   await page.screenshot({ path: info.outputPath("worker-orders-mobile.png") });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });

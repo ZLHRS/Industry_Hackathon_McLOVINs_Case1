@@ -19,11 +19,29 @@ import {
   syncPending,
   retryPending,
 } from "./lib/offline";
-import type { ActionRequest, Catalog, Employee, EventItem, OrderPage, User, Workload } from "./types";
+import type {
+  ActionRequest,
+  Catalog,
+  Employee,
+  EventItem,
+  MasterOption,
+  OrderPage,
+  User,
+  Workload,
+} from "./types";
 import "./styles.css";
 import { useAppLocation, readRoute, navigate, directoryUrl, closeOrderPage } from "./lib/navigation";
 
-type Dashboard = { catalog: Catalog; orders: OrderPage; workload: Workload[]; employees: Employee[] };
+import { readOrderFilters, orderFiltersUrl, orderFilterKey, type OrderFilters } from "./lib/orderFilters";
+
+type Dashboard = {
+  orderFilterKey?: string;
+  catalog: Catalog;
+  orders: OrderPage;
+  workload: Workload[];
+  employees: Employee[];
+  masters: MasterOption[];
+};
 const tokenKey = "naryadai.session.token";
 const expiryKey = "naryadai.session.expires";
 const userKey = "naryadai.session.user";
@@ -111,26 +129,7 @@ export default function App() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [liveRevision, setLiveRevision] = useState(0);
   const pushSubscriptionId = useRef<string | null>(null);
-  const [filters, setFilters] = useState({
-    status: [
-      "issued",
-      "accepted",
-      "queued",
-      "in_progress",
-      "paused",
-      "completed",
-      "ai_review",
-      "rework",
-    ] as string[],
-    priority: "",
-    overdue: false,
-    area_id: "",
-    equipment_id: "",
-    executor_id: "",
-    query: "",
-    attention: false,
-    offset: 0,
-  });
+  const filters = useMemo(() => readOrderFilters(appLocation, user), [appLocation, user]);
   const authGeneration = useRef(0);
   const refreshGeneration = useRef(0);
   const loadOrderDetail = useCallback(
@@ -211,15 +210,17 @@ export default function App() {
     [invalidate, sender],
   );
   const refresh = useCallback(
-    async (knownUser?: User, currentFilters = filters) => {
+    async (knownUser?: User, requestedFilters?: OrderFilters) => {
       const actor = knownUser ?? user;
       if (!actor) return;
+      const currentFilters = requestedFilters ?? readOrderFilters(appLocation, actor);
+      const currentFilterKey = orderFilterKey(currentFilters, actor);
       const guard = authGeneration.current;
       const request = ++refreshGeneration.current;
       setLoading(true);
       setError("");
       try {
-        const [catalog, orders, workload, employees] = await Promise.all([
+        const [catalog, orders, workload, employees, masters] = await Promise.all([
           api.catalog(),
           actor.role === "admin"
             ? Promise.resolve({
@@ -236,6 +237,10 @@ export default function App() {
                 area_id: currentFilters.area_id || undefined,
                 equipment_id: currentFilters.equipment_id || undefined,
                 executor_id: actor.role === "executor" ? actor.id : currentFilters.executor_id || undefined,
+                master_id:
+                  ["master", "manager"].includes(actor.role) && currentFilters.master_id !== "all"
+                    ? currentFilters.master_id || undefined
+                    : undefined,
                 q: currentFilters.query || undefined,
                 attention: currentFilters.attention || undefined,
                 offset: currentFilters.offset,
@@ -243,11 +248,17 @@ export default function App() {
               }),
           canViewWorkload(actor.role) ? api.workload() : Promise.resolve([]),
           actor.role === "master" ? api.employees() : Promise.resolve([]),
+          ["master", "manager"].includes(actor.role) ? api.masters() : Promise.resolve([]),
         ]);
         if (guard !== authGeneration.current || request !== refreshGeneration.current) return;
-        const dashboard = { catalog, orders, workload, employees };
+        const dashboard = { catalog, orders, workload, employees, masters, orderFilterKey: currentFilterKey };
         setData(dashboard);
         setSavedAt(null);
+        setNotice((current) =>
+          current.startsWith("Показан сохранённый снимок") || current.startsWith("Для выбранных фильтров")
+            ? ""
+            : current,
+        );
         if (actor.role !== "admin")
           await saveSnapshot(actor.id, "dashboard", dashboard).catch(() => undefined);
         if (guard !== authGeneration.current || request !== refreshGeneration.current) return;
@@ -260,28 +271,36 @@ export default function App() {
           return;
         }
         const cached =
-          actor.role === "admin"
+          actor.role === "admin" || (failure.status > 0 && failure.status < 500)
             ? null
             : await getSnapshot<Dashboard>(actor.id, "dashboard").catch(() => null);
         if (cached) {
           if (guard !== authGeneration.current || request !== refreshGeneration.current) return;
           setData(
-            currentFilters.query
+            cached.data.orderFilterKey !== currentFilterKey
               ? {
                   ...cached.data,
+                  orderFilterKey: currentFilterKey,
                   orders: { items: [], total: 0, counts: {} as OrderPage["counts"], offset: 0, limit: 50 },
                 }
               : cached.data,
           );
           setPending(await listPending(actor.id));
           setSavedAt(cached.savedAt);
-          setNotice("Показан сохранённый снимок. Новые данные появятся после восстановления связи.");
-        } else setError("Не удалось получить данные. Проверьте соединение и повторите.");
+          setNotice(
+            cached.data.orderFilterKey === currentFilterKey
+              ? "Показан сохранённый снимок. Новые данные появятся после восстановления связи."
+              : "Для выбранных фильтров нет сохранённых нарядов. Подключитесь к сети, чтобы загрузить список.",
+          );
+        } else {
+          setData(null);
+          setError("Не удалось получить данные. Проверьте соединение и выбранные фильтры.");
+        }
       } finally {
         if (guard === authGeneration.current && request === refreshGeneration.current) setLoading(false);
       }
     },
-    [api, filters, invalidate, user],
+    [api, appLocation, invalidate, user],
   );
   const refreshRef = useRef(refresh);
   const syncRef = useRef(sync);
@@ -398,10 +417,27 @@ export default function App() {
       active = false;
     };
   }, [api, user]);
-  const changeFilters = (next: typeof filters) => {
-    const normalized = { ...next, offset: next.offset ?? 0 };
-    setFilters(normalized);
-    if (user) void refresh(user, normalized);
+  const changeFilters = (next: OrderFilters) => navigate(orderFiltersUrl(next), true);
+  const loadedOrderRoute = useRef("");
+  useEffect(() => {
+    if (!user || route.view !== "orders" || route.orderId) {
+      loadedOrderRoute.current = "";
+      return;
+    }
+    const key = user.id + ":" + appLocation;
+    if (loadedOrderRoute.current === key) return;
+    loadedOrderRoute.current = key;
+    void refreshRef.current(user);
+  }, [appLocation, route.orderId, route.view, user]);
+  const openEmployeeOrders = (employeeId: string) => {
+    if (!user || !["master", "manager"].includes(user.role)) return;
+    navigate(
+      orderFiltersUrl({
+        ...readOrderFilters("/orders", user),
+        executor_id: employeeId,
+        master_id: "all",
+      }),
+    );
   };
   async function login(login: string, secret: string) {
     const response = await api.login(login, secret);
@@ -468,7 +504,7 @@ export default function App() {
     );
   const currentNav = navigation[user.role];
   const visibleView = permittedView(user.role, view);
-  const activeOrders = data?.orders ?? null;
+  const activeOrders = data?.orderFilterKey === orderFilterKey(filters, user) ? data.orders : null;
   return (
     <div className="app-shell">
       <aside className="side-nav">
@@ -606,6 +642,8 @@ export default function App() {
             page={activeOrders}
             catalog={data?.catalog ?? null}
             workload={data?.workload ?? []}
+            masters={data?.masters ?? []}
+            currentUserId={user.id}
             filters={filters}
             onFilters={changeFilters}
             onOpen={setSelected}
@@ -621,7 +659,13 @@ export default function App() {
             loading={loading}
           />
         )}{" "}
-        {visibleView === "workload" && <WorkloadView workers={data?.workload ?? []} onOpen={setSelected} />}{" "}
+        {visibleView === "workload" && (
+          <WorkloadView
+            workers={data?.workload ?? []}
+            onOpen={setSelected}
+            onEmployeeOrders={openEmployeeOrders}
+          />
+        )}{" "}
         {visibleView === "analytics" && <AnalyticsView api={api} role={user.role} revision={liveRevision} />}{" "}
         {visibleView === "employees" &&
           user.role === "admin" &&
@@ -643,6 +687,7 @@ export default function App() {
             api={api}
             onCatalogChange={refresh}
             onEmployees={() => setView("employees")}
+            onEmployeeOrders={openEmployeeOrders}
             section={route.section}
             onSectionChange={(section) => navigate(directoryUrl(section))}
             directoryFilters={route.directoryFilters}

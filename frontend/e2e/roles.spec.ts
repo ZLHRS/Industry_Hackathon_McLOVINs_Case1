@@ -43,7 +43,7 @@ for (const role of ["executor", "master", "manager", "admin"] as const) {
       if (role === "executor") await expect(page.locator(".history-button")).toHaveCount(0);
       if (role !== "master")
         await expect(page.getByRole("button", { name: "Выдать наряд", exact: true })).toHaveCount(0);
-      await page.getByRole("button", { name: "Архив", exact: true }).click();
+      await page.getByRole("button", { name: "История", exact: true }).click();
       const row = page.locator(".order-row").filter({ hasText: "Закрыт" }).first();
       await row.locator(".order-hit").click();
       const dialog = page.getByRole("dialog");

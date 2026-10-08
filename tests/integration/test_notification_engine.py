@@ -376,17 +376,17 @@ async def test_stale_issue_does_not_notify_completed_order_but_bumps_viewers(dat
 
 
 @pytest.mark.parametrize(
-    ("action", "target", "kind", "both_recipients", "action_required"),
+    ("action", "target", "kind", "recipient", "action_required"),
     [
-        ("record_ai_assessment", WorkOrderStatus.AI_REVIEW, "review_ready", True, True),
-        ("mark_rework", WorkOrderStatus.REWORK, "review_ready", True, True),
-        ("close", WorkOrderStatus.CLOSED, "master_decision", False, False),
-        ("override_close", WorkOrderStatus.CLOSED, "master_decision", False, False),
-        ("request_rework", WorkOrderStatus.REWORK, "master_decision", False, True),
+        ("record_ai_assessment", WorkOrderStatus.AI_REVIEW, "review_ready", "master", True),
+        ("mark_rework", WorkOrderStatus.REWORK, "master_decision", "executor", True),
+        ("close", WorkOrderStatus.CLOSED, "master_decision", "executor", False),
+        ("override_close", WorkOrderStatus.CLOSED, "master_decision", "executor", False),
+        ("request_rework", WorkOrderStatus.REWORK, "master_decision", "executor", True),
     ],
 )
-async def test_review_and_master_decision_notify_interested_people_once(
-    database, action, target, kind, both_recipients, action_required
+async def test_review_and_master_decision_notify_only_the_person_who_must_act(
+    database, action, target, kind, recipient, action_required
 ):
     now = datetime.now(UTC)
     order_id, executor_id, master_id, _ = await _order(
@@ -413,7 +413,7 @@ async def test_review_and_master_decision_notify_interested_people_once(
         session.add(
             OutboxEvent(event_id=event.id, work_order_id=order_id, event_type=action, payload={})
         )
-    assert await process_outbox(database, now=now) == (2 if both_recipients else 1)
+    assert await process_outbox(database, now=now) == 1
     assert await process_outbox(database, now=now) == 0
     async with database.sessions() as session:
         messages = list(
@@ -423,6 +423,91 @@ async def test_review_and_master_decision_notify_interested_people_once(
                 )
             ).all()
         )
-        expected = {master_id, executor_id} if both_recipients else {executor_id}
-        assert {row.employee_id for row in messages} == expected
+        expected = master_id if recipient == "master" else executor_id
+        assert {row.employee_id for row in messages} == {expected}
         assert all(row.kind == kind and row.action_required == action_required for row in messages)
+
+
+@pytest.mark.parametrize(
+    ("action", "target", "recipient", "kind", "action_required"),
+    [
+        ("reject", WorkOrderStatus.REJECTED, "master", "refusal", True),
+        ("cancel", WorkOrderStatus.CANCELLED, "executor", "master_decision", False),
+    ],
+)
+async def test_refusal_and_cancellation_notify_the_affected_person_once(
+    database, action, target, recipient, kind, action_required
+):
+    now = datetime.now(UTC)
+    order_id, executor_id, master_id, _ = await _order(
+        database, status=WorkOrderStatus.IN_PROGRESS, deadline=now + timedelta(hours=1)
+    )
+    async with database.sessions.begin() as session:
+        order = await session.get(WorkOrder, order_id)
+        assert order is not None
+        order.status = target
+        event = WorkOrderEvent(
+            work_order_id=order_id,
+            sequence=1,
+            actor_id=executor_id if action == "reject" else master_id,
+            actor_role=ActorRole.EXECUTOR if action == "reject" else ActorRole.MASTER,
+            action=action,
+            from_status=WorkOrderStatus.IN_PROGRESS,
+            to_status=target,
+            details={"attempt": 1},
+            occurred_at=now,
+        )
+        session.add(event)
+        await session.flush()
+        session.add(
+            OutboxEvent(event_id=event.id, work_order_id=order_id, event_type=action, payload={})
+        )
+    assert await process_outbox(database, now=now) == 1
+    assert await process_outbox(database, now=now) == 0
+    async with database.sessions() as session:
+        message = await session.scalar(
+            select(Notification).where(Notification.work_order_id == order_id)
+        )
+        assert message is not None
+        assert message.employee_id == (master_id if recipient == "master" else executor_id)
+        assert message.kind == kind and message.action_required == action_required
+
+
+@pytest.mark.parametrize(
+    "action", ["accept", "queue", "start", "pause", "resume", "comment", "change_priority"]
+)
+async def test_routine_progress_only_refreshes_realtime_views_without_inbox_noise(database, action):
+    now = datetime.now(UTC)
+    order_id, executor_id, master_id, manager_id = await _order(
+        database, status=WorkOrderStatus.IN_PROGRESS, deadline=now + timedelta(hours=1)
+    )
+    async with database.sessions.begin() as session:
+        order = await session.get(WorkOrder, order_id)
+        assert order is not None
+        event = WorkOrderEvent(
+            work_order_id=order_id,
+            sequence=1,
+            actor_id=executor_id,
+            actor_role=ActorRole.EXECUTOR,
+            action=action,
+            from_status=WorkOrderStatus.IN_PROGRESS,
+            to_status=WorkOrderStatus.IN_PROGRESS,
+            details={"attempt": 1},
+            occurred_at=now,
+        )
+        session.add(event)
+        await session.flush()
+        session.add(
+            OutboxEvent(event_id=event.id, work_order_id=order_id, event_type=action, payload={})
+        )
+    assert await process_outbox(database, now=now) == 0
+    async with database.sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(Notification)) == 0
+        revisions = set(
+            await session.scalars(
+                select(RealtimeRevision.employee_id).where(
+                    RealtimeRevision.employee_id.in_((executor_id, master_id, manager_id))
+                )
+            )
+        )
+        assert revisions == {executor_id, master_id, manager_id}

@@ -235,6 +235,84 @@ async def test_reads_filters_pagination_counts_and_equipment_history(api, databa
     assert (await client.get("/api/v1/work-orders?limit=201", headers=headers)).status_code == 422
 
 
+async def test_master_filter_and_scoped_master_options(api, database):
+    client = api["client"]
+    first = await issue(api)
+    response = await client.post(
+        "/api/v1/work-orders",
+        json=create_body(api, priority="emergency", executor_id=str(api["users"]["coworker"])),
+        headers=api["headers"]["colleague"] | {"Idempotency-Key": str(uuid4())},
+    )
+    assert response.status_code == 201, response.text
+    second = response.json()
+    response = await client.post(
+        "/api/v1/work-orders",
+        json=create_body(api, executor_id=str(api["users"]["coworker"])),
+        headers=api["headers"]["colleague"] | {"Idempotency-Key": str(uuid4())},
+    )
+    assert response.status_code == 201, response.text
+    third = response.json()
+    async with database.sessions.begin() as session:
+        colleague = await session.get(Employee, api["users"]["colleague"])
+        assert colleague is not None
+        colleague.is_active = False
+
+    masters = await client.get("/api/v1/work-orders/masters", headers=api["headers"]["master"])
+    assert masters.status_code == 200
+    assert masters.json() == [
+        {"id": str(api["users"]["colleague"]), "display_name": "colleague"},
+        {"id": str(api["users"]["master"]), "display_name": "master"},
+    ]
+    assert (
+        await client.get("/api/v1/work-orders/masters", headers=api["headers"]["executor"])
+    ).status_code == 403
+
+    master_page = await client.get(
+        "/api/v1/work-orders",
+        params={"master_id": str(api["users"]["master"]), "limit": 1},
+        headers=api["headers"]["manager"],
+    )
+    assert master_page.status_code == 200
+    assert master_page.json()["total"] == 1
+    assert master_page.json()["items"][0]["id"] == first["order_id"]
+    assert master_page.json()["counts"]["issued"] == 1
+
+    colleague_page = await client.get(
+        "/api/v1/work-orders",
+        params={"master_id": str(api["users"]["colleague"]), "attention": "true", "limit": 1},
+        headers=api["headers"]["master"],
+    )
+    assert colleague_page.status_code == 200
+    assert colleague_page.json()["total"] == 1
+    assert colleague_page.json()["attention_count"] == 1
+    assert colleague_page.json()["items"][0]["id"] == second["order_id"]
+    colleague_all = await client.get(
+        "/api/v1/work-orders",
+        params={"master_id": str(api["users"]["colleague"]), "offset": 1, "limit": 1},
+        headers=api["headers"]["master"],
+    )
+    assert colleague_all.status_code == 200
+    assert colleague_all.json()["total"] == 2
+    assert colleague_all.json()["counts"]["issued"] == 2
+    assert colleague_all.json()["attention_count"] == 1
+    assert colleague_all.json()["items"][0]["id"] == third["order_id"]
+
+    assert (
+        await client.get(
+            "/api/v1/work-orders",
+            params={"master_id": str(api["users"]["foreign"])},
+            headers=api["headers"]["master"],
+        )
+    ).status_code == 404
+    assert (
+        await client.get(
+            "/api/v1/work-orders",
+            params={"master_id": str(api["users"]["master"])},
+            headers=api["headers"]["executor"],
+        )
+    ).status_code == 403
+
+
 @pytest.mark.parametrize("reference", ["material", "fault"])
 async def test_completion_serializes_with_reference_deletion(api, monkeypatch, reference):
     item = await issue(api)
