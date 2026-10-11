@@ -3,6 +3,20 @@ export const translations: Record<string, { kk: string; en: string }> = {
   "Приложение и язык": { kk: "Қолданба және тіл", en: "App and language" },
   Язык: { kk: "Тіл", en: "Language" },
   "Приложение на устройстве": { kk: "Құрылғыдағы қолданба", en: "App on this device" },
+  "Приложение установлено на этом устройстве.": {
+    kk: "Қолданба осы құрылғыға орнатылған.",
+    en: "The app is installed on this device.",
+  },
+  "Приложение установлено": { kk: "Қолданба орнатылған", en: "App installed" },
+  "Как установить": { kk: "Қалай орнату керек", en: "How to install" },
+  "В браузере откройте меню и выберите «Установить приложение».": {
+    kk: "Браузер мәзірінен «Қолданбаны орнату» таңдаңыз.",
+    en: "In the browser menu, choose “Install app”.",
+  },
+  "Открывайте приложение с ярлыка.": {
+    kk: "Қолданбаны белгішеден ашыңыз.",
+    en: "Open the app from its icon.",
+  },
   "iPhone/iPad: в Safari выберите «Поделиться» → «На экран Домой».": {
     kk: "iPhone/iPad: Safari-де «Бөлісу» → «Басты экранға» таңдаңыз.",
     en: "iPhone/iPad: in Safari choose “Share” → “Add to Home Screen”.",

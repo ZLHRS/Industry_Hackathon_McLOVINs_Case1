@@ -37,10 +37,6 @@ export function AppPreferences({ installation }: { installation: ReturnType<type
         aria-label={t("Приложение и язык")}
         hidden={!open}
       >
-        <h2>
-          <Icon name="settings" />
-          {t("Приложение и язык")}
-        </h2>
         <DeviceSetup hidden={!open} installation={installation} />
         <div className="app-preferences-language">
           <span>

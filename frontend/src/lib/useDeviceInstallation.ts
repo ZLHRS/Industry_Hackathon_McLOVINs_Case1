@@ -14,12 +14,16 @@ function isStandalone() {
 
 export function useDeviceInstallation() {
   const [prompt, setPrompt] = useState<InstallPromptEvent>();
+  const [standalone, setStandalone] = useState(() => typeof window !== "undefined" && isStandalone());
   const [installed, setInstalled] = useState(
     () => (typeof window !== "undefined" && isStandalone()) || false,
   );
   const [message, setMessage] = useState("");
 
   useEffect(() => {
+    const displayMode = window.matchMedia("(display-mode: standalone)");
+    const updateDisplayMode = () => setStandalone(isStandalone());
+    displayMode.addEventListener("change", updateDisplayMode);
     const deferred = (event: Event) => {
       event.preventDefault();
       setPrompt(event as InstallPromptEvent);
@@ -32,6 +36,7 @@ export function useDeviceInstallation() {
     window.addEventListener("beforeinstallprompt", deferred);
     window.addEventListener("appinstalled", complete);
     return () => {
+      displayMode.removeEventListener("change", updateDisplayMode);
       window.removeEventListener("beforeinstallprompt", deferred);
       window.removeEventListener("appinstalled", complete);
     };
@@ -39,10 +44,13 @@ export function useDeviceInstallation() {
 
   async function install() {
     if (!prompt) return;
+    const activePrompt = prompt;
+    // Chromium exposes a beforeinstallprompt event only once. Fall back to the
+    // manual path even if opening its native prompt fails.
+    setPrompt(undefined);
     try {
-      await prompt.prompt();
-      const choice = await prompt.userChoice;
-      setPrompt(undefined);
+      await activePrompt.prompt();
+      const choice = await activePrompt.userChoice;
       setMessage(
         choice.outcome === "accepted"
           ? "Установка подтверждена браузером."
@@ -53,5 +61,5 @@ export function useDeviceInstallation() {
     }
   }
 
-  return { prompt, installed, message, install };
+  return { prompt, installed, standalone, message, install };
 }

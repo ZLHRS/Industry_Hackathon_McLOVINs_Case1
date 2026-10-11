@@ -66,6 +66,7 @@ test("one settings menu replaces page banners and dialog language controls", asy
   expect(desktopToggle!.y + desktopToggle!.height).toBeLessThanOrEqual(80);
   expect(desktopToggle!.x).toBeGreaterThanOrEqual(profile!.x + profile!.width);
   await toggle.click();
+  await expect(panel.getByRole("heading", { name: "Приложение и язык", exact: true })).toHaveCount(0);
   await expect(panel.getByRole("button", { name: "Установить приложение", exact: true })).toBeVisible();
   await expect(panel).toContainText("компьютере");
   await expect(panel).toContainText("телефоне");
@@ -110,11 +111,11 @@ test("deferred installation survives a closed menu and dismissal stays in the br
   await panel.getByRole("button", { name: "Установить приложение", exact: true }).click();
   await expect(panel).toContainText("Установка отменена");
   expect(await page.evaluate(() => document.documentElement.dataset.installCalls)).toBe("1");
-  await expect(panel.getByRole("button", { name: "Установить приложение", exact: true })).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: "Как установить", exact: true })).toBeVisible();
   await expect(panel.locator(".language-switcher")).toBeVisible();
 });
 
-test("failed install is handled and appinstalled removes the install offer", async ({ page }) => {
+test("failed install is handled and appinstalled retains the app control", async ({ page }, info) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await login(page);
@@ -123,8 +124,85 @@ test("failed install is handled and appinstalled removes the install offer", asy
   const panel = page.getByTestId("app-preferences-panel");
   await panel.getByRole("button", { name: "Установить приложение", exact: true }).click();
   await expect(panel).toContainText("Не удалось открыть установку");
+  await panel.getByRole("button", { name: "Как установить", exact: true }).click();
+  expect(await page.evaluate(() => document.documentElement.dataset.installCalls)).toBe("1");
   await page.evaluate(() => window.dispatchEvent(new Event("appinstalled")));
-  await expect(panel.getByRole("button", { name: "Установить приложение", exact: true })).toHaveCount(0);
+  await expect(panel.locator(".device-setup")).toBeVisible();
+  await expect(panel.locator(".device-setup").getByRole("button")).toBeVisible();
+  await expect(panel).toContainText("Приложение установлено");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: info.outputPath("installed-390.png") });
   await expect(panel.locator(".language-switcher")).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test("without a browser install event the button opens manual guidance", async ({ page }, info) => {
+  await page.addInitScript(() => {
+    window.addEventListener("beforeinstallprompt", (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    });
+  });
+  await login(page);
+  await page.getByTestId("app-preferences-toggle").click();
+  const panel = page.getByTestId("app-preferences-panel");
+  const install = panel.getByRole("button", { name: "Как установить", exact: true });
+  await expect(install).toBeVisible();
+  await install.click();
+  await expect(panel).toContainText("меню");
+  await expect(install).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: info.outputPath("manual-install-390.png") });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+});
+
+test("standalone launch hides installation and keeps the language selector", async ({ page }, info) => {
+  await page.addInitScript(() => {
+    const matchMedia = window.matchMedia.bind(window);
+    window.matchMedia = (query) => {
+      const result = matchMedia(query);
+      if (query === "(display-mode: standalone)") Object.defineProperty(result, "matches", { value: true });
+      return result;
+    };
+  });
+  await login(page);
+  await page.getByTestId("app-preferences-toggle").click();
+  const panel = page.getByTestId("app-preferences-panel");
+  await expect(panel.locator(".device-setup")).toHaveCount(0);
+  await expect(panel.locator(".language-switcher")).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: info.outputPath("standalone-language-390.png") });
+});
+
+test("iOS standalone launch also hides installation without hiding language", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "standalone", { value: true });
+  });
+  await login(page);
+  await page.getByTestId("app-preferences-toggle").click();
+  const panel = page.getByTestId("app-preferences-panel");
+  await expect(panel.locator(".device-setup")).toHaveCount(0);
+  await expect(panel.locator(".language-switcher")).toBeVisible();
+});
+
+test("Apple mobile guidance and the persistent control follow the selected language", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "userAgent", { value: "iPhone" });
+    window.addEventListener("beforeinstallprompt", (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    });
+  });
+  await login(page);
+  await page.getByTestId("app-preferences-toggle").click();
+  const panel = page.getByTestId("app-preferences-panel");
+  await panel.getByRole("button", { name: "Как установить", exact: true }).click();
+  await expect(panel).toContainText("Safari");
+  await expect(panel).toContainText("На экран Домой");
+  await panel.getByLabel("Язык / Тіл / Language").selectOption("en");
+  await expect(panel.getByRole("button", { name: "How to install", exact: true })).toBeVisible();
+  await expect(panel).toContainText("Add to Home Screen");
+  await panel.getByLabel("Язык / Тіл / Language").selectOption("kk");
+  await expect(panel.locator(".device-setup").getByRole("button")).toBeVisible();
+  await expect(panel).toContainText("Басты экранға");
 });
