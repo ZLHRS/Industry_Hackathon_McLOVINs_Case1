@@ -14,7 +14,9 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from naryadai.api.analytics import router as analytics_router
 from naryadai.api.auth import router as auth_router
 from naryadai.api.catalog import router as catalog_router
+from naryadai.api.catalog_import import router as catalog_import_router
 from naryadai.api.health import router as health_router
+from naryadai.api.master_assistant import router as master_assistant_router
 from naryadai.api.notifications import router as notifications_router
 from naryadai.api.order_reports import router as order_reports_router
 from naryadai.api.orders import router as orders_router
@@ -23,6 +25,7 @@ from naryadai.api.realtime import ConnectionLimits
 from naryadai.api.realtime import router as realtime_router
 from naryadai.api.report_evidence import router as report_evidence_router
 from naryadai.api.reports import router as reports_router
+from naryadai.application.assistant_limits import AssistantLimits
 from naryadai.application.common import OperationError
 from naryadai.config import Environment, Settings
 from naryadai.infrastructure.database import Database
@@ -45,7 +48,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         application.state.auth_limiter = CapacityLimiter(4)
         application.state.photo_limiter = CapacityLimiter(2)
         application.state.report_limiter = CapacityLimiter(2)
+        application.state.catalog_import_limiter = CapacityLimiter(2)
         application.state.summary_limits = SummaryLimits()
+        application.state.assistant_limits = AssistantLimits()
         application.state.photo_store = PhotoStore(
             settings.photo_root,
             max_bytes=settings.photo_max_bytes,
@@ -75,6 +80,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(analytics_router, prefix="/api/v1")
     app.include_router(reports_router, prefix="/api/v1")
     app.include_router(catalog_router, prefix="/api/v1")
+    app.include_router(catalog_import_router, prefix="/api/v1")
+    app.include_router(master_assistant_router, prefix="/api/v1")
     app.include_router(orders_router, prefix="/api/v1")
     app.include_router(order_reports_router, prefix="/api/v1")
     app.include_router(photos_router, prefix="/api/v1")
@@ -117,7 +124,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_origins=list(settings.cors_origins),
             allow_credentials=False,
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-            allow_headers=["Content-Type", "Authorization", "Idempotency-Key"],
+            allow_headers=[
+                "Content-Type", "Authorization", "Idempotency-Key", "X-Import-Fingerprint"
+            ],
             expose_headers=["X-Request-ID"],
         )
     app.add_middleware(

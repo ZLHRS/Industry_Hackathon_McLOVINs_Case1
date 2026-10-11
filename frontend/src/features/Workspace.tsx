@@ -16,6 +16,7 @@ import { Icon, type IconName } from "../components/Icon";
 import { Api, ApiError } from "../api";
 import { local, ruPriority, ruStatus } from "./OrderDetail";
 import { SimilarRepairsPanel } from "./SimilarRepairsPanel";
+import { CatalogImport } from "./CatalogImport";
 import type {
   Catalog,
   CreateOrder,
@@ -72,6 +73,7 @@ export function OrdersView({
   onFilters,
   onOpen,
   onCreate,
+  onAssistant,
   onHistory,
   onSuggest,
   onSimilar,
@@ -88,6 +90,7 @@ export function OrdersView({
   onFilters: (next: OrderFilters) => void;
   onOpen: (id: string) => void;
   onCreate: (input: CreateOrder) => Promise<void>;
+  onAssistant: () => void;
   onHistory: (equipmentId: string) => Promise<void>;
   onSuggest: (input: {
     area_id: string;
@@ -183,10 +186,15 @@ export function OrdersView({
           <p className="muted orders-guidance">{view.guidance}</p>
         </div>
         {role === "master" && (
-          <button className="primary with-icon" onClick={() => setCreating(true)}>
-            <Icon name="plus" />
-            {t("Выдать наряд")}
-          </button>
+          <div className="orders-page-actions">
+            <button className="secondary" type="button" onClick={onAssistant}>
+              {t("Помощник")}
+            </button>
+            <button className="primary with-icon" onClick={() => setCreating(true)}>
+              <Icon name="plus" />
+              {t("Выдать наряд")}
+            </button>
+          </div>
         )}
       </div>
 
@@ -1462,6 +1470,7 @@ export function ReferenceView({
   onDirectoryFiltersChange: (filters: DirectoryFilters) => void;
 }) {
   const [editor, setEditor] = useState<{ kind: CatalogEditorKind; id?: string } | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const sectionHeading = useRef<HTMLHeadingElement>(null);
   const cardRefs = useRef<Partial<Record<DirectorySection, HTMLButtonElement | null>>>({});
   const previousSection = useRef<DirectorySection | null>(null);
@@ -1702,9 +1711,16 @@ export function ReferenceView({
           </h1>
         </div>
         {canManageCatalog && section && addAction[section] && (
-          <button className="primary" onClick={() => setEditor({ kind: addAction[section]!.kind })}>
-            {addAction[section]!.label}
-          </button>
+          <div className="reference-head-actions">
+            {(section === "equipment" || section === "materials") && (
+              <button className="secondary" type="button" onClick={() => setImportOpen(true)}>
+                {t("Импорт Excel")}
+              </button>
+            )}
+            <button className="primary" onClick={() => setEditor({ kind: addAction[section]!.kind })}>
+              {addAction[section]!.label}
+            </button>
+          </div>
         )}
       </div>
       {canManageCatalog && (section === "areas" || section === "equipment") && (
@@ -1991,6 +2007,15 @@ export function ReferenceView({
             }}
           />
         ))}
+      {importOpen && (section === "equipment" || section === "materials") && (
+        <CatalogImport
+          api={api}
+          onClose={() => setImportOpen(false)}
+          onImported={async () => {
+            await onCatalogChange();
+          }}
+        />
+      )}
     </section>
   );
 }

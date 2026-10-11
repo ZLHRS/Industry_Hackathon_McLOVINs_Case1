@@ -423,6 +423,56 @@ describe("analytics requests preserve privacy boundaries", () => {
   });
 });
 
+describe("catalog import", () => {
+  it("sends XLSX bytes and reuses the validated fingerprint only for the apply request", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({})));
+    vi.stubGlobal("fetch", fetcher);
+    const bytes = new Uint8Array([80, 75, 3, 4]).buffer;
+    const api = new Api(() => "admin-token");
+
+    await api.catalogImportPreview(bytes);
+    await api.catalogImportApply(bytes, "validated-fingerprint");
+
+    const [previewUrl, previewInit] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    const [applyUrl, applyInit] = fetcher.mock.calls[1] as unknown as [string, RequestInit];
+    expect(previewUrl).toBe("/api/v1/catalog/import/preview");
+    expect(applyUrl).toBe("/api/v1/catalog/import/apply");
+    expect(previewInit.body).toBe(bytes);
+    expect(applyInit.body).toBe(bytes);
+    expect(new Headers(previewInit.headers).get("Content-Type")).toContain("spreadsheetml.sheet");
+    expect(new Headers(previewInit.headers).get("X-Import-Fingerprint")).toBeNull();
+    expect(new Headers(applyInit.headers).get("X-Import-Fingerprint")).toBe("validated-fingerprint");
+    expect(new Headers(applyInit.headers).get("Authorization")).toBe("Bearer admin-token");
+  });
+});
+
+describe("master assistant", () => {
+  it("sends an explicit question, topic, scope, and selected language", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ answer: "data" })));
+    vi.stubGlobal("fetch", fetcher);
+
+    await new Api(() => "master-token").masterAssistant({
+      question: "Что требует внимания?",
+      topic: "attention",
+      area_id: "area-id",
+      equipment_id: "equipment-id",
+      language: "ru",
+    });
+
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/v1/master-assistant/answer");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({
+      question: "Что требует внимания?",
+      topic: "attention",
+      area_id: "area-id",
+      equipment_id: "equipment-id",
+      language: "ru",
+    });
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer master-token");
+  });
+});
+
 describe("employee administration", () => {
   it("sends secrets only in authenticated request bodies without mutation storage or retry", async () => {
     const fetcher = vi

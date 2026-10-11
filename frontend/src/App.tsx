@@ -14,6 +14,7 @@ import { CreateOrderDialog, OrdersView, ReferenceView, WorkloadView } from "./fe
 import { EquipmentCard } from "./features/EquipmentCard";
 import { EmployeesView } from "./features/Employees";
 import { AnalyticsView } from "./features/Analytics";
+import { MasterAssistant } from "./features/MasterAssistant";
 import {
   clearActor,
   enqueue,
@@ -120,7 +121,7 @@ function storedToken() {
 }
 
 export default function App() {
-  useLanguage();
+  const language = useLanguage();
   const installation = useDeviceInstallation();
   const initialToken = storedToken();
   const expiredActor = useRef<string | null>(initialToken ? null : (storedUser()?.id ?? null));
@@ -141,6 +142,7 @@ export default function App() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [equipmentForOrder, setEquipmentForOrder] = useState<Equipment | null>(null);
   const [preventiveDraft, setPreventiveDraft] = useState<PreventiveDraft | null>(null);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const appLocation = useAppLocation();
   const route = readRoute(appLocation);
   const view = route.view;
@@ -230,6 +232,7 @@ export default function App() {
       setData(null);
       setEquipmentForOrder(null);
       setPreventiveDraft(null);
+      setAssistantOpen(false);
       setPending([]);
       setSavedAt(null);
       navigate(preserveEquipmentRoute && equipmentRoute ? equipmentRoute : "/", true);
@@ -612,6 +615,16 @@ export default function App() {
   const equipmentArea = equipmentFromRoute
     ? (data?.catalog.areas.find((item) => item.id === equipmentFromRoute.area_id) ?? null)
     : null;
+  const assistantScopeKey = data?.catalog
+    ? [
+        user.id,
+        language,
+        ...data.catalog.areas.map((area) => `${area.id}:${area.is_active}`),
+        ...data.catalog.equipment.map(
+          (equipment) => `${equipment.id}:${equipment.area_id}:${equipment.is_active}`,
+        ),
+      ].join("|")
+    : user.id;
   const roleLabel =
     user.role === "master"
       ? t("Мастер")
@@ -836,6 +849,7 @@ export default function App() {
               await api.create(input);
               await refresh();
             }}
+            onAssistant={() => setAssistantOpen(true)}
             onSuggest={(input) => api.suggestions(input)}
             onSimilar={(input) => api.similarRepairs(input)}
             onViewEvidence={(id) => api.order(id)}
@@ -924,6 +938,19 @@ export default function App() {
             pushSubscriptionId.current = id;
           }}
           revision={liveRevision}
+        />
+      )}
+      {user.role === "master" && data?.catalog && (
+        <MasterAssistant
+          key={assistantScopeKey}
+          api={api}
+          catalog={data.catalog}
+          open={assistantOpen}
+          onClose={() => setAssistantOpen(false)}
+          onOpenOrder={(id) => {
+            setAssistantOpen(false);
+            setSelected(id);
+          }}
         />
       )}
       {equipmentForOrder &&

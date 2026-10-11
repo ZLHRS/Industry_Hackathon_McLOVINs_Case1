@@ -76,12 +76,14 @@ test("master reads all directory sections without administrative controls", asyn
     "Сотрудники",
   ]) {
     await page.getByRole("button", { name: `Открыть раздел: ${title}`, exact: true }).click();
+    await expect(page.getByRole("heading", { name: title, exact: true })).toBeFocused();
     await expect(page.locator(".reference-row").first()).toBeVisible();
     await expect(page.getByRole("button", { name: /^(Добавить|Изменить)/ })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     if (title === "Сотрудники")
       await page.screenshot({ path: info.outputPath("directory-staff-master-mobile.png") });
     await page.getByRole("button", { name: "Все разделы", exact: true }).click();
+    await expect(page.getByRole("button", { name: `Открыть раздел: ${title}`, exact: true })).toBeFocused();
   }
 });
 

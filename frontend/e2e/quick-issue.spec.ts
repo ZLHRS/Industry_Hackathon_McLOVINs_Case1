@@ -95,11 +95,13 @@ test.describe("mobile quick issuance", () => {
       description,
     });
     await expect(dialog).toBeHidden();
+    const automationElapsedMs = Date.now() - start;
+    expect(automationElapsedMs).toBeLessThan(60_000);
     await info.attach("interaction-count.json", {
       body: JSON.stringify(
         {
           interfaceTaps: taps,
-          automationElapsedMs: Date.now() - start,
+          automationElapsedMs,
           viewport: "390x844",
           excludes: ["login", "text keystrokes", "keyboard dismissal", "scroll gestures", "optional changes"],
           physicalPhoneMeasured: false,

@@ -22,6 +22,8 @@ import type {
   AnalyticsQuery,
   AnalyticsReport,
   AnalyticsSummary,
+  MasterAssistantAnswer,
+  MasterAssistantRequest,
   PreventiveDraft,
   PreventionSource,
   SimilarRepairs,
@@ -320,6 +322,27 @@ export class Api {
   catalog() {
     return this.request<Catalog>("/catalog");
   }
+  async catalogImportTemplate() {
+    const response = await this.response("/catalog/import-template.xlsx");
+    return response.blob();
+  }
+  catalogImportPreview(bytes: ArrayBuffer) {
+    return this.request<import("./types").CatalogImportPreview>("/catalog/import/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+      body: bytes,
+    });
+  }
+  catalogImportApply(bytes: ArrayBuffer, fingerprint: string) {
+    return this.request<import("./types").CatalogImportApplyResult>("/catalog/import/apply", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "X-Import-Fingerprint": fingerprint,
+      },
+      body: bytes,
+    });
+  }
   createArea(input: { code: string; name: string }) {
     return this.request<import("./types").Area>("/catalog/areas", {
       method: "POST",
@@ -493,6 +516,13 @@ export class Api {
   }
   similarRepairs(input: SimilarRepairsRequest) {
     return this.request<SimilarRepairs>("/work-orders/similar-repairs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  }
+  masterAssistant(input: MasterAssistantRequest) {
+    return this.request<MasterAssistantAnswer>("/master-assistant/answer", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),

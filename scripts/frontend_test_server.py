@@ -160,6 +160,7 @@ async def _write_metadata(
         "admin_login": admin.login,
         "selected_executor_id": str(executor.id),
         "area_id": str(area.id),
+        "area_code": area.code,
         "equipment_id": str(equipment.id),
         "fault_code_id": str(fault.id),
         "material_id": str(material.id),

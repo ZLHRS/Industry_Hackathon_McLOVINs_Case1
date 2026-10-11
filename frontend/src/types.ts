@@ -101,6 +101,37 @@ export interface Catalog {
   materials: Material[];
   time_norms: TimeNorm[];
 }
+export interface CatalogImportError {
+  field: string | null;
+  code: string;
+  message: string;
+}
+export interface CatalogImportRow {
+  sheet: string;
+  row: number;
+  key: string;
+  values: Record<string, string | number | null>;
+  status: "create" | "skip" | "error";
+  errors: CatalogImportError[];
+}
+export interface CatalogImportSheetPreview {
+  total: number;
+  create: number;
+  skip: number;
+  error: number;
+  rows: CatalogImportRow[];
+}
+export interface CatalogImportPreview {
+  file_sha256: string;
+  fingerprint: string;
+  equipment: CatalogImportSheetPreview;
+  materials: CatalogImportSheetPreview;
+  notes: string[];
+}
+export interface CatalogImportApplyResult extends CatalogImportPreview {
+  created_equipment: number;
+  created_materials: number;
+}
 export interface MasterOption {
   id: string;
   display_name: string;
@@ -309,6 +340,42 @@ export interface SimilarRepairsRequest {
   equipment_id: string;
   description: string;
   fault_code_id?: string | null;
+}
+
+export type MasterAssistantTopic = "attention" | "repeated_faults" | "accepted_repair_history";
+
+export interface MasterAssistantRequest {
+  question: string;
+  topic: MasterAssistantTopic | null;
+  area_id?: string | null;
+  equipment_id?: string | null;
+  language: "ru" | "kk" | "en";
+}
+
+export interface MasterAssistantCitation {
+  order_id: string;
+  number: string;
+  equipment_id: string;
+  equipment_name: string;
+  equipment_inventory_number: string;
+  status: string;
+  issued_at: string;
+  closed_at: string | null;
+  evidence: string;
+}
+
+export interface MasterAssistantAnswer {
+  answer: string;
+  topic: MasterAssistantTopic | null;
+  answer_source: "data" | "clarification";
+  scope: { area_id: string | null; equipment_id: string | null };
+  period: { from: string | null; to: string };
+  matching_orders: number;
+  citations: MasterAssistantCitation[];
+  no_data: boolean;
+  truncated: boolean;
+  limitations: string[];
+  measured_at: string;
 }
 export interface SimilarRepairMaterial {
   material_id: string;
