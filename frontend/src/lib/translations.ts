@@ -102,6 +102,100 @@ export const translations: Record<string, { kk: string; en: string }> = {
     kk: "Тарих шектелген: қолжетімді деректер бөлігінің нәтижелері көрсетілді.",
     en: "History is limited: results use the available portion of the data.",
   },
+  "Контроль профилактики": { kk: "Алдын алуды бақылау", en: "Preventive follow-up" },
+  "Ожидает выполнения": { kk: "Орындалуы күтілуде", en: "Awaiting completion" },
+  "Наблюдение продолжается": { kk: "Бақылау жалғасуда", en: "Observation continues" },
+  "Повтор зарегистрирован": { kk: "Қайталану тіркелді", en: "Repeat recorded" },
+  "Внеплановый ремонт зарегистрирован": {
+    kk: "Жоспардан тыс жөндеу тіркелді",
+    en: "Unplanned repair recorded",
+  },
+  "7 дней без зарегистрированного повтора": {
+    kk: "7 күн тіркелген қайталанусыз",
+    en: "7 days without a recorded repeat",
+  },
+  "7 дней без внеплановых ремонтов": {
+    kk: "7 күн жоспардан тыс жөндеусіз",
+    en: "7 days without unplanned repairs",
+  },
+  "Период отбирает профилактические наряды по дате выдачи. Наблюдение повторов начинается после закрытия.": {
+    kk: "Кезең алдын алу нарядтарын берілген күні бойынша алады. Қайталарды бақылау жабылғаннан кейін басталады.",
+    en: "The period selects preventive work orders by issue date. Repeat observation begins after closure.",
+  },
+  "Наблюдение фиксирует записи журнала и не доказывает эффективность профилактики.": {
+    kk: "Бақылау журнал жазбаларын бекітеді, бірақ алдын алудың тиімділігін дәлелдемейді.",
+    en: "Observation records journal entries; it does not prove preventive effectiveness.",
+  },
+  "Сначала сформируйте отчёт с нужными фильтрами.": {
+    kk: "Алдымен қажетті сүзгілермен есепті қалыптастырыңыз.",
+    en: "Generate a report with the required filters first.",
+  },
+  "Загружаем контроль профилактики…": {
+    kk: "Алдын алуды бақылау жүктелуде…",
+    en: "Loading preventive follow-up…",
+  },
+  "Не удалось загрузить контроль профилактики.": {
+    kk: "Алдын алуды бақылауды жүктеу мүмкін болмады.",
+    en: "Could not load preventive follow-up.",
+  },
+  "Профилактических нарядов за выбранный период нет.": {
+    kk: "Таңдалған кезеңде алдын алу нарядтары жоқ.",
+    en: "There are no preventive work orders in the selected period.",
+  },
+  "Страницы контроля профилактики": { kk: "Алдын алуды бақылау беттері", en: "Preventive follow-up pages" },
+  Вперёд: { kk: "Алға", en: "Next" },
+  "Показаны не все найденные результаты.": {
+    kk: "Барлық табылған нәтижелер көрсетілмеген.",
+    en: "Not all matching results are shown.",
+  },
+  "Повтор той же неисправности": { kk: "Сол ақаудың қайталануы", en: "Repeat of the same fault" },
+  "Внеплановый ремонт после профилактики": {
+    kk: "Алдын алудан кейінгі жоспардан тыс жөндеу",
+    en: "Unplanned repair after prevention",
+  },
+  "Дней наблюдения: {0} из {1}": { kk: "Бақылау күндері: {0} / {1}", en: "Days observed: {0} of {1}" },
+  "Повторов в журнале: {0}": { kk: "Журналдағы қайталар: {0}", en: "Repeats in the journal: {0}" },
+  "Внеплановых ремонтов в журнале: {0}": {
+    kk: "Журналдағы жоспардан тыс жөндеулер: {0}",
+    en: "Unplanned repairs in the journal: {0}",
+  },
+  "Показаны не все связанные наряды.": {
+    kk: "Барлық байланысты нарядтар көрсетілмеген.",
+    en: "Not all related work orders are shown.",
+  },
+  "Связанные повторы:": { kk: "Байланысты қайталар:", en: "Related repeats:" },
+  "Связанные внеплановые ремонты:": {
+    kk: "Байланысты жоспардан тыс жөндеулер:",
+    en: "Related unplanned repairs:",
+  },
+  "Основание и методика": { kk: "Негіз және әдістеме", en: "Basis and method" },
+  "Сравнение:": { kk: "Салыстыру:", en: "Comparison:" },
+  "Исходные наряды:": { kk: "Бастапқы нарядтар:", en: "Source work orders:" },
+  "Не закрыт": { kk: "Жабылмаған", en: "Not closed" },
+  "До:": { kk: "Дейін:", en: "Until:" },
+  "Проверено по состоянию на:": { kk: "Күйі бойынша тексерілді:", en: "Checked as of:" },
+  "Основание недоступно.": { kk: "Негіз қолжетімсіз.", en: "Basis is unavailable." },
+  "Нет подтверждённой даты": { kk: "Расталған күні жоқ", en: "No confirmed date" },
+  "Недостаточно проверяемых данных об источнике профилактики.": {
+    kk: "Алдын алу көзі туралы тексерілетін дерек жеткіліксіз.",
+    en: "There is insufficient verifiable data about the preventive source.",
+  },
+  "Недостаточно проверяемых исходных нарядов для сравнения.": {
+    kk: "Салыстыру үшін тексерілетін бастапқы нарядтар жеткіліксіз.",
+    en: "There are insufficient verifiable source work orders for comparison.",
+  },
+  "Закрытие не подтверждено событием мастера.": {
+    kk: "Жабылу шебер оқиғасымен расталмаған.",
+    en: "Closure is not confirmed by a supervisor event.",
+  },
+  "Не удалось определить исходный шифр неисправности.": {
+    kk: "Бастапқы ақау кодын анықтау мүмкін болмады.",
+    en: "Could not determine the original fault code.",
+  },
+  "Показаны первые 20 повторных нарядов; общее число указано отдельно.": {
+    kk: "Алғашқы 20 қайталанған наряд көрсетілді; жалпы сан бөлек көрсетілген.",
+    en: "The first 20 repeated work orders are shown; the total is shown separately.",
+  },
   Наблюдение: { kk: "Бақылау", en: "Follow-up" },
   "Выполненные работы": { kk: "Орындалған жұмыстар", en: "Work performed" },
   "Параметры наряда": { kk: "Наряд параметрлері", en: "Work order settings" },

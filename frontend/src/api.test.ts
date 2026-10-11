@@ -403,6 +403,24 @@ describe("analytics requests preserve privacy boundaries", () => {
       expect(new Headers(init.headers).get("Authorization")).toBe("Bearer private-token");
     }
   });
+
+  it("uses the applied analytics filters and bounded pagination for preventive outcomes", async () => {
+    const fetcher = vi.fn(
+      async () => new Response(JSON.stringify({ items: [], total: 0, offset: 5, limit: 5 })),
+    );
+    vi.stubGlobal("fetch", fetcher);
+
+    await new Api(() => "private-token").preventionOutcomes(query, 5, 5);
+
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    const params = new URL(url, "https://technaryad.invalid").searchParams;
+    expect(new URL(url, "https://technaryad.invalid").pathname).toBe("/api/v1/analytics/prevention-outcomes");
+    expect(params.get("period")).toBe("shift");
+    expect(params.getAll("executor_id")).toEqual(["executor-id"]);
+    expect(params.get("offset")).toBe("5");
+    expect(params.get("limit")).toBe("5");
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer private-token");
+  });
 });
 
 describe("employee administration", () => {

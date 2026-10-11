@@ -1595,6 +1595,134 @@ textarea {
   margin-bottom: 0.5rem;
   white-space: pre-wrap;
 }
+.prevention-outcomes {
+  margin-top: 1rem;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--teal);
+  border-radius: 11px;
+  background: var(--surface);
+  padding: clamp(1rem, 2vw, 1.4rem);
+}
+.prevention-outcomes > summary {
+  color: var(--teal-deep);
+  cursor: pointer;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+.prevention-outcomes-content {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.85rem;
+}
+.prevention-outcomes-context,
+.prevention-outcomes-note {
+  margin: 0;
+  font-size: 0.84rem;
+}
+.prevention-outcome {
+  border-top: 1px solid var(--line);
+  padding-top: 0.65rem;
+}
+.prevention-outcome summary,
+.prevention-outcome-evidence > summary {
+  cursor: pointer;
+}
+.prevention-outcome summary a {
+  color: var(--teal-deep);
+  font-weight: 800;
+}
+.prevention-outcome summary > span {
+  color: #60716d;
+  font-size: 0.85rem;
+  margin-inline-start: 0.45rem;
+}
+.prevention-outcome-status {
+  display: inline-block;
+  margin-inline-start: 0.5rem;
+  color: #355d56;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+.prevention-outcome-status.outcome-repeat_detected {
+  color: #8b3e0d;
+}
+.prevention-outcome-status.outcome-cancelled,
+.prevention-outcome-status.outcome-unknown {
+  color: #60696a;
+}
+.prevention-outcome-detail {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.6rem;
+}
+.prevention-outcome-detail dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+}
+.prevention-outcome-detail dl > div,
+.prevention-observation,
+.prevention-outcome-evidence > div {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #f8fbfa;
+  padding: 0.55rem 0.65rem;
+}
+.prevention-outcome-detail dt {
+  color: #60716d;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+.prevention-outcome-detail dd {
+  margin: 0.16rem 0 0;
+  font-size: 0.82rem;
+}
+.prevention-observation h4,
+.prevention-observation p,
+.prevention-outcome-evidence p {
+  margin: 0;
+}
+.prevention-observation,
+.prevention-outcome-evidence > div {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.84rem;
+}
+.prevention-outcome-evidence > summary {
+  color: #315850;
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+.prevention-outcome-evidence > div {
+  margin-top: 0.45rem;
+}
+.prevention-outcomes-pages {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.7rem;
+  font-size: 0.84rem;
+}
+@media (max-width: 430px) {
+  .prevention-outcome summary > span,
+  .prevention-outcome-status {
+    display: block;
+    margin: 0.18rem 0 0 1.1rem;
+  }
+  .prevention-outcome-detail dl {
+    grid-template-columns: 1fr;
+  }
+  .prevention-outcomes-pages {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+  .prevention-outcomes-pages span {
+    align-self: center;
+  }
+}
 @media (max-width: 1100px) {
   .analytics-filters {
     grid-template-columns: repeat(3, minmax(150px, 1fr));

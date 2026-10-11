@@ -579,6 +579,10 @@ export class Api {
   analyticsReport(query: AnalyticsQuery) {
     return this.request<AnalyticsReport>(this.analyticsPath("/analytics/report", query));
   }
+  preventionOutcomes(query: AnalyticsQuery, offset = 0, limit = 5) {
+    const path = this.analyticsPath("/analytics/prevention-outcomes", query);
+    return this.request<import("./types").PreventionOutcomesPage>(`${path}&offset=${offset}&limit=${limit}`);
+  }
   preventiveDraft(source: PreventionSource) {
     return this.request<PreventiveDraft>("/analytics/preventive-draft", {
       method: "POST",

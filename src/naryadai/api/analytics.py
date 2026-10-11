@@ -14,6 +14,7 @@ from naryadai.analytics.contracts import AnalyticsOptions, AnalyticsQuery, Analy
 from naryadai.analytics.service import analytics_options, build_report
 from naryadai.application.contracts import PreventionSource
 from naryadai.application.prevention import PreventiveDraft, prepare_preventive_draft
+from naryadai.application.prevention_outcomes import PreventionOutcomesView, prevention_outcomes
 from naryadai.auth.dependencies import DatabaseDep, PrincipalDep
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -78,3 +79,14 @@ async def preventive_draft(
     source: PreventionSource, principal: PrincipalDep, database: DatabaseDep
 ) -> PreventiveDraft:
     return await prepare_preventive_draft(database, principal, source)
+
+
+@router.get("/prevention-outcomes", response_model=PreventionOutcomesView)
+async def prevention_outcome_history(
+    principal: PrincipalDep,
+    database: DatabaseDep,
+    query: AnalyticsQueryDep,
+    offset: int = Query(default=0, ge=0, le=100_000),
+    limit: int = Query(default=50, ge=1, le=100),
+) -> PreventionOutcomesView:
+    return await prevention_outcomes(database, principal, query, offset=offset, limit=limit)

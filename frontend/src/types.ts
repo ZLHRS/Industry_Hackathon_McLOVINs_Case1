@@ -553,3 +553,56 @@ export interface AnalyticsSummary {
   limitations: string[];
   evidence_ids: string[];
 }
+export interface PreventionOutcomeRepeat {
+  id: string;
+  number: string;
+  issued_at: string;
+  fault_code_id: string | null;
+}
+export interface PreventionOutcome {
+  order_id: string;
+  number: string;
+  issued_at: string;
+  area_id: string;
+  equipment_id: string;
+  equipment_name: string;
+  equipment_inventory_number: string;
+  status: Status;
+  source: {
+    family: "recurring_fault" | "after_ppr";
+    title: string;
+    recommendation: string;
+    formula: string;
+    order_ids: string[];
+    evidence_orders: Array<{ id: string; number: string }>;
+    comparison_kind: "same_fault" | "any_unplanned";
+  } | null;
+  closure: { closed_at: string; master_event_id: string } | null;
+  outcome:
+    | "pending"
+    | "cancelled"
+    | "under_observation"
+    | "repeat_detected"
+    | "window_completed_no_recorded_repeat"
+    | "unknown";
+  observation: {
+    window_days: number;
+    window_end: string;
+    observed_until: string;
+    observed_days: number;
+    repeat_count: number;
+    repeat_orders: PreventionOutcomeRepeat[];
+    repeat_evidence_truncated: boolean;
+  } | null;
+  notes: string[];
+}
+export interface PreventionOutcomesPage {
+  items: PreventionOutcome[];
+  total: number;
+  offset: number;
+  limit: number;
+  period: AnalyticsReport["period"];
+  measured_at: string;
+  truncated: boolean;
+  notes: string[];
+}

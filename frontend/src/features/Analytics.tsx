@@ -3,6 +3,7 @@ import { readableLimitation } from "../lib/presentationText";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Api, ApiError } from "../api";
 import { Icon } from "../components/Icon";
+import { PreventionOutcomesPanel } from "./PreventionOutcomesPanel";
 import type {
   AnalyticsOptions,
   AnalyticsQuery,
@@ -392,6 +393,7 @@ export function AnalyticsView({
               />
             </section>
           )}
+          {people && <PreventionOutcomesPanel api={api} query={appliedQuery} revision={revision} />}
           {people && (
             <section className="analytics-section ai-summary">
               <Heading
