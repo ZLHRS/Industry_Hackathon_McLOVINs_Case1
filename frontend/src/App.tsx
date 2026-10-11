@@ -837,6 +837,8 @@ export default function App() {
               await refresh();
             }}
             onSuggest={(input) => api.suggestions(input)}
+            onSimilar={(input) => api.similarRepairs(input)}
+            onViewEvidence={(id) => api.order(id)}
             onHistory={async (equipmentId) =>
               changeFilters({
                 ...filters,
@@ -940,6 +942,8 @@ export default function App() {
               await refresh();
             }}
             onSuggest={(input) => api.suggestions(input)}
+            onSimilar={(input) => api.similarRepairs(input)}
+            onViewEvidence={(id) => api.order(id)}
           />
         )}
       {preventiveDraft && data?.catalog && user.role === "master" && (
@@ -956,6 +960,7 @@ export default function App() {
             setNotice(t("Наряд выдан"));
           }}
           onSuggest={(input) => api.suggestions(input)}
+          onSimilar={(input) => api.similarRepairs(input)}
           onViewEvidence={(id) => api.order(id)}
         />
       )}

@@ -22,6 +22,7 @@ from naryadai.application.queries import (
     order_events,
     workload,
 )
+from naryadai.application.repair_memory import SimilarRepairsView, similar_repairs
 from naryadai.application.suggestions import (
     SuggestionRequest,
     SuggestionsView,
@@ -121,6 +122,13 @@ async def suggestions(
     body: SuggestionRequest, principal: PrincipalDep, database: DatabaseDep
 ) -> SuggestionsView:
     return await work_order_suggestions(database, principal, body)
+
+
+@router.post("/work-orders/similar-repairs", response_model=SimilarRepairsView)
+async def similar_repair_history(
+    body: SuggestionRequest, principal: PrincipalDep, database: DatabaseDep
+) -> SimilarRepairsView:
+    return await similar_repairs(database, principal, body)
 
 
 @router.get("/work-orders/{order_id}", response_model=OrderDetail)

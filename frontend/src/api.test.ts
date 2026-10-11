@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Api, ApiError, clearMutationKeys } from "./api";
-import type { CreateOrder, PreventionSource } from "./types";
+import type { CreateOrder, PreventionSource, SimilarRepairsRequest } from "./types";
 
 class MemoryStorage {
   private values = new Map<string, string>();
@@ -219,6 +219,36 @@ describe("preventive draft", () => {
     expect(url).toBe("/api/v1/analytics/preventive-draft");
     expect(init.method).toBe("POST");
     expect(JSON.parse(String(init.body))).toEqual(source);
+  });
+});
+
+describe("similar repairs", () => {
+  it("sends the current issue context only when the caller requests it", async () => {
+    const input: SimilarRepairsRequest = {
+      area_id: "area",
+      equipment_id: "equipment",
+      description: "Проверить уплотнение насоса",
+      fault_code_id: null,
+    };
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            items: [],
+            history_days: 365,
+            truncated: false,
+            measured_at: "2026-10-11T08:00:00Z",
+          }),
+        ),
+    );
+    vi.stubGlobal("fetch", fetcher);
+
+    await new Api(() => "session").similarRepairs(input);
+
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/v1/work-orders/similar-repairs");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual(input);
   });
 });
 

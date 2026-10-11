@@ -2502,6 +2502,109 @@ textarea:hover {
   color: #60716d;
   font-size: 0.78rem;
 }
+.similar-repairs {
+  border-top: 1px solid #d8e1df;
+  padding-top: 0.7rem;
+}
+.similar-repairs > summary {
+  color: #1d554d;
+  cursor: pointer;
+  font-weight: 800;
+}
+.similar-repairs-content {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.7rem;
+}
+.similar-repairs-content > p {
+  margin: 0;
+}
+.similar-repair {
+  border-top: 1px solid #d8e1df;
+  padding-top: 0.6rem;
+}
+.similar-repair summary {
+  cursor: pointer;
+}
+.similar-repair summary strong {
+  color: var(--teal-deep);
+}
+.similar-repair summary span {
+  color: #60716d;
+  font-size: 0.85rem;
+  margin-inline-start: 0.45rem;
+}
+.similar-repair-detail {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.55rem;
+}
+.similar-repair-detail > p,
+.similar-repair-detail section,
+.similar-repair-detail h4,
+.similar-repair-detail ul {
+  margin: 0;
+}
+.similar-repair-reasons {
+  color: #48665f;
+  font-size: 0.82rem;
+}
+.similar-repair-detail dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+}
+.similar-repair-detail dl > div {
+  padding: 0.5rem;
+  border: 1px solid #d8e1df;
+  border-radius: 7px;
+  background: #f8fbfa;
+}
+.similar-repair-detail dt {
+  color: #60716d;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+.similar-repair-detail dd {
+  margin: 0.16rem 0 0;
+  font-size: 0.82rem;
+}
+.similar-repair-detail h4 {
+  color: #315850;
+  font-size: 0.84rem;
+}
+.similar-repair-detail section {
+  display: grid;
+  gap: 0.25rem;
+}
+.similar-repair-detail ul {
+  padding-left: 1rem;
+  font-size: 0.84rem;
+}
+.similar-repair-source {
+  display: grid;
+  gap: 0.2rem;
+  border-left: 3px solid var(--teal);
+  background: #f0f9f6;
+  padding: 0.55rem 0.65rem;
+}
+.similar-repair-source span {
+  color: #60716d;
+  font-size: 0.78rem;
+}
+.similar-repair-source p {
+  margin: 0;
+}
+@media (max-width: 420px) {
+  .similar-repair summary span {
+    display: block;
+    margin: 0.15rem 0 0 1.1rem;
+  }
+  .similar-repair-detail dl {
+    grid-template-columns: 1fr;
+  }
+}
 .prevention-equipment-step {
   display: grid;
   gap: 0.14rem;

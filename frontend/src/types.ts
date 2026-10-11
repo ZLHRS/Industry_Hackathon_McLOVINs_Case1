@@ -304,6 +304,51 @@ export interface OrderSuggestions {
   executors: OrderSuggestionExecutor[];
   notes: string[];
 }
+export interface SimilarRepairsRequest {
+  area_id: string;
+  equipment_id: string;
+  description: string;
+  fault_code_id?: string | null;
+}
+export interface SimilarRepairMaterial {
+  material_id: string;
+  code: string;
+  name: string;
+  unit: string;
+  quantity: string;
+}
+export interface SimilarRepair {
+  order_id: string;
+  number: string;
+  area_id: string;
+  equipment_id: string;
+  equipment_name: string;
+  equipment_inventory_number: string;
+  equipment_type: string;
+  closed_at: string;
+  description: string;
+  work_description: string;
+  fault_code_id: string | null;
+  materials: SimilarRepairMaterial[];
+  match: {
+    reason_codes: Array<"same_equipment" | "compatible_equipment_type" | "same_fault_code" | "matching_text">;
+    matched_terms: string[];
+  };
+  followup: {
+    status: "observed_repeat" | "none_recorded" | "observing" | "unknown";
+    window_days: number;
+    observed_days: number;
+    observed_until: string;
+    repeat_count: number | null;
+  };
+}
+export interface SimilarRepairs {
+  items: SimilarRepair[];
+  history_days: number;
+  truncated: boolean;
+  measured_at: string;
+  notes?: string[];
+}
 export interface CreateOrder {
   work_type: WorkType;
   description: string;

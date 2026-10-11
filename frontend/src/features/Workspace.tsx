@@ -15,6 +15,7 @@ import { Dialog } from "../components/Dialog";
 import { Icon, type IconName } from "../components/Icon";
 import { Api, ApiError } from "../api";
 import { local, ruPriority, ruStatus } from "./OrderDetail";
+import { SimilarRepairsPanel } from "./SimilarRepairsPanel";
 import type {
   Catalog,
   CreateOrder,
@@ -26,6 +27,7 @@ import type {
   OrderSuggestions,
   PreventiveDraft,
   Role,
+  SimilarRepairsRequest,
   Workload,
 } from "../types";
 
@@ -72,6 +74,8 @@ export function OrdersView({
   onCreate,
   onHistory,
   onSuggest,
+  onSimilar,
+  onViewEvidence,
   loading,
 }: {
   role: Role;
@@ -91,6 +95,8 @@ export function OrdersView({
     description: string;
     fault_code_id?: string | null;
   }) => Promise<OrderSuggestions>;
+  onSimilar: (input: SimilarRepairsRequest) => Promise<import("../types").SimilarRepairs>;
+  onViewEvidence: (id: string) => Promise<OrderDetail>;
   loading: boolean;
 }) {
   const [creating, setCreating] = useState(false);
@@ -458,6 +464,8 @@ export function OrdersView({
             setCreating(false);
           }}
           onSuggest={onSuggest}
+          onSimilar={onSimilar}
+          onViewEvidence={onViewEvidence}
         />
       )}
     </section>
@@ -655,6 +663,7 @@ export function CreateOrderDialog({
   onClose,
   onCreate,
   onSuggest,
+  onSimilar,
   initialAreaId,
   initialEquipmentId,
   preventiveDraft,
@@ -670,6 +679,7 @@ export function CreateOrderDialog({
     description: string;
     fault_code_id?: string | null;
   }) => Promise<OrderSuggestions>;
+  onSimilar: (input: SimilarRepairsRequest) => Promise<import("../types").SimilarRepairs>;
   initialAreaId?: string;
   initialEquipmentId?: string;
   preventiveDraft?: PreventiveDraft;
@@ -868,6 +878,18 @@ export function CreateOrderDialog({
     workers.find((person) => person.employee_id === input.executor_id);
   const activeSuggestions = canSuggest && receivedKey === suggestionKey ? suggestions : null;
   const activeSuggestionError = canSuggest ? suggestionError : "";
+  const similarInput = useMemo<SimilarRepairsRequest | null>(
+    () =>
+      canSuggest
+        ? {
+            area_id: input.area_id,
+            equipment_id: input.equipment_id,
+            description: input.description.trim(),
+            fault_code_id: input.fault_code_id || null,
+          }
+        : null,
+    [canSuggest, input.area_id, input.description, input.equipment_id, input.fault_code_id],
+  );
   return (
     <Dialog title={preventiveDraft ? t("Профилактический наряд") : t("Выдать наряд")} onClose={onClose}>
       <form className="dialog-form guided-order-form" onSubmit={(event) => void submit(event)}>
@@ -994,6 +1016,12 @@ export function CreateOrderDialog({
             onChange={(event) => updateInput({ ...input, description: event.target.value }, true)}
           />
         </label>
+        <SimilarRepairsPanel
+          input={similarInput}
+          requestKey={suggestionKey}
+          onLoad={onSimilar}
+          onViewEvidence={onViewEvidence}
+        />
         <section className="order-suggestions" aria-label={t("Подбор вариантов")}>
           <div className="order-suggestions-head">
             <div>

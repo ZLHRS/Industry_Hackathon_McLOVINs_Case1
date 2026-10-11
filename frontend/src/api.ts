@@ -24,6 +24,8 @@ import type {
   AnalyticsSummary,
   PreventiveDraft,
   PreventionSource,
+  SimilarRepairs,
+  SimilarRepairsRequest,
 } from "./types";
 
 export class ApiError extends Error {
@@ -484,6 +486,13 @@ export class Api {
     fault_code_id?: string | null;
   }) {
     return this.request<import("./types").OrderSuggestions>("/work-orders/suggestions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  }
+  similarRepairs(input: SimilarRepairsRequest) {
+    return this.request<SimilarRepairs>("/work-orders/similar-repairs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
