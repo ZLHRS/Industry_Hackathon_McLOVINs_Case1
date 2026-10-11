@@ -11,7 +11,7 @@ async function login(page: Page) {
   await page.getByLabel("Логин", { exact: true }).fill(state.master_login);
   await page.getByLabel("Пароль", { exact: true }).fill(state.secret);
   await page.getByRole("button", { name: "Войти", exact: true }).click();
-  await expect(page.getByRole("button", { name: /Выйти/ })).toBeVisible();
+  await expect(page.getByTestId("app-preferences-toggle")).toBeVisible();
 }
 
 async function fillQuickForm(page: Page) {

@@ -2,6 +2,7 @@ import { t, getLocale, message } from "../lib/i18n";
 import { readableLimitation } from "../lib/presentationText";
 import { useEffect, useMemo, useState } from "react";
 import { Api, ApiError } from "../api";
+import { Icon } from "../components/Icon";
 import type { AnalyticsOptions, AnalyticsQuery, AnalyticsReport, Role } from "../types";
 
 const zone = "Asia/Qostanay";
@@ -129,10 +130,20 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
           <p className="muted">{t("По журналу нарядов · время Костаная")}</p>
         </div>
         <div className="analytics-actions">
-          <button className="secondary" onClick={() => void download()} disabled={!report || exporting}>
+          <button
+            className="secondary with-icon"
+            onClick={() => void download()}
+            disabled={!report || exporting}
+          >
+            <Icon name="download" />
             {exporting ? t("Готовим Excel…") : t("Скачать Excel")}
           </button>
-          <button className="primary" onClick={() => void refresh()} disabled={loading || summarizing}>
+          <button
+            className="primary with-icon"
+            onClick={() => void refresh()}
+            disabled={loading || summarizing}
+          >
+            <Icon name="refresh" />
             {loading ? t("Считаем…") : t("Обновить отчёт")}
           </button>
         </div>
@@ -250,7 +261,10 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
       {stale && (
         <div className="banner">
           {t("Появились новые изменения.")}{" "}
-          <button onClick={() => void refresh()}>{t("Обновить данные")}</button>
+          <button className="secondary with-icon banner-action" onClick={() => void refresh()}>
+            <Icon name="refresh" />
+            {t("Обновить данные")}
+          </button>
         </div>
       )}
       {error && (

@@ -319,6 +319,10 @@ export const translations: Record<string, { kk: string; en: string }> = {
     kk: "← Артқа",
     en: "← Back",
   },
+  Профиль: { kk: "Профиль", en: "Profile" },
+  "Профиль: {0}": { kk: "Профиль: {0}", en: "Profile: {0}" },
+  "Свернуть меню": { kk: "Мәзірді жию", en: "Collapse menu" },
+  "Развернуть меню": { kk: "Мәзірді жаю", en: "Expand menu" },
   "Переподключение…": {
     kk: "Қайта қосылуда…",
     en: "Reconnecting…",
@@ -2970,6 +2974,7 @@ export const translations: Record<string, { kk: string; en: string }> = {
     kk: "Бөлімді ашу →",
     en: "Open section →",
   },
+  "Открыть раздел": { kk: "Бөлімді ашу", en: "Open section" },
   "Добавить участок": {
     kk: "Учаске қосу",
     en: "Add area",

@@ -2,6 +2,7 @@ import { t, getLocale, message } from "../lib/i18n";
 import { useEffect, useState } from "react";
 import type { Api } from "../api";
 import { Dialog } from "../components/Dialog";
+import { Icon } from "../components/Icon";
 import type { NotificationItem, NotificationPage } from "../types";
 
 const formatDate = (value: string) =>
@@ -39,9 +40,10 @@ export function NotificationButton({ count, onOpen }: { count: number; onOpen: (
       className="notification-button"
       onClick={onOpen}
       aria-label={t("Уведомления: непрочитанных {0}", [count])}
+      title={t("Уведомления")}
     >
-      {t("Уведомления")}
-      {count > 0 && <b>{count}</b>}
+      <Icon name="bell" />
+      {count > 0 && <b aria-hidden="true">{count > 99 ? "99+" : count}</b>}
     </button>
   );
 }
@@ -156,6 +158,7 @@ export function NotificationsDialog({
           <small>{message(pushState)}</small>
           {pushPermission !== "denied" && pushSupported && (
             <button type="button" className="secondary" onClick={() => void enablePush()}>
+              <Icon name="bell" />
               {pushPermission === "granted" ? t("Подключить устройство") : t("Включить уведомления")}
             </button>
           )}
@@ -187,13 +190,16 @@ export function NotificationsDialog({
             <div className="notification-actions">
               {item.order_id && (
                 <button type="button" className="secondary" onClick={() => onOrder(item.order_id!)}>
+                  <Icon name="open" />
                   {t("Открыть наряд")}
                 </button>
               )}
               {!item.read_at && (
                 <button
                   type="button"
-                  className="text-button"
+                  className="icon-action"
+                  aria-label={t("Прочитано")}
+                  title={t("Прочитано")}
                   onClick={() =>
                     void api
                       .markNotificationRead(item.id)
@@ -201,7 +207,7 @@ export function NotificationsDialog({
                       .catch(() => setError(t("Не удалось отметить уведомление.")))
                   }
                 >
-                  {t("Прочитано")}
+                  <Icon name="check" />
                 </button>
               )}
               {item.urgent && item.action_required && !item.acknowledged_at && (
@@ -215,6 +221,7 @@ export function NotificationsDialog({
                       .catch(() => setError(t("Не удалось подтвердить получение.")))
                   }
                 >
+                  <Icon name="check" />
                   {t("Подтвердить получение")}
                 </button>
               )}

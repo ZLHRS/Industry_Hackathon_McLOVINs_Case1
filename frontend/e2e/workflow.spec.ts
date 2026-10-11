@@ -23,7 +23,7 @@ async function login(page: Page, account: string) {
   await page.getByLabel("Логин", { exact: true }).fill(account);
   await page.getByLabel("Пароль", { exact: true }).fill(state.secret);
   await page.getByRole("button", { name: "Войти", exact: true }).click();
-  await expect(page.getByRole("button", { name: /Выйти/ })).toBeVisible();
+  await expect(page.getByTestId("app-preferences-toggle")).toBeVisible();
 }
 async function token(request: APIRequestContext, account: string) {
   const response = await request.post("/api/v1/auth/login", {
@@ -432,7 +432,8 @@ test("readonly roles, keyboard dialog, private cache and responsive layout", asy
   });
   expect(cached.length).toBeGreaterThan(0);
   expect(cached.some((path) => path.startsWith("/api/"))).toBe(false);
-  await page.getByRole("button", { name: /Выйти/ }).click();
+  await page.getByRole("button", { name: /^Профиль:/ }).click();
+  await page.getByRole("button", { name: "Выйти", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Вход в смену" })).toBeVisible();
   await login(page, state.admin_login);
   await expect(page.getByRole("heading", { name: "Сотрудники и доступ" })).toBeVisible();

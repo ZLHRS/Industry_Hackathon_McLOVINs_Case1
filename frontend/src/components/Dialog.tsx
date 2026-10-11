@@ -1,6 +1,7 @@
 import { t } from "../lib/i18n";
 import { useEffect, useId, useRef } from "react";
 import type { ReactNode } from "react";
+import { Icon } from "./Icon";
 
 export function Dialog({
   title,
@@ -45,7 +46,7 @@ export function Dialog({
           onClick={() => closeRef.current()}
           aria-label={t("Закрыть")}
         >
-          ×
+          <Icon name="close" />
         </button>
       </div>
       {children}

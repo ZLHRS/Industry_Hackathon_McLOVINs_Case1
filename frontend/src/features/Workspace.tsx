@@ -12,6 +12,7 @@ import "./workspace-ux.css";
 import "./reference-ux.css";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "../components/Dialog";
+import { Icon, type IconName } from "../components/Icon";
 import { Api, ApiError } from "../api";
 import { local, ruPriority, ruStatus } from "./OrderDetail";
 import type {
@@ -174,7 +175,8 @@ export function OrdersView({
           <p className="muted orders-guidance">{view.guidance}</p>
         </div>
         {role === "master" && (
-          <button className="primary" onClick={() => setCreating(true)}>
+          <button className="primary with-icon" onClick={() => setCreating(true)}>
+            <Icon name="plus" />
             {t("Выдать наряд")}
           </button>
         )}
@@ -188,16 +190,25 @@ export function OrdersView({
             onClick={() => onFilters({ ...filters, attention: !filters.attention, offset: 0 })}
             aria-pressed={filters.attention}
           >
-            <span className="operations-kicker">{t("ТРЕБУЮТ ВНИМАНИЯ")}</span>
+            <span className="operations-kicker">
+              <Icon name="alert" />
+              {t("ТРЕБУЮТ ВНИМАНИЯ")}
+            </span>
             <strong>{urgentCount}</strong>
             <small>{filters.attention ? t("Показаны срочные") : t("Сроки и высокий приоритет")}</small>
           </button>
           <div className="operations-stat">
-            <span>{t("Выполняются")}</span>
+            <span>
+              <Icon name="wrench" />
+              {t("Выполняются")}
+            </span>
             <strong>{activeCount}</strong>
           </div>
           <div className="operations-stat">
-            <span>{t("В выборке")}</span>
+            <span>
+              <Icon name="list" />
+              {t("В выборке")}
+            </span>
             <strong>{page.total}</strong>
           </div>
         </section>
@@ -212,6 +223,7 @@ export function OrdersView({
               onFilters({ ...filters, query: searchInput.trim(), status: activeStatuses, offset: 0 })
             }
           >
+            <Icon name="activity" />
             {t("В работе")}
           </button>
           <button
@@ -221,6 +233,7 @@ export function OrdersView({
               onFilters({ ...filters, query: searchInput.trim(), status: archiveStatuses, offset: 0 })
             }
           >
+            <Icon name="history" />
             {t("История")}
           </button>
         </div>
@@ -228,6 +241,7 @@ export function OrdersView({
 
       <div className="orders-filter-actions">
         <label className="order-search">
+          <Icon name="search" className="order-search-icon" />
           <span className="sr-only">{t("Поиск наряда")}</span>
           <input
             type="search"
@@ -237,8 +251,9 @@ export function OrdersView({
             aria-label={t("Поиск наряда")}
           />
         </label>
-        <label className="order-sort-control">
-          <span>{t("Сортировка")}</span>
+        <label className="order-sort-control" title={t("Сортировка")}>
+          <Icon name="sort" />
+          <span className="sr-only">{t("Сортировка")}</span>
           <select
             aria-label={t("Сортировка")}
             value={filters.sort}
@@ -260,11 +275,13 @@ export function OrdersView({
           aria-label={additionalFilterCount ? t("Фильтры: выбрано ") + additionalFilterCount : t("Фильтры")}
           onClick={() => setFiltersOpen((open) => !open)}
         >
-          {t("Фильтры")}
-          {additionalFilterCount ? " (" + additionalFilterCount + ")" : ""}
+          <Icon name="filter" />
+          <span className="filter-toggle-label">{t("Фильтры")}</span>
+          {additionalFilterCount ? <b className="filter-count">{additionalFilterCount}</b> : null}
         </button>
         {hasAdditionalFilters && (
           <button className="text-button reset-order-filters" type="button" onClick={resetFilters}>
+            <Icon name="close" />
             {t("Сбросить фильтры")}
           </button>
         )}
@@ -484,8 +501,14 @@ function Pagination({
   const goTo = (number: number) => onFilters({ ...filters, offset: (number - 1) * page.limit });
   return (
     <nav className="pagination" aria-label={t("Страницы нарядов")}>
-      <button className="secondary" disabled={current === 1} onClick={() => goTo(current - 1)}>
-        {t("Назад")}
+      <button
+        className="secondary pagination-step"
+        disabled={current === 1}
+        onClick={() => goTo(current - 1)}
+        aria-label={t("Назад")}
+        title={t("Назад")}
+      >
+        <Icon name="chevronLeft" />
       </button>
       <div className="pagination-pages" aria-label={t("Номер страницы")}>
         {numbers.map((number, index) => (
@@ -506,8 +529,14 @@ function Pagination({
       <span className="pagination-summary">
         {page.offset + 1}–{Math.min(page.offset + page.items.length, page.total)} {t("из")} {page.total}
       </span>
-      <button className="secondary" disabled={current === pages} onClick={() => goTo(current + 1)}>
-        {t("Далее")}
+      <button
+        className="secondary pagination-step"
+        disabled={current === pages}
+        onClick={() => goTo(current + 1)}
+        aria-label={t("Далее")}
+        title={t("Далее")}
+      >
+        <Icon name="chevronRight" />
       </button>
     </nav>
   );
@@ -600,15 +629,19 @@ function OrderRow({
           <small>{machine ? `${machine.inventory_number} · ${machine.name}` : t("Оборудование")}</small>
         </span>
         <span className={`status status-${order.status}`}>{ruStatus[order.status]}</span>
-        <span className={order.overdue ? "deadline danger-text" : "deadline"}>{local(order.deadline)}</span>
+        <span className={order.overdue ? "deadline danger-text" : "deadline"}>
+          <Icon name="clock" />
+          {local(order.deadline)}
+        </span>
       </button>
       {machine && onHistory && (
         <button
           className="history-button"
           onClick={() => void onHistory(machine.id)}
           aria-label={t("История {0}", [machine.name])}
+          title={t("История {0}", [machine.name])}
         >
-          {t("История")}
+          <Icon name="history" />
         </button>
       )}
     </article>
@@ -1203,12 +1236,15 @@ export function WorkloadView({
       </div>
       <div className="workload-summary" aria-label={t("Сводка загрузки")}>
         <span>
+          <Icon name="workload" />
           <b>{onShift.length}</b> {t("в смене")}
         </span>
         <span>
+          <Icon name="wrench" />
           <b>{busy}</b> {t("заняты")}
         </span>
         <span>
+          <Icon name="list" />
           <b>{onShift.reduce((sum, person) => sum + person.queue_length, 0)}</b> {t("в очереди")}
         </span>
       </div>
@@ -1229,7 +1265,7 @@ export function WorkloadView({
               </small>
             </div>
             <div>
-              <b>
+              <b className={`availability-label ${person.availability}`}>
                 {person.availability === "busy"
                   ? t("Занят")
                   : person.availability === "free"
@@ -1247,8 +1283,9 @@ export function WorkloadView({
                   {person.current_order_number}
                 </button>
               ) : (
-                <small>
-                  {t("В очереди:")} {person.queue_length}
+                <small className="workload-queue" title={t("В очереди:") + " " + person.queue_length}>
+                  <Icon name="list" />
+                  <span className="sr-only">{t("В очереди:")}</span> {person.queue_length}
                 </small>
               )}
             </div>
@@ -1258,6 +1295,15 @@ export function WorkloadView({
     </section>
   );
 }
+const sectionIcons: Record<DirectorySection, IconName> = {
+  areas: "pin",
+  equipment: "wrench",
+  brigades: "workload",
+  materials: "package",
+  "fault-codes": "alert",
+  "time-norms": "clock",
+  employees: "employees",
+};
 export function ReferenceView({
   role,
   catalog,
@@ -1478,10 +1524,14 @@ export function ReferenceView({
                 cardRefs.current[item.id] = node;
               }}
             >
+              <Icon name={sectionIcons[item.id]} className="reference-card-icon" />
               {item.count !== undefined && <span className="reference-card-count">{item.count}</span>}
               <strong>{item.title}</strong>
               <small>{item.summary}</small>
-              <span className="reference-card-action">{t("Открыть раздел →")}</span>
+              <span className="reference-card-action">
+                {t("Открыть раздел")}
+                <Icon name="chevronRight" />
+              </span>
             </button>
           ))}
         </div>

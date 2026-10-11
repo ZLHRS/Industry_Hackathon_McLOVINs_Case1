@@ -1,6 +1,7 @@
 import { t } from "../lib/i18n";
 import { DeviceSetup } from "../features/DeviceSetup";
 import { LanguageSwitcher } from "./LanguageSwitcher";
+import { Icon } from "./Icon";
 import { useEffect, useRef, useState } from "react";
 import type { useDeviceInstallation } from "../lib/useDeviceInstallation";
 
@@ -36,10 +37,16 @@ export function AppPreferences({ installation }: { installation: ReturnType<type
         aria-label={t("Приложение и язык")}
         hidden={!open}
       >
-        <h2>{t("Приложение и язык")}</h2>
+        <h2>
+          <Icon name="settings" />
+          {t("Приложение и язык")}
+        </h2>
         <DeviceSetup hidden={!open} installation={installation} />
         <div className="app-preferences-language">
-          <span>{t("Язык")}</span>
+          <span>
+            <Icon name="globe" />
+            {t("Язык")}
+          </span>
           <LanguageSwitcher />
         </div>
       </section>
@@ -50,9 +57,11 @@ export function AppPreferences({ installation }: { installation: ReturnType<type
         data-testid="app-preferences-toggle"
         aria-expanded={open}
         aria-controls="app-preferences-panel"
+        aria-label={t("Приложение и язык")}
+        title={t("Приложение и язык")}
         onClick={() => setOpen((value) => !value)}
       >
-        {t("Приложение и язык")}
+        <Icon name="settings" />
       </button>
     </div>
   );

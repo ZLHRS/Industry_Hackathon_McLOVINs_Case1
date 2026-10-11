@@ -6,6 +6,7 @@ import { ApiError, capturePhotoTime } from "../api";
 import { OfflineStorageError } from "../lib/offline";
 import { blackenPixels, normalizeRedaction, type RedactionRect } from "../lib/photoRedaction";
 import { Dialog } from "../components/Dialog";
+import { Icon } from "../components/Icon";
 import { AIReviewReport, ExecutorFeedbackReport, ReviewHistory } from "./AIReviewReport";
 import {
   masterCloseOptions,
@@ -503,11 +504,12 @@ export function OrderDetailDialog({
           <p className="order-description">{detail.description}</p>
           {detailedReview && (
             <button
-              className="secondary"
+              className="secondary with-icon"
               type="button"
               onClick={() => void downloadReport()}
               disabled={reportExporting}
             >
+              <Icon name="download" />
               {reportExporting ? t("Готовим…") : t("Отчёт Excel")}
             </button>
           )}

@@ -1,5 +1,7 @@
 import { t, getLocale, useLanguage, message } from "./lib/i18n";
 import { AppPreferences } from "./components/AppPreferences";
+import { ProfileMenu } from "./components/ProfileMenu";
+import { Icon, type IconName } from "./components/Icon";
 import { useDeviceInstallation } from "./lib/useDeviceInstallation";
 import { navigation, permittedView, canViewWorkload, type View } from "./lib/roleAccess";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -34,6 +36,7 @@ import type {
   Workload,
 } from "./types";
 import "./styles.css";
+import "./shell.css";
 import { useAppLocation, readRoute, navigate, directoryUrl, closeOrderPage } from "./lib/navigation";
 
 import {
@@ -78,13 +81,29 @@ const actionLabels: Record<string, string> = {
     return t("Сдача работы");
   },
 };
-const navIcons: Record<View, string> = {
-  orders: "▦",
-  workload: "◒",
-  reference: "⌘",
-  analytics: "↗",
-  employees: "◎",
+const navIcons: Record<View, IconName> = {
+  orders: "orders",
+  workload: "workload",
+  reference: "reference",
+  analytics: "analytics",
+  employees: "employees",
 };
+const navCollapsedKey = "technaryad.nav.collapsed";
+function storedNavCollapsed() {
+  try {
+    return localStorage.getItem(navCollapsedKey) === "1";
+  } catch {
+    return false;
+  }
+}
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join("");
+}
 function storedUser(): User | null {
   try {
     const raw = sessionStorage.getItem(userKey);
@@ -127,6 +146,16 @@ export default function App() {
   useEffect(() => {
     if (equipmentForOrder && route.equipmentId !== equipmentForOrder.id) setEquipmentForOrder(null);
   }, [equipmentForOrder, route.equipmentId]);
+  const [navCollapsed, setNavCollapsed] = useState(storedNavCollapsed);
+  const toggleNavigation = () =>
+    setNavCollapsed((collapsed) => {
+      try {
+        localStorage.setItem(navCollapsedKey, collapsed ? "0" : "1");
+      } catch {
+        /* Layout preference is optional. */
+      }
+      return !collapsed;
+    });
   const setView = (next: View) => navigate("/" + next);
   const setSelected = (id: string | null) => (id ? navigate("/orders/" + id) : closeOrderPage());
   useEffect(() => {
@@ -580,95 +609,133 @@ export default function App() {
   const equipmentArea = equipmentFromRoute
     ? (data?.catalog.areas.find((item) => item.id === equipmentFromRoute.area_id) ?? null)
     : null;
+  const roleLabel =
+    user.role === "master"
+      ? t("Мастер")
+      : user.role === "executor"
+        ? t("Исполнитель")
+        : user.role === "manager"
+          ? t("Руководитель")
+          : t("Администратор");
+  const navExpanded = !navCollapsed;
+  const toggleLabel = navCollapsed ? t("Развернуть меню") : t("Свернуть меню");
   return (
-    <div className="app-shell">
-      <aside className="side-nav">
-        <div className="brand">
-          <div className="brand-mark">
-            {t("Т")}
-            <span>•</span>
+    <div className={navCollapsed ? "app-shell nav-collapsed" : "app-shell"}>
+      <aside className="side-nav" id="side-nav">
+        <div className="side-nav-head">
+          <button
+            type="button"
+            className="nav-toggle"
+            onClick={toggleNavigation}
+            aria-controls="side-nav"
+            aria-expanded={navExpanded}
+            aria-label={toggleLabel}
+            title={toggleLabel}
+          >
+            <Icon name="menu" />
+          </button>
+          <div className="brand">
+            <div className="brand-mark">
+              {t("Т")}
+              <span>•</span>
+            </div>
+            <strong>
+              {t("Тех")}
+              <span>{t("Наряд")}</span>
+            </strong>
           </div>
-          <strong>
-            {t("Тех")}
-            <span>{t("Наряд")}</span>
-          </strong>
         </div>
-        <p className="nav-caption">{t("РАБОЧИЙ КОНТУР")}</p>
         <nav aria-label={t("Основная навигация")}>
           {currentNav.map(([key, label]) => (
-            <button key={key} className={visibleView === key ? "active" : ""} onClick={() => setView(key)}>
-              <span className="nav-icon" aria-hidden="true">
-                {navIcons[key]}
-              </span>
-              <span>{label}</span>
+            <button
+              key={key}
+              className={visibleView === key ? "active" : ""}
+              aria-current={visibleView === key ? "page" : undefined}
+              data-tooltip={label}
+              onClick={() => setView(key)}
+            >
+              <Icon name={navIcons[key]} className="nav-icon" />
+              <span className="nav-label">{label}</span>
             </button>
           ))}
         </nav>
         <div className="user-card">
-          {user.role === "admin" ? (
-            <strong>{user.display_name}</strong>
-          ) : (
-            <button className="user-current-orders" type="button" onClick={openOwnOrders}>
-              {user.display_name}
-            </button>
-          )}
-          <small>
-            {user.role === "master"
-              ? t("Мастер")
-              : user.role === "executor"
-                ? t("Исполнитель")
-                : user.role === "manager"
-                  ? t("Руководитель")
-                  : t("Администратор")}
-          </small>
-          <button onClick={() => void signOut()}>{t("Выйти")}</button>
-        </div>
-      </aside>
-      <header className="mobile-header">
-        <div className="mobile-brand">
-          <span>
-            {t("Т")}
-            <span>•</span>
+          <span className="user-avatar" aria-hidden="true" title={user.display_name}>
+            {initials(user.display_name)}
           </span>
-          <strong>{t("ТехНаряд")}</strong>
-        </div>
-        <div>
-          {user.role === "admin" ? (
-            <small>
-              {user.display_name} · {t("контур")}
-            </small>
-          ) : (
-            <button className="mobile-current-orders" type="button" onClick={openOwnOrders}>
-              {user.display_name} · {user.role === "executor" ? t("смена") : t("контур")}
-            </button>
-          )}
-          <button aria-label={t("Выйти из учётной записи")} onClick={() => void signOut()}>
-            {t("Выйти")}
+          <div className="user-meta">
+            {user.role === "admin" ? (
+              <strong>{user.display_name}</strong>
+            ) : (
+              <button className="user-current-orders" type="button" onClick={openOwnOrders}>
+                {user.display_name}
+              </button>
+            )}
+            <small>{roleLabel}</small>
+          </div>
+          <button
+            type="button"
+            className="user-logout"
+            onClick={() => void signOut()}
+            aria-label={t("Выйти")}
+            data-tooltip={t("Выйти")}
+          >
+            <Icon name="logout" />
           </button>
         </div>
-      </header>{" "}
+      </aside>
       <main className="app-main">
+        <header
+          className={user.role === "admin" ? "topbar" : "topbar live-bar"}
+          data-live-state={user.role === "admin" ? undefined : liveState}
+        >
+          <div className="topbar-brand">
+            <span className="brand-mark">
+              {t("Т")}
+              <span>•</span>
+            </span>
+            <strong>
+              {t("Тех")}
+              <span>{t("Наряд")}</span>
+            </strong>
+          </div>
+          <div className="topbar-actions">
+            {user.role !== "admin" && liveState !== "live" && (
+              <span className={`connection-state ${liveState}`} role="status">
+                {liveState === "offline" ? (
+                  <Icon name="wifiOff" />
+                ) : (
+                  <span className={`live-dot ${liveState}`}></span>
+                )}
+                <span className="connection-label">
+                  {liveState === "reconnecting"
+                    ? t("Переподключение…")
+                    : liveState === "connecting"
+                      ? t("Подключение…")
+                      : t("Нет соединения")}
+                </span>
+              </span>
+            )}
+            <AppPreferences installation={installation} />
+            {user.role !== "admin" && (
+              <NotificationButton count={unreadCount} onOpen={() => setInboxOpen(true)} />
+            )}
+            <ProfileMenu
+              name={user.display_name}
+              initials={initials(user.display_name)}
+              role={roleLabel}
+              onOwnOrders={user.role === "admin" ? undefined : openOwnOrders}
+              onSignOut={() => void signOut()}
+            />
+          </div>
+        </header>
         {history.state?.technaryad && history.state?.parent && (
           <nav className="page-navigation" aria-label={t("Навигация страницы")}>
             <button type="button" className="text-button" onClick={() => history.back()}>
-              {t("← Назад")}
+              <Icon name="arrowLeft" />
+              {t("Назад")}
             </button>
           </nav>
-        )}
-        {user.role !== "admin" && (
-          <div className="live-bar" data-live-state={liveState}>
-            {liveState !== "live" && (
-              <span className="connection-state" role="status">
-                <span className={`live-dot ${liveState}`}></span>
-                {liveState === "reconnecting"
-                  ? t("Переподключение…")
-                  : liveState === "connecting"
-                    ? t("Подключение…")
-                    : t("Нет соединения")}
-              </span>
-            )}
-            <NotificationButton count={unreadCount} onOpen={() => setInboxOpen(true)} />
-          </div>
         )}
         {(notice || savedAt || error) && (
           <div className={error ? "banner error-banner" : "banner"} role={error ? "alert" : "status"}>
@@ -687,7 +754,7 @@ export default function App() {
                   setError("");
                 }}
               >
-                ×
+                <Icon name="close" />
               </button>
             )}
           </div>
@@ -818,15 +885,20 @@ export default function App() {
           />
         )}
       </main>
-      <AppPreferences installation={installation} />
       <nav
         className="bottom-nav"
         aria-label={t("Мобильная навигация")}
         style={{ gridTemplateColumns: "repeat(" + currentNav.length + ", 1fr)" }}
       >
         {currentNav.map(([key, label]) => (
-          <button key={key} className={visibleView === key ? "active" : ""} onClick={() => setView(key)}>
-            {label}
+          <button
+            key={key}
+            className={visibleView === key ? "active" : ""}
+            aria-current={visibleView === key ? "page" : undefined}
+            onClick={() => setView(key)}
+          >
+            <Icon name={navIcons[key]} />
+            <span>{label}</span>
           </button>
         ))}
       </nav>
