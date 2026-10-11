@@ -100,7 +100,10 @@ async def scenario(database, data, settings, store, name: str) -> dict:
         )
 
     if name == "paired_positive":
-        await photo(PhotoKind.BEFORE, False)
+        # Keep the photo audit event on the same simulated clock as issuance/start.
+        with patch("naryadai.application.common.datetime", wraps=datetime) as clock:
+            clock.now.return_value = now - timedelta(minutes=34)
+            await photo(PhotoKind.BEFORE, False)
     for action, minutes in (("accept", 34), ("start", 33)):
         with patch(
             "naryadai.application.orders._now", return_value=now - timedelta(minutes=minutes)
@@ -151,39 +154,48 @@ async def scenario(database, data, settings, store, name: str) -> dict:
         assert order is not None
         original_score, verdict = review.score, review.verdict
         manual, version, status = review.needs_master_review, order.version, order.status
-    feedback = await order_detail(database, data["first"], order_id)
-    assert feedback.executor_feedback[0].score == original_score, "Executor cannot see AI score"
-    if negative:
-        assert verdict is AiAssessment.REWORK_REQUIRED and status is WorkOrderStatus.REWORK
-        master_decision = "not_closed_rework_required"
-    else:
-        assert verdict in {AiAssessment.ACCEPTED, AiAssessment.ACCEPTED_WITH_REMARKS}
-        assert original_score >= 3 and status is WorkOrderStatus.AI_REVIEW
-        closed = await execute_action(
-            database,
-            data["master"],
-            order_id,
-            OrderAction(
-                action="override_close" if manual else "close",
-                expected_version=version,
-                reason="Synthetic verification: master inspected the repair and limitations.",
-                master_score=4,
-            ),
-            "live-master-close-" + uuid4().hex,
-        )
-        assert closed["status"] == "closed"
-        feedback = await order_detail(database, data["first"], order_id)
-        assert feedback.executor_feedback[0].score == original_score
-        assert feedback.executor_feedback[0].master_score == 4
-        master_decision = "closed_score_4_original_ai_preserved"
-    return {
+    evidence = {
         "scenario": name,
-        "status": "PASS",
-        "source": "openai",
-        "model": settings.ai_model,
         "ai_verdict": verdict.value,
         "ai_score": original_score,
         "needs_master_review": manual,
+        "timing": review.report.get("timing", {}),
+        "explanation": review.explanation,
+    }
+    try:
+        feedback = await order_detail(database, data["first"], order_id)
+        assert feedback.executor_feedback[0].score == original_score, "Executor cannot see AI score"
+        if negative:
+            assert verdict is AiAssessment.REWORK_REQUIRED and status is WorkOrderStatus.REWORK
+            master_decision = "not_closed_rework_required"
+        else:
+            assert verdict in {AiAssessment.ACCEPTED, AiAssessment.ACCEPTED_WITH_REMARKS}, (
+                "Positive repair unexpectedly requires rework"
+            )
+            assert original_score >= 3 and status is WorkOrderStatus.AI_REVIEW
+            closed = await execute_action(
+                database,
+                data["master"],
+                order_id,
+                OrderAction(
+                    action="override_close" if manual else "close",
+                    expected_version=version,
+                    reason="Synthetic verification: master inspected the repair and limitations.",
+                    master_score=4,
+                ),
+                "live-master-close-" + uuid4().hex,
+            )
+            assert closed["status"] == "closed"
+            feedback = await order_detail(database, data["first"], order_id)
+            assert feedback.executor_feedback[0].score == original_score
+            assert feedback.executor_feedback[0].master_score == 4
+            master_decision = "closed_score_4_original_ai_preserved"
+    except AssertionError as error:
+        return evidence | {"status": "FAIL", "failure": str(error) or "Lifecycle assertion failed"}
+    return evidence | {
+        "status": "PASS",
+        "source": "openai",
+        "model": settings.ai_model,
         "master_decision": master_decision,
         "executor_feedback_checked": True,
         "durable_job": "completed",
@@ -236,7 +248,7 @@ async def verify(key_file: Path, model: str) -> dict:
             for name in ("paired_positive", "after_only_positive", "missing_after_excess_material"):
                 scenarios.append(await scenario(database, data, settings, store, name))
         return {
-            "status": "PASS",
+            "status": "PASS" if all(s["status"] == "PASS" for s in scenarios) else "FAIL",
             "synthetic_only": True,
             "production_database_changed": False,
             "vision_enabled": True,
@@ -270,7 +282,7 @@ def main() -> int:
         return 1
     path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps(report, ensure_ascii=False))
-    return 0
+    return 0 if report["status"] == "PASS" else 1
 
 
 if __name__ == "__main__":

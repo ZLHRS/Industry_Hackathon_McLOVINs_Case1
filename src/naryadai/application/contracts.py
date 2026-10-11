@@ -9,6 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from naryadai.analytics.contracts import AnalyticsQuery
 from naryadai.infrastructure.models import Priority, WorkType
 
 
@@ -39,6 +40,34 @@ class Completion(BaseModel):
         return self
 
 
+class PreventionSource(BaseModel):
+    """An exact, reproducible analytics signal selected for preventive work."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    query: AnalyticsQuery
+    family: Literal["recurring_fault", "after_ppr"]
+    equipment_id: UUID
+    order_ids: tuple[UUID, ...] = Field(min_length=2, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_source(self) -> PreventionSource:
+        if self.query.period != "custom":
+            raise ValueError("prevention_source_requires_custom_period")
+        if len(set(self.order_ids)) != len(self.order_ids):
+            raise ValueError("prevention_source_order_ids_must_be_unique")
+        canonical_query = self.query.model_copy(
+            update={
+                field: tuple(sorted(set(getattr(self.query, field)), key=str))
+                for field in ("area_ids", "equipment_ids", "executor_ids", "brigade_ids")
+            }
+        )
+        canonical_ids = tuple(sorted(self.order_ids, key=str))
+        if canonical_ids == self.order_ids and canonical_query == self.query:
+            return self
+        return self.model_copy(update={"query": canonical_query, "order_ids": canonical_ids})
+
+
 class CreateOrder(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
@@ -51,6 +80,7 @@ class CreateOrder(BaseModel):
     deadline: datetime
     fault_code_id: UUID | None = None
     comment: str | None = Field(default=None, max_length=5_000)
+    prevention_source: PreventionSource | None = None
 
     @model_validator(mode="after")
     def validate_deadline(self) -> CreateOrder:

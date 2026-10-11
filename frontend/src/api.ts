@@ -17,7 +17,14 @@ import type {
   NotificationItem,
   PushConfig,
 } from "./types";
-import type { AnalyticsOptions, AnalyticsQuery, AnalyticsReport, AnalyticsSummary } from "./types";
+import type {
+  AnalyticsOptions,
+  AnalyticsQuery,
+  AnalyticsReport,
+  AnalyticsSummary,
+  PreventiveDraft,
+  PreventionSource,
+} from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -562,6 +569,13 @@ export class Api {
   }
   analyticsReport(query: AnalyticsQuery) {
     return this.request<AnalyticsReport>(this.analyticsPath("/analytics/report", query));
+  }
+  preventiveDraft(source: PreventionSource) {
+    return this.request<PreventiveDraft>("/analytics/preventive-draft", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(source),
+    });
   }
   analyticsSummary(query: AnalyticsQuery) {
     return this.request<AnalyticsSummary>(this.analyticsPath("/analytics/summary", query), {

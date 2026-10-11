@@ -22,6 +22,7 @@ from naryadai.application.common import (
     require_master_owner,
 )
 from naryadai.application.contracts import Completion, CreateOrder, OrderAction
+from naryadai.application.prevention import prevention_event_details, validate_prevention_source
 from naryadai.auth.dependencies import Principal
 from naryadai.domain.lifecycle import (
     Action,
@@ -253,11 +254,27 @@ async def create_order(
         raise OperationError(404, "area_not_found")
 
     payload = body.model_dump(mode="json")
+    # Existing idempotency records predate this optional field.  Keep their
+    # request hash stable for ordinary order creation.
+    if body.prevention_source is None:
+        payload.pop("prevention_source")
     async with database.sessions.begin() as session:
         await _master_for_area(session, principal.employee_id, body.area_id)
         replay = await idempotent(session, principal, key, "create_order", payload)
         if replay is not None:
             return replay
+
+        prevention = None
+        if body.prevention_source is not None:
+            if body.work_type.value != "planned":
+                raise OperationError(422, "prevention_order_must_be_planned")
+            if body.equipment_id != body.prevention_source.equipment_id:
+                raise OperationError(409, "prevention_equipment_mismatch")
+            prevention = await validate_prevention_source(
+                database, principal, body.prevention_source
+            )
+            if body.area_id != prevention.draft.area_id:
+                raise OperationError(409, "prevention_area_mismatch")
 
         await _active_catalog_for_order(session, body.area_id, body.equipment_id)
         await _executor_for_area(session, body.executor_id, body.area_id, lock=True)
@@ -300,6 +317,11 @@ async def create_order(
                 "executor_id": str(order.executor_id),
                 "priority": order.priority.value,
                 "deadline": order.deadline.isoformat(),
+                **(
+                    {"prevention_source": prevention_event_details(prevention)}
+                    if prevention is not None
+                    else {}
+                ),
             },
             at=issued_at,
         )

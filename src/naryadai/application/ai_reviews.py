@@ -110,6 +110,9 @@ def _timing(order: WorkOrder, events: list[WorkOrderEvent]) -> tuple[float, floa
     for event in events:
         if (
             event.details.get("attempt", 1) != order.attempt
+            # Photos, comments and administrative edits do not change the timer.
+            # Their timestamps must not move its cursor or restore an old state.
+            or event.from_status == event.to_status
             or not start <= event.occurred_at <= order.completed_at
         ):
             continue

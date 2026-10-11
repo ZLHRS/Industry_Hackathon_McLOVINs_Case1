@@ -12,6 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from naryadai.analytics.contracts import AnalyticsOptions, AnalyticsQuery, AnalyticsReport
 from naryadai.analytics.service import analytics_options, build_report
+from naryadai.application.contracts import PreventionSource
+from naryadai.application.prevention import PreventiveDraft, prepare_preventive_draft
 from naryadai.auth.dependencies import DatabaseDep, PrincipalDep
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -69,3 +71,10 @@ async def report(
 @router.get("/options", response_model=AnalyticsOptions)
 async def options(principal: PrincipalDep, database: DatabaseDep) -> AnalyticsOptions:
     return await analytics_options(database, principal)
+
+
+@router.post("/preventive-draft", response_model=PreventiveDraft)
+async def preventive_draft(
+    source: PreventionSource, principal: PrincipalDep, database: DatabaseDep
+) -> PreventiveDraft:
+    return await prepare_preventive_draft(database, principal, source)

@@ -47,6 +47,26 @@ export const translations: Record<string, { kk: string; en: string }> = {
   },
   Выбрано: { kk: "Таңдалды", en: "Selected" },
   Выбрать: { kk: "Таңдау", en: "Select" },
+  "Профилактический наряд": { kk: "Алдын алу наряды", en: "Preventive work order" },
+  "Подготовить наряд": { kk: "Нарядты дайындау", en: "Prepare work order" },
+  "Подготавливаем…": { kk: "Дайындалуда…", en: "Preparing…" },
+  "Не удалось подготовить профилактический наряд. Обновите отчёт и повторите.": {
+    kk: "Алдын алу нарядын дайындау мүмкін болмады. Есепті жаңартып, қайталап көріңіз.",
+    en: "Could not prepare the preventive work order. Refresh the report and try again.",
+  },
+  "Проверьте описание, назначьте исполнителя и срок.": {
+    kk: "Сипаттаманы тексеріп, орындаушы мен мерзімді белгілеңіз.",
+    en: "Review the description, then choose the technician and deadline.",
+  },
+  "Основание изменилось. Закройте форму, обновите отчёт и подготовьте наряд заново.": {
+    kk: "Негіз өзгерді. Пішінді жауып, есепті жаңартып, нарядты қайта дайындаңыз.",
+    en: "The evidence changed. Close the form, refresh the report, and prepare the work order again.",
+  },
+  "Связанные наряды ({0})": { kk: "Байланысты нарядтар ({0})", en: "Related work orders ({0})" },
+  "Не удалось открыть связанный наряд.": {
+    kk: "Байланысты нарядты ашу мүмкін болмады.",
+    en: "Could not open the related work order.",
+  },
   "Параметры наряда": { kk: "Наряд параметрлері", en: "Work order settings" },
   "Выберите реальный срок: он не рассчитывается автоматически.": {
     kk: "Нақты мерзімді таңдаңыз: ол автоматты түрде есептелмейді.",

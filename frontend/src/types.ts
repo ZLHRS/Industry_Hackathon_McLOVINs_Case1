@@ -314,6 +314,8 @@ export interface CreateOrder {
   deadline: string;
   fault_code_id?: string;
   comment?: string;
+  /** Server-canonical evidence for an analytics-originated preventive order. */
+  prevention_source?: PreventionSource;
 }
 export interface NotificationItem {
   id: string;
@@ -350,6 +352,31 @@ export interface AnalyticsQuery {
   executor_id: string[];
   brigade_id: string[];
 }
+export interface PreventionQuery {
+  period: "custom";
+  from: string;
+  to: string;
+  timezone: string;
+  area_ids: string[];
+  equipment_ids: string[];
+  executor_ids: string[];
+  brigade_ids: string[];
+}
+export interface PreventionSource {
+  query: PreventionQuery;
+  family: "recurring_fault" | "after_ppr";
+  equipment_id: string;
+  order_ids: string[];
+}
+export interface PreventiveDraft {
+  area_id: string;
+  equipment_id: string;
+  description: string;
+  fault_code_id: string | null;
+  title: string;
+  source: PreventionSource;
+  evidence_orders: Array<{ id: string; number: string }>;
+}
 export interface AnalyticsOption {
   id: string;
   name: string;
@@ -384,7 +411,12 @@ export interface AnalyticsReport {
     to: string;
     label: string;
   };
-  filters: Record<string, string[]>;
+  filters: {
+    area_ids: string[];
+    equipment_ids: string[];
+    executor_ids: string[];
+    brigade_ids: string[];
+  };
   scope: { role: Role; area_ids: string[] };
   orders: {
     issued: number;

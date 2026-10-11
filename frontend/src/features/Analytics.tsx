@@ -1,9 +1,16 @@
 import { t, getLocale, message } from "../lib/i18n";
 import { readableLimitation } from "../lib/presentationText";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Api, ApiError } from "../api";
 import { Icon } from "../components/Icon";
-import type { AnalyticsOptions, AnalyticsQuery, AnalyticsReport, Role } from "../types";
+import type {
+  AnalyticsOptions,
+  AnalyticsQuery,
+  AnalyticsReport,
+  PreventiveDraft,
+  PreventionSource,
+  Role,
+} from "../types";
 
 const zone = "Asia/Qostanay";
 const names = {
@@ -41,7 +48,17 @@ const queryString = (query: Partial<AnalyticsQuery>): AnalyticsQuery => ({
   brigade_id: [],
   ...query,
 });
-export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; revision: number }) {
+export function AnalyticsView({
+  api,
+  role,
+  revision,
+  onPreventiveDraft,
+}: {
+  api: Api;
+  role: Role;
+  revision: number;
+  onPreventiveDraft: (draft: PreventiveDraft) => void;
+}) {
   const [query, setQuery] = useState<AnalyticsQuery>(queryString({}));
   const [options, setOptions] = useState<AnalyticsOptions | null>(null);
   const [report, setReport] = useState<AnalyticsReport | null>(null);
@@ -54,6 +71,8 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
   );
   const [summarizing, setSummarizing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const mounted = useRef(true);
   const people = role === "master" || role === "manager";
   const refresh = async (next = query) => {
     setLoading(true);
@@ -82,6 +101,12 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
     return () => window.clearTimeout(timer);
     // initial read is ephemeral and summary is never automatic
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
   }, []);
   const stale = report !== null && reportRevision < revision;
   const pendingFilters = appliedQuery !== null && JSON.stringify(query) !== JSON.stringify(appliedQuery);
@@ -119,6 +144,20 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
       );
     } finally {
       setSummarizing(false);
+    }
+  };
+  const preparePreventive = async (source: PreventionSource) => {
+    if (preparing) return;
+    setPreparing(true);
+    setError("");
+    try {
+      const draft = await api.preventiveDraft(source);
+      if (mounted.current) onPreventiveDraft(draft);
+    } catch {
+      if (mounted.current)
+        setError(t("Не удалось подготовить профилактический наряд. Обновите отчёт и повторите."));
+    } finally {
+      if (mounted.current) setPreparing(false);
     }
   };
   return (
@@ -345,7 +384,12 @@ export function AnalyticsView({ api, role, revision }: { api: Api; role: Role; r
                 title={t("Аномалии с доказательствами")}
                 note={t("Система показывает только наблюдаемые факты.")}
               />
-              <Anomalies report={report} />
+              <Anomalies
+                report={report}
+                canPrepare={role === "master"}
+                preparing={preparing}
+                onPrepare={(source) => void preparePreventive(source)}
+              />
             </section>
           )}
           {people && (
@@ -701,33 +745,87 @@ function Downtime({ report }: { report: AnalyticsReport }) {
     </div>
   );
 }
-function Anomalies({ report }: { report: AnalyticsReport }) {
+function preventionSource(
+  report: AnalyticsReport,
+  item: AnalyticsReport["anomalies"][number],
+): PreventionSource | null {
+  if (item.family !== "recurring_fault" && item.family !== "after_ppr") return null;
+  const equipmentId = item.evidence.equipment_id;
+  const orderIds = item.evidence.order_ids;
+  if (
+    typeof equipmentId !== "string" ||
+    !Array.isArray(orderIds) ||
+    !orderIds.length ||
+    !orderIds.every((id): id is string => typeof id === "string")
+  )
+    return null;
+  return {
+    query: {
+      period: "custom",
+      from: report.period.from,
+      to: report.period.to,
+      timezone: report.period.timezone,
+      area_ids: report.filters.area_ids,
+      equipment_ids: report.filters.equipment_ids,
+      executor_ids: report.filters.executor_ids,
+      brigade_ids: report.filters.brigade_ids,
+    },
+    family: item.family,
+    equipment_id: equipmentId,
+    order_ids: orderIds,
+  };
+}
+function Anomalies({
+  report,
+  canPrepare,
+  preparing,
+  onPrepare,
+}: {
+  report: AnalyticsReport;
+  canPrepare: boolean;
+  preparing: boolean;
+  onPrepare: (source: PreventionSource) => void;
+}) {
   return report.anomalies.length ? (
     <div className="anomaly-list">
-      {report.anomalies.map((item, index) => (
-        <article className={"anomaly severity-" + item.severity} key={item.title + index}>
-          <div>
-            <span className="status">{anomalyLabels[item.severity] ?? item.severity}</span>
-            <h3>{item.title}</h3>
-            <p>{anomalyLabels[item.family] ?? item.family}</p>
-          </div>
-          <div>
-            <p className="anomaly-formula">
-              <strong>{t("Правило:")}</strong> {item.formula}
-            </p>
-            <dl>
-              {entries(item.evidence)
-                .filter(([key]) => !/(?:^|_)ids?$/.test(key))
-                .map(([key, value]) => (
-                  <div key={key}>
-                    <dt>{evidenceLabels[key] ?? key.replaceAll("_", " ")}</dt>
-                    <dd>{evidenceValue(value)}</dd>
-                  </div>
-                ))}
-            </dl>
-          </div>
-        </article>
-      ))}
+      {report.anomalies.map((item, index) => {
+        const source = preventionSource(report, item);
+        return (
+          <article className={"anomaly severity-" + item.severity} key={item.title + index}>
+            <div>
+              <span className="status">{anomalyLabels[item.severity] ?? item.severity}</span>
+              <h3>{item.title}</h3>
+              <p>{anomalyLabels[item.family] ?? item.family}</p>
+            </div>
+            <div>
+              <p className="anomaly-formula">
+                <strong>{t("Правило:")}</strong> {item.formula}
+              </p>
+              <dl>
+                {entries(item.evidence)
+                  .filter(([key]) => !/(?:^|_)ids?$/.test(key))
+                  .map(([key, value]) => (
+                    <div key={key}>
+                      <dt>{evidenceLabels[key] ?? key.replaceAll("_", " ")}</dt>
+                      <dd>{evidenceValue(value)}</dd>
+                    </div>
+                  ))}
+              </dl>
+              {canPrepare && source && (
+                <button
+                  className="secondary prevention-action"
+                  type="button"
+                  data-testid={`prevention-prepare-${item.family}-${index}`}
+                  disabled={preparing}
+                  onClick={() => onPrepare(source)}
+                >
+                  {preparing ? t("Подготавливаем…") : t("Подготовить наряд")}
+                </button>
+              )}
+            </div>
+          </article>
+        );
+      })}
     </div>
   ) : (
     <div className="empty">

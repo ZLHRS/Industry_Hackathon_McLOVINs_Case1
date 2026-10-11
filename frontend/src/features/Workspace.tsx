@@ -20,9 +20,11 @@ import type {
   CreateOrder,
   MasterOption,
   Order,
+  OrderDetail,
   OrderPage,
   OrderSuggestionExecutor,
   OrderSuggestions,
+  PreventiveDraft,
   Role,
   Workload,
 } from "../types";
@@ -655,6 +657,8 @@ export function CreateOrderDialog({
   onSuggest,
   initialAreaId,
   initialEquipmentId,
+  preventiveDraft,
+  onViewEvidence,
 }: {
   catalog: Catalog;
   workers: Workload[];
@@ -668,19 +672,24 @@ export function CreateOrderDialog({
   }) => Promise<OrderSuggestions>;
   initialAreaId?: string;
   initialEquipmentId?: string;
+  preventiveDraft?: PreventiveDraft;
+  onViewEvidence?: (id: string) => Promise<OrderDetail>;
 }) {
-  const initialEquipment = catalog.equipment.find((item) => item.id === initialEquipmentId);
+  const initialEquipment = catalog.equipment.find(
+    (item) => item.id === (preventiveDraft?.equipment_id ?? initialEquipmentId),
+  );
   const initialArea =
+    preventiveDraft?.area_id ??
     initialEquipment?.area_id ??
     initialAreaId ??
     catalog.areas.find((item) => item.is_active !== false)?.id ??
     "";
   const [input, setInput] = useState({
-    work_type: "unplanned",
-    description: "",
+    work_type: preventiveDraft ? "planned" : "unplanned",
+    description: preventiveDraft?.description ?? "",
     area_id: initialArea,
     equipment_id: initialEquipment?.id ?? "",
-    fault_code_id: "",
+    fault_code_id: preventiveDraft?.fault_code_id ?? "",
     executor_id: "",
     priority: "normal",
     deadline: "",
@@ -691,6 +700,10 @@ export function CreateOrderDialog({
   const [suggestions, setSuggestions] = useState<OrderSuggestions | null>(null);
   const [suggesting, setSuggesting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [evidence, setEvidence] = useState<OrderDetail | null>(null);
+  const [evidenceLoading, setEvidenceLoading] = useState("");
+  const [evidenceError, setEvidenceError] = useState("");
+  const evidenceRequest = useRef(0);
   const [equipmentQuery, setEquipmentQuery] = useState("");
   const requestId = useRef(0);
   const suggestRef = useRef(onSuggest);
@@ -799,14 +812,19 @@ export function CreateOrderDialog({
       setSubmitting(true);
       await onCreate({
         ...input,
-        work_type: input.work_type as CreateOrder["work_type"],
+        work_type: preventiveDraft ? "planned" : (input.work_type as CreateOrder["work_type"]),
         priority: input.priority as CreateOrder["priority"],
         deadline: input.deadline + ":00+05:00",
         fault_code_id: input.fault_code_id || undefined,
         comment: input.comment || undefined,
+        prevention_source: preventiveDraft?.source,
       });
-    } catch {
-      setError(t("Наряд не создан. Проверьте обязательные поля и доступ участка."));
+    } catch (caught) {
+      setError(
+        preventiveDraft && caught instanceof ApiError && caught.detail === "prevention_source_stale"
+          ? t("Основание изменилось. Закройте форму, обновите отчёт и подготовьте наряд заново.")
+          : t("Наряд не создан. Проверьте обязательные поля и доступ участка."),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -824,6 +842,26 @@ export function CreateOrderDialog({
     setSelectedSuggestedExecutor(person);
     updateInput({ ...input, executor_id: person.employee_id });
   }
+  async function viewEvidence(orderId: string) {
+    if (!onViewEvidence) return;
+    if (evidence?.id === orderId) {
+      evidenceRequest.current += 1;
+      setEvidence(null);
+      return;
+    }
+    const request = ++evidenceRequest.current;
+    setEvidenceError("");
+    setEvidence(null);
+    setEvidenceLoading(orderId);
+    try {
+      const result = await onViewEvidence(orderId);
+      if (request === evidenceRequest.current) setEvidence(result);
+    } catch {
+      if (request === evidenceRequest.current) setEvidenceError(t("Не удалось открыть связанный наряд."));
+    } finally {
+      if (request === evidenceRequest.current) setEvidenceLoading("");
+    }
+  }
   const selectedExecutor =
     suggestions?.executors.find((person) => person.employee_id === input.executor_id) ??
     selectedSuggestedExecutor ??
@@ -831,63 +869,121 @@ export function CreateOrderDialog({
   const activeSuggestions = canSuggest && receivedKey === suggestionKey ? suggestions : null;
   const activeSuggestionError = canSuggest ? suggestionError : "";
   return (
-    <Dialog title={t("Выдать наряд")} onClose={onClose}>
+    <Dialog title={preventiveDraft ? t("Профилактический наряд") : t("Выдать наряд")} onClose={onClose}>
       <form className="dialog-form guided-order-form" onSubmit={(event) => void submit(event)}>
-        <div className="form-progress" aria-label={t("Шаги выдачи наряда")}>
-          <span>
-            <b>1</b> {t("Оборудование")}
-          </span>
-          <span>
-            <b>2</b> {t("Описание")}
-          </span>
-          <span>
-            <b>3</b> {t("Исполнитель и срок")}
-          </span>
-        </div>
-        <p className="form-hint">
-          {t("Выберите оборудование, опишите работу и назначьте исполнителя со сроком.")}
-        </p>
-        <section className="quick-order-step" aria-labelledby="quick-equipment-heading">
-          <div className="quick-order-step-head">
+        {preventiveDraft && (
+          <section className="prevention-origin" data-testid="prevention-origin" aria-label={t("Основание")}>
             <div>
-              <h3 id="quick-equipment-heading">1. {t("Выберите оборудование")}</h3>
-              <p>{t("Участок определится по оборудованию.")}</p>
+              <strong>{t("Основание:")}</strong> {preventiveDraft.title}
             </div>
-            {selectedEquipment && (
-              <span className="quick-selection" aria-live="polite">
-                {selectedEquipment.inventory_number}
-              </span>
-            )}
+            <details>
+              <summary>{t("Связанные наряды ({0})", [preventiveDraft.evidence_orders.length])}</summary>
+              <ul>
+                {preventiveDraft.evidence_orders.map((order) => (
+                  <li key={order.id}>
+                    <button
+                      className="text-button prevention-order-link"
+                      type="button"
+                      onClick={() => void viewEvidence(order.id)}
+                      aria-label={order.number}
+                      aria-expanded={evidence?.id === order.id}
+                      disabled={evidenceLoading === order.id}
+                    >
+                      {evidenceLoading === order.id ? t("Загрузка…") : order.number}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {evidenceError && <p className="error">{evidenceError}</p>}
+              {evidence && (
+                <section
+                  className="prevention-evidence-preview"
+                  data-testid="prevention-evidence-preview"
+                  aria-live="polite"
+                >
+                  <strong>{evidence.number}</strong>
+                  <span>{ruStatus[evidence.status] ?? evidence.status}</span>
+                  <p>{evidence.description}</p>
+                  <small>
+                    {t("Срок:")} {local(evidence.deadline)}
+                  </small>
+                </section>
+              )}
+            </details>
+          </section>
+        )}
+        {!preventiveDraft && (
+          <div className="form-progress" aria-label={t("Шаги выдачи наряда")}>
+            <span>
+              <b>1</b> {t("Оборудование")}
+            </span>
+            <span>
+              <b>2</b> {t("Описание")}
+            </span>
+            <span>
+              <b>3</b> {t("Исполнитель и срок")}
+            </span>
           </div>
-          <label className="quick-search">
-            <span className="sr-only">{t("Найти оборудование")}</span>
-            <input
-              type="search"
-              value={equipmentQuery}
-              onChange={(event) => setEquipmentQuery(event.target.value)}
-              placeholder={t("Найти оборудование")}
-            />
-          </label>
-          <div className="quick-equipment-grid" aria-label={t("Оборудование")}>
-            {quickEquipment.map((item) => (
-              <button
-                className="quick-choice quick-equipment-choice"
-                key={item.id}
-                type="button"
-                data-testid={`quick-equipment-${item.id}`}
-                aria-pressed={input.equipment_id === item.id}
-                onClick={() => chooseEquipment(item.id)}
-              >
-                <strong>{item.inventory_number}</strong>
-                <span>{item.name}</span>
-                <small>
-                  {catalog.areas.find((area) => area.id === item.area_id)?.name ?? t("Участок не указан")}
-                </small>
-              </button>
-            ))}
-          </div>
-          {quickEquipment.length === 0 && <p className="muted">{t("Оборудование не найдено.")}</p>}
-        </section>
+        )}
+        <p className="form-hint">
+          {preventiveDraft
+            ? t("Проверьте описание, назначьте исполнителя и срок.")
+            : t("Выберите оборудование, опишите работу и назначьте исполнителя со сроком.")}
+        </p>
+        {preventiveDraft ? (
+          <section className="prevention-equipment-step" aria-label={t("Оборудование")}>
+            <strong>{t("Оборудование")}</strong>
+            <span>
+              {selectedEquipment
+                ? `${selectedEquipment.inventory_number} · ${selectedEquipment.name}`
+                : t("Оборудование не найдено.")}
+            </span>
+          </section>
+        ) : (
+          <section className="quick-order-step" aria-labelledby="quick-equipment-heading">
+            <div className="quick-order-step-head">
+              <div>
+                <h3 id="quick-equipment-heading">1. {t("Выберите оборудование")}</h3>
+                <p>{t("Участок определится по оборудованию.")}</p>
+              </div>
+              {selectedEquipment && (
+                <span className="quick-selection" aria-live="polite">
+                  {selectedEquipment.inventory_number}
+                </span>
+              )}
+            </div>
+            <>
+              <label className="quick-search">
+                <span className="sr-only">{t("Найти оборудование")}</span>
+                <input
+                  type="search"
+                  value={equipmentQuery}
+                  onChange={(event) => setEquipmentQuery(event.target.value)}
+                  placeholder={t("Найти оборудование")}
+                />
+              </label>
+              <div className="quick-equipment-grid" aria-label={t("Оборудование")}>
+                {quickEquipment.map((item) => (
+                  <button
+                    className="quick-choice quick-equipment-choice"
+                    key={item.id}
+                    type="button"
+                    data-testid={`quick-equipment-${item.id}`}
+                    aria-pressed={input.equipment_id === item.id}
+                    onClick={() => chooseEquipment(item.id)}
+                  >
+                    <strong>{item.inventory_number}</strong>
+                    <span>{item.name}</span>
+                    <small>
+                      {catalog.areas.find((area) => area.id === item.area_id)?.name ?? t("Участок не указан")}
+                    </small>
+                  </button>
+                ))}
+              </div>
+              {quickEquipment.length === 0 && <p className="muted">{t("Оборудование не найдено.")}</p>}
+            </>
+          </section>
+        )}
         <label>
           {t("Описание")}
           <textarea
@@ -992,6 +1088,7 @@ export function CreateOrderDialog({
               {t("Тип")}
               <select
                 value={input.work_type}
+                disabled={Boolean(preventiveDraft)}
                 onChange={(event) => updateInput({ ...input, work_type: event.target.value })}
               >
                 <option value="unplanned">{t("Внеплановый")}</option>
@@ -1064,6 +1161,7 @@ export function CreateOrderDialog({
               {t("Участок")}
               <select
                 value={input.area_id}
+                disabled={Boolean(preventiveDraft)}
                 onChange={(event) => {
                   setSelectedSuggestedExecutor(null);
                   updateInput(
@@ -1089,7 +1187,11 @@ export function CreateOrderDialog({
             </label>
             <label>
               {t("Оборудование")}
-              <select value={input.equipment_id} onChange={(event) => chooseEquipment(event.target.value)}>
+              <select
+                value={input.equipment_id}
+                disabled={Boolean(preventiveDraft)}
+                onChange={(event) => chooseEquipment(event.target.value)}
+              >
                 <option value="">{t("Выберите оборудование")}</option>
                 {equipment.map((item) => (
                   <option key={item.id} value={item.id}>

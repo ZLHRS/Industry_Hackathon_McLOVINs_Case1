@@ -136,6 +136,24 @@ const eventComment = (event: EventItem) => {
   const value = event.details.comment;
   return typeof value === "string" && value.trim() ? value.trim() : null;
 };
+const preventionOrigin = (event: EventItem) => {
+  const value = event.details.prevention_source;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const source = value as Record<string, unknown>;
+  const title = typeof source.title === "string" && source.title.trim() ? source.title : null;
+  const recommendation =
+    typeof source.recommendation === "string" && source.recommendation.trim() ? source.recommendation : null;
+  const evidenceOrders = Array.isArray(source.evidence_orders)
+    ? source.evidence_orders.flatMap((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+        const order = item as Record<string, unknown>;
+        return typeof order.id === "string" && typeof order.number === "string"
+          ? [{ id: order.id, number: order.number }]
+          : [];
+      })
+    : [];
+  return title || recommendation || evidenceOrders.length ? { title, recommendation, evidenceOrders } : null;
+};
 const confirmedActionStatuses: Record<string, string[]> = {
   accept: ["accepted"],
   queue: ["queued"],
@@ -1290,6 +1308,7 @@ export function OrderDetailDialog({
                 )
                 .map((item) => {
                   const comment = eventComment(item);
+                  const origin = preventionOrigin(item);
                   return (
                     <li key={item.id}>
                       <strong>
@@ -1304,6 +1323,33 @@ export function OrderDetailDialog({
                       </span>
                       {item.reason && <small>{item.reason}</small>}
                       {comment && <small>{comment}</small>}
+                      {origin && (
+                        <section className="prevention-origin" data-testid="prevention-origin">
+                          {origin.title && (
+                            <div>
+                              <strong>{t("Основание:")}</strong> {origin.title}
+                            </div>
+                          )}
+                          {origin.recommendation && <p>{origin.recommendation}</p>}
+                          {origin.evidenceOrders.length > 0 && (
+                            <details>
+                              <summary>{t("Связанные наряды ({0})", [origin.evidenceOrders.length])}</summary>
+                              <ul>
+                                {origin.evidenceOrders.map((order) => (
+                                  <li key={order.id}>
+                                    <a
+                                      className="prevention-order-link"
+                                      href={`/orders/${encodeURIComponent(order.id)}`}
+                                    >
+                                      {order.number}
+                                    </a>
+                                  </li>
+                                ))}
+                              </ul>
+                            </details>
+                          )}
+                        </section>
+                      )}
                       {item.action === "record_downtime" && (
                         <small>
                           <strong>

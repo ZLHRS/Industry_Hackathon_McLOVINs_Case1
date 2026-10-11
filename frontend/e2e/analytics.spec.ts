@@ -14,7 +14,7 @@ async function login(page: Page, account: string) {
   await page.getByLabel("Логин", { exact: true }).fill(account);
   await page.getByLabel("Пароль", { exact: true }).fill(state.secret);
   await page.getByRole("button", { name: "Войти", exact: true }).click();
-  await expect(page.getByRole("button", { name: /Выйти/ })).toBeVisible();
+  await expect(page.getByTestId("app-preferences-toggle")).toBeVisible();
 }
 async function openReport(page: Page) {
   const report = page.getByRole("button", { name: /^(Отчёт|Мои результаты)$/, exact: true });
@@ -108,7 +108,7 @@ test("master records then voids downtime and downloads a private order report", 
       area_id: state.area_id,
       equipment_id: state.equipment_id,
       executor_id: state.selected_executor_id,
-      deadline: "2026-10-08T12:00:00+05:00",
+      deadline: new Date(Date.now() + 3_600_000).toISOString(),
     },
   });
   expect(created.status()).toBe(201);

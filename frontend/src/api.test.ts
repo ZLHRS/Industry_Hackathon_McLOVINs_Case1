@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Api, ApiError, clearMutationKeys } from "./api";
-import type { CreateOrder } from "./types";
+import type { CreateOrder, PreventionSource } from "./types";
 
 class MemoryStorage {
   private values = new Map<string, string>();
@@ -177,6 +177,48 @@ describe("work order listing", () => {
     expect(query.get("sort")).toBe("deadline");
     expect(query.get("offset")).toBe("24");
     expect(query.get("limit")).toBe("24");
+  });
+});
+
+describe("preventive draft", () => {
+  it("posts the frozen report source without turning it into an order", async () => {
+    const source: PreventionSource = {
+      query: {
+        period: "custom",
+        from: "2026-10-01T00:00:00+05:00",
+        to: "2026-10-02T00:00:00+05:00",
+        timezone: "Asia/Qostanay",
+        area_ids: ["area"],
+        equipment_ids: ["equipment"],
+        executor_ids: [],
+        brigade_ids: [],
+      },
+      family: "recurring_fault",
+      equipment_id: "equipment",
+      order_ids: ["order-a", "order-b"],
+    };
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            area_id: "area",
+            equipment_id: "equipment",
+            description: "Плановая проверка",
+            fault_code_id: null,
+            title: "Повторяемость",
+            source,
+            evidence_orders: [],
+          }),
+        ),
+    );
+    vi.stubGlobal("fetch", fetcher);
+
+    await new Api(() => "session").preventiveDraft(source);
+
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/v1/analytics/preventive-draft");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual(source);
   });
 });
 

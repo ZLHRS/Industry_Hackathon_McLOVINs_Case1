@@ -32,6 +32,7 @@ import type {
   EventItem,
   MasterOption,
   OrderPage,
+  PreventiveDraft,
   User,
   Workload,
 } from "./types";
@@ -139,6 +140,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(() => (initialToken ? storedUser() : null));
   const [data, setData] = useState<Dashboard | null>(null);
   const [equipmentForOrder, setEquipmentForOrder] = useState<Equipment | null>(null);
+  const [preventiveDraft, setPreventiveDraft] = useState<PreventiveDraft | null>(null);
   const appLocation = useAppLocation();
   const route = readRoute(appLocation);
   const view = route.view;
@@ -227,6 +229,7 @@ export default function App() {
       setUser(null);
       setData(null);
       setEquipmentForOrder(null);
+      setPreventiveDraft(null);
       setPending([]);
       setSavedAt(null);
       navigate(preserveEquipmentRoute && equipmentRoute ? equipmentRoute : "/", true);
@@ -853,7 +856,12 @@ export default function App() {
           />
         )}{" "}
         {visibleView === "analytics" && !route.equipmentId && (
-          <AnalyticsView api={api} role={user.role} revision={liveRevision} />
+          <AnalyticsView
+            api={api}
+            role={user.role}
+            revision={liveRevision}
+            onPreventiveDraft={setPreventiveDraft}
+          />
         )}{" "}
         {visibleView === "employees" &&
           user.role === "admin" &&
@@ -934,6 +942,23 @@ export default function App() {
             onSuggest={(input) => api.suggestions(input)}
           />
         )}
+      {preventiveDraft && data?.catalog && user.role === "master" && (
+        <CreateOrderDialog
+          key={`${preventiveDraft.source.family}:${preventiveDraft.equipment_id}:${preventiveDraft.source.order_ids.join(",")}`}
+          catalog={data.catalog}
+          workers={data.workload}
+          preventiveDraft={preventiveDraft}
+          onClose={() => setPreventiveDraft(null)}
+          onCreate={async (input) => {
+            await api.create(input);
+            setPreventiveDraft(null);
+            await refresh();
+            setNotice(t("Наряд выдан"));
+          }}
+          onSuggest={(input) => api.suggestions(input)}
+          onViewEvidence={(id) => api.order(id)}
+        />
+      )}
       {selected && data && user.role !== "admin" && (
         <OrderDetailDialog
           key={selected}
