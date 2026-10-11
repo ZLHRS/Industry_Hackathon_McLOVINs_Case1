@@ -396,7 +396,8 @@ def _history_evidence(language: str, order: WorkOrder) -> str:
         "en": "Accepted by a master on {closed}; result: {result}",
     }
     return labels[language].format(
-        closed=_timestamp(order.closed_at), result=(order.work_description or order.description)[:420]
+        closed=_timestamp(order.closed_at),
+        result=(order.work_description or order.description)[:420],
     )
 
 
@@ -541,7 +542,9 @@ async def _repeated(
             _citation(
                 order,
                 machine,
-                _repeat_evidence(body.language, len(grouped[(order.equipment_id, fault_id)]), fault),
+                _repeat_evidence(
+                    body.language, len(grouped[(order.equipment_id, fault_id)]), fault
+                ),
             )
         )
     count = sum(len(items) for items in repeated)

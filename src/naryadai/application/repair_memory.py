@@ -358,8 +358,10 @@ async def similar_repairs(
                 if row[0].submission_version == item.submission_version
             ]
             chosen = exact
-            if not exact and item.legacy_unversioned and all(
-                usage.submission_version is None for usage, _ in rows_for_order
+            if (
+                not exact
+                and item.legacy_unversioned
+                and all(usage.submission_version is None for usage, _ in rows_for_order)
             ):
                 chosen = rows_for_order
             for usage, material in chosen:

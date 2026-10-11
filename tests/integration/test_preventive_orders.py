@@ -74,16 +74,25 @@ async def _fixture(database) -> dict[str, object]:
             )
         )
         recurring_equipment = Equipment(
-            inventory_number="PREV-R", name="Recurring pump", area_id=area.id,
-            equipment_type="pump", criticality=4,
+            inventory_number="PREV-R",
+            name="Recurring pump",
+            area_id=area.id,
+            equipment_type="pump",
+            criticality=4,
         )
         ppr_equipment = Equipment(
-            inventory_number="PREV-P", name="PPR pump", area_id=area.id,
-            equipment_type="pump", criticality=3,
+            inventory_number="PREV-P",
+            name="PPR pump",
+            area_id=area.id,
+            equipment_type="pump",
+            criticality=3,
         )
         foreign_equipment = Equipment(
-            inventory_number="PREV-X", name="Foreign pump", area_id=foreign_area.id,
-            equipment_type="pump", criticality=3,
+            inventory_number="PREV-X",
+            name="Foreign pump",
+            area_id=foreign_area.id,
+            equipment_type="pump",
+            criticality=3,
         )
         fault = FaultCode(code="PREV-F", name="Seal wear", specialty="mechanic")
         session.add_all((recurring_equipment, ppr_equipment, foreign_equipment, fault))
@@ -235,7 +244,9 @@ async def test_preventive_draft_is_read_only_and_confirmed_order_has_audit_linea
         before_events = await session.scalar(select(func.count()).select_from(WorkOrderEvent))
 
     draft = await prepare_preventive_draft(
-        database, data["master"], source  # type: ignore[arg-type]
+        database,
+        data["master"],
+        source,  # type: ignore[arg-type]
     )
     assert draft.equipment_id == data["recurring_equipment"]
     assert draft.fault_code_id == data["fault"]
@@ -250,7 +261,10 @@ async def test_preventive_draft_is_read_only_and_confirmed_order_has_audit_linea
 
     body = _create_body(data, source, fault_code_id=None)
     created = await create_order(
-        database, data["master"], body, "prevention-create-key"  # type: ignore[arg-type]
+        database,
+        data["master"],
+        body,
+        "prevention-create-key",  # type: ignore[arg-type]
     )
     order_id = UUID(created["order_id"])
     async with database.sessions() as session:
@@ -279,7 +293,10 @@ async def test_preventive_draft_is_read_only_and_confirmed_order_has_audit_linea
         assert equipment is not None
         equipment.is_active = False
     replay = await create_order(
-        database, data["master"], body, "prevention-create-key"  # type: ignore[arg-type]
+        database,
+        data["master"],
+        body,
+        "prevention-create-key",  # type: ignore[arg-type]
     )
     assert replay == created
 
@@ -332,7 +349,9 @@ async def test_preventive_sources_reject_wrong_role_foreign_tampered_stale_and_i
     data = await _fixture(database)
     source = await _source(database, data, "after_ppr")
     after_ppr = await prepare_preventive_draft(
-        database, data["master"], source  # type: ignore[arg-type]
+        database,
+        data["master"],
+        source,  # type: ignore[arg-type]
     )
     assert after_ppr.equipment_id == data["ppr_equipment"]
     assert after_ppr.fault_code_id is None
@@ -381,14 +400,10 @@ async def test_preventive_draft_http_uses_canonical_aliases_and_master_role(
         assert "from_" not in response["source"]["query"]
         assert [item["number"] for item in response["evidence_orders"]]
         assert (
-            await client.post(
-                "/api/v1/analytics/preventive-draft", json=payload, headers=executor
-            )
+            await client.post("/api/v1/analytics/preventive-draft", json=payload, headers=executor)
         ).status_code == 403
         assert (
-            await client.post(
-                "/api/v1/analytics/preventive-draft", json=payload, headers=manager
-            )
+            await client.post("/api/v1/analytics/preventive-draft", json=payload, headers=manager)
         ).status_code == 403
 
     with pytest.raises(OperationError, match="role_not_permitted"):

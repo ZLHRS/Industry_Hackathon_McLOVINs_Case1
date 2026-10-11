@@ -63,6 +63,45 @@ test("direct section links survive login and cannot bypass role navigation", asy
   await expect(page.getByRole("heading", { name: "Сотрудники и доступ", exact: true })).toHaveCount(0);
 });
 
+test("logout clears this device before a delayed server revocation completes", async ({ page }) => {
+  await login(page, state.master_login);
+  const masterToken = await page.evaluate(() => sessionStorage.getItem("naryadai.session.token"));
+  let releaseLogout!: () => void;
+  let logoutStarted!: () => void;
+  let logoutFinished!: () => void;
+  let logoutAuthorization: string | null = null;
+  const logoutStartedPromise = new Promise<void>((resolve) => {
+    logoutStarted = resolve;
+  });
+  const holdLogout = new Promise<void>((resolve) => {
+    releaseLogout = resolve;
+  });
+  const logoutFinishedPromise = new Promise<void>((resolve) => {
+    logoutFinished = resolve;
+  });
+  await page.route("**/api/v1/auth/logout", async (route) => {
+    logoutAuthorization = await route.request().headerValue("authorization");
+    logoutStarted();
+    await holdLogout;
+    await route.fulfill({ status: 204 });
+    logoutFinished();
+  });
+  try {
+    await page.getByRole("button", { name: "Выйти", exact: true }).click();
+    await logoutStartedPromise;
+    expect(logoutAuthorization).toBe(`Bearer ${masterToken}`);
+    await expect(page.getByLabel("Логин", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Наряды участка", exact: true })).toHaveCount(0);
+    await login(page, state.executor_login);
+    await expect(page.getByRole("heading", { name: "Мои наряды", exact: true })).toBeVisible();
+    releaseLogout();
+    await logoutFinishedPromise;
+    await expect(page.getByRole("heading", { name: "Мои наряды", exact: true })).toBeVisible();
+  } finally {
+    releaseLogout();
+  }
+});
+
 test("order card has a direct URL and back closes it while forward and reload restore it", async ({
   page,
 }) => {

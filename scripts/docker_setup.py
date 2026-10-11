@@ -84,7 +84,7 @@ def _write_secret(path: Path, name: str) -> None:
 
 def _write_private_file(path: Path, contents: str) -> None:
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+    with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
         stream.write(contents)
 
 

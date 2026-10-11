@@ -116,25 +116,47 @@ async def test_similar_repairs_are_scoped_ranked_and_use_final_master_closed_evi
         compatible_id = compatible.id
 
     newest = await _closed(
-        database, api, number="MEM-NEW", closed_at=now - timedelta(days=2),
-        equipment_id=api["machines"][0].id, fault_id=fault.id,
+        database,
+        api,
+        number="MEM-NEW",
+        closed_at=now - timedelta(days=2),
+        equipment_id=api["machines"][0].id,
+        fault_id=fault.id,
     )
     middle = await _closed(
-        database, api, number="MEM-MID", closed_at=now - timedelta(days=4),
-        equipment_id=api["machines"][0].id, fault_id=fault.id,
+        database,
+        api,
+        number="MEM-MID",
+        closed_at=now - timedelta(days=4),
+        equipment_id=api["machines"][0].id,
+        fault_id=fault.id,
     )
     oldest = await _closed(
-        database, api, number="MEM-OLD", closed_at=now - timedelta(days=10),
-        equipment_id=api["machines"][0].id, fault_id=fault.id,
+        database,
+        api,
+        number="MEM-OLD",
+        closed_at=now - timedelta(days=10),
+        equipment_id=api["machines"][0].id,
+        fault_id=fault.id,
     )
     await _closed(
-        database, api, number="MEM-COMPAT", closed_at=now - timedelta(days=1),
-        equipment_id=compatible_id, fault_id=fault.id,
+        database,
+        api,
+        number="MEM-COMPAT",
+        closed_at=now - timedelta(days=1),
+        equipment_id=compatible_id,
+        fault_id=fault.id,
     )
     unsafe = await _closed(
-        database, api, number="MEM-STALE", closed_at=now - timedelta(days=3),
-        equipment_id=api["machines"][0].id, fault_id=fault.id, attempt=2,
-        close_submission=4, last_submission=5,
+        database,
+        api,
+        number="MEM-STALE",
+        closed_at=now - timedelta(days=3),
+        equipment_id=api["machines"][0].id,
+        fault_id=fault.id,
+        attempt=2,
+        close_submission=4,
+        last_submission=5,
     )
     async with database.sessions.begin() as session:
         session.add_all(
@@ -167,22 +189,22 @@ async def test_similar_repairs_are_scoped_ranked_and_use_final_master_closed_evi
                     version=1,
                     attempt=1,
                 ),
-            WorkOrder(
-                number="MEM-FUTURE",
-                work_type=WorkType.UNPLANNED,
-                description="future repeat",
-                area_id=api["areas"][0].id,
-                equipment_id=oldest.equipment_id,
-                executor_id=api["users"]["executor"],
-                master_id=api["users"]["master"],
-                priority=Priority.HIGH,
-                status=WorkOrderStatus.ISSUED,
-                issued_at=now + timedelta(days=1),
-                deadline=now + timedelta(days=2),
-                fault_code_id=fault.id,
-                version=1,
-                attempt=1,
-            ),
+                WorkOrder(
+                    number="MEM-FUTURE",
+                    work_type=WorkType.UNPLANNED,
+                    description="future repeat",
+                    area_id=api["areas"][0].id,
+                    equipment_id=oldest.equipment_id,
+                    executor_id=api["users"]["executor"],
+                    master_id=api["users"]["master"],
+                    priority=Priority.HIGH,
+                    status=WorkOrderStatus.ISSUED,
+                    issued_at=now + timedelta(days=1),
+                    deadline=now + timedelta(days=2),
+                    fault_code_id=fault.id,
+                    version=1,
+                    attempt=1,
+                ),
             )
         )
 
@@ -200,8 +222,13 @@ async def test_similar_repairs_are_scoped_ranked_and_use_final_master_closed_evi
     assert [item["number"] for item in result["items"]] == ["MEM-NEW", "MEM-MID", "MEM-OLD"]
     assert all(item["number"] != unsafe.number for item in result["items"])
     assert result["items"][1]["materials"] == [
-        {"material_id": str(material.id), "code": material.code, "name": material.name,
-         "unit": material.unit, "quantity": "2.000"}
+        {
+            "material_id": str(material.id),
+            "code": material.code,
+            "name": material.name,
+            "unit": material.unit,
+            "quantity": "2.000",
+        }
     ]
     assert result["items"][0]["followup"]["status"] == "observing"
     assert result["items"][2]["followup"]["status"] == "observed_repeat"

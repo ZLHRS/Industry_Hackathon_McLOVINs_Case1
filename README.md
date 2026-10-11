@@ -162,6 +162,7 @@ chmod 600 var/docker/industrial-credentials.txt
 
 ## Подробные инструкции
 
+- [Финальный аудит: проверки и ограничения](docs/final-audit-2026-10-11.md)
 - [Docker, домен и API-ключ ИИ](docs/docker-deployment.md)
 - [Телефон и push-уведомления](docs/phone-tunnel.md)
 - [Сид и учётные записи](seeds/industrial/README.md)

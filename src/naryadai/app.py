@@ -125,7 +125,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_credentials=False,
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
             allow_headers=[
-                "Content-Type", "Authorization", "Idempotency-Key", "X-Import-Fingerprint"
+                "Content-Type",
+                "Authorization",
+                "Idempotency-Key",
+                "X-Import-Fingerprint",
             ],
             expose_headers=["X-Request-ID"],
         )

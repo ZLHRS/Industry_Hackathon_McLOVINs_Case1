@@ -228,11 +228,11 @@ async def prevention_outcomes(
         if query.brigade_ids:
             filters.append(Employee.brigade_id.in_(query.brigade_ids))
 
-        statement = select(WorkOrder, WorkOrderEvent, Equipment).join(WorkOrderEvent).join(
-            Equipment
+        statement = (
+            select(WorkOrder, WorkOrderEvent, Equipment).join(WorkOrderEvent).join(Equipment)
         )
-        count_statement = select(func.count()).select_from(WorkOrder).join(WorkOrderEvent).join(
-            Equipment
+        count_statement = (
+            select(func.count()).select_from(WorkOrder).join(WorkOrderEvent).join(Equipment)
         )
         if query.brigade_ids:
             statement = statement.join(Employee, Employee.id == WorkOrder.executor_id)
@@ -427,9 +427,7 @@ async def prevention_outcomes(
                     .limit(_MAX_REPEAT_EVIDENCE)
                 )
             )
-            observed_days = max(
-                0.0, (observed_until - closure.closed_at).total_seconds() / 86_400
-            )
+            observed_days = max(0.0, (observed_until - closure.closed_at).total_seconds() / 86_400)
             observation = OutcomeObservation(
                 window_end=window_end,
                 observed_until=observed_until,

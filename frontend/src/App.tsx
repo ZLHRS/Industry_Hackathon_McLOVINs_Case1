@@ -578,17 +578,21 @@ export default function App() {
     if (!actor) return;
     const subscriptionId = pushSubscriptionId.current;
     pushSubscriptionId.current = null;
-    try {
-      if (subscriptionId) await api.removePushSubscription(subscriptionId);
-    } catch {
-      // Session revocation below also prevents delivery if device removal fails.
-    }
-    // Browser subscription may be reused after login; delivery always requires a live session.
-    try {
-      await api.logout();
-    } finally {
-      await invalidate(actor.id, false);
-    }
+    // Leave this device immediately. The captured API instance retains this session's token,
+    // so delayed best-effort revocation cannot affect a later sign-in.
+    void (async () => {
+      try {
+        if (subscriptionId) await api.removePushSubscription(subscriptionId);
+      } catch {
+        // Session revocation below also prevents delivery if device removal fails.
+      }
+      try {
+        await api.logout();
+      } catch {
+        // Local credentials are already cleared; server revocation can fail while offline.
+      }
+    })();
+    await invalidate(actor.id, false);
   }
   async function retry(id: string) {
     if (!user) return;

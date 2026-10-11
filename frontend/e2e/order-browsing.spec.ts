@@ -165,7 +165,8 @@ test("executor sorts the full selection and filters issuers; own name clears con
   await expect(page.getByLabel("Мастер", { exact: true })).toBeVisible();
   await page.screenshot({ path: info.outputPath("executor-filters-mobile.png"), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-  await page.locator(".mobile-current-orders").click();
+  await page.getByRole("button", { name: `Профиль: ${workerName}`, exact: true }).click();
+  await page.getByRole("button", { name: "Мои наряды", exact: true }).click();
   await expect(page.getByLabel("Поиск наряда", { exact: true })).toHaveValue("");
 });
 

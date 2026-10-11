@@ -179,6 +179,7 @@ test("master returns current review to rework and executor starts a clean attemp
       .toBe("rework");
     await page.getByRole("button", { name: "Закрыть", exact: true }).click();
     await page.getByRole("button", { name: /Выйти/ }).click();
+    await expect(page.getByLabel("Логин", { exact: true })).toBeVisible();
     await login(page, state.executor_login);
     await page.getByText(candidate.description, { exact: true }).click();
     const executorDetail = page.getByRole("dialog");

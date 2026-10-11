@@ -22,6 +22,7 @@ from naryadai.infrastructure.models import (
     Area,
     Employee,
     EmployeeArea,
+    EmployeeRole,
     Equipment,
     FaultCode,
     Material,
@@ -1177,6 +1178,35 @@ async def test_suggestions_are_scoped_explainable_and_read_only(api, database):
             headers=api["headers"]["master"],
         )
     ).status_code == 404
+
+
+async def test_action_replay_rechecks_current_actor_authorization(api, database):
+    issued = await issue(api)
+    key = "replay-authorization"
+    accepted = await action(api, issued, "accept", key=key)
+    assert accepted.status_code == 200
+    accepted_body = accepted.json()
+
+    advanced = await action(
+        api,
+        accepted_body,
+        "change_priority",
+        who="master",
+        priority="high",
+        reason="Escalated priority",
+    )
+    assert advanced.status_code == 200
+    # A retry remains valid after another command advanced the order version.
+    replay = await action(api, issued, "accept", key=key)
+    assert replay.status_code == 200 and replay.json() == accepted_body
+
+    async with database.sessions.begin() as session:
+        executor = await session.get(Employee, api["users"]["executor"])
+        assert executor is not None
+        executor.role = EmployeeRole.MANAGER
+    # The same token resolves the changed role.  It must not replay an executor action.
+    demoted_replay = await action(api, issued, "accept", key=key)
+    assert demoted_replay.status_code == 403
 
 
 async def test_suggestions_do_not_mark_cross_area_worker_free(api, database):

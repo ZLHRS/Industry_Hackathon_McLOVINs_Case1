@@ -419,6 +419,10 @@ async def execute_action(
     async with database.sessions.begin() as session:
         replay = await idempotent(session, principal, key, operation, payload)
         if replay is not None:
+            # Replays must retain the original action's current authorization,
+            # even though they intentionally bypass a now-stale version check.
+            replay_order = await get_order(session, order_id, principal)
+            _authorize_command(replay_order, principal, body.action)
             return replay
 
         order = await get_order(session, order_id, principal, lock=True)

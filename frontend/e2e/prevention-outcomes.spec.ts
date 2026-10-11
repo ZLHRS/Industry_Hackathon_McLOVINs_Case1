@@ -321,11 +321,14 @@ test("outcome display distinguishes completed observation from missing evidence 
   await expect(panel).toContainText("7 дней без зарегистрированного повтора");
   await expect(panel).toContainText("Недостаточно данных");
   await expect(panel).toContainText("Внеплановый ремонт зарегистрирован");
-  await panel.getByTestId("prevention-outcome-sample-3").locator(":scope > details > summary").click();
-  await panel
-    .getByTestId("prevention-outcome-sample-3")
-    .getByText("Основание и методика", { exact: true })
-    .click();
+  const unknownOutcome = panel.getByTestId("prevention-outcome-sample-3");
+  const outcomeDetails = unknownOutcome.locator(":scope > details");
+  // The order number is a same-context link inside the summary. Toggle the native
+  // disclosure from its keyboard-accessible summary rather than following that link.
+  await outcomeDetails.locator(":scope > summary").focus();
+  await page.keyboard.press("Enter");
+  await expect(outcomeDetails).toHaveAttribute("open", "");
+  await unknownOutcome.getByText("Основание и методика", { exact: true }).click();
   await expect(panel).toContainText("Основание недоступно");
   await panel.scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath("observation-states.png") });
