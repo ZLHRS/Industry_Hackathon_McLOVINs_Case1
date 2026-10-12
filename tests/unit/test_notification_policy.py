@@ -125,3 +125,14 @@ async def test_outbox_keeps_polling_while_deadline_scan_is_slow(monkeypatch) -> 
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
+
+
+def test_default_overdue_interval_is_two_hours() -> None:
+    from naryadai.config import Settings
+
+    assert NotificationPolicy().overdue_repeat_minutes == 120
+    assert Settings().overdue_repeat_minutes == 120
+    with pytest.raises(ValueError):
+        Settings(overdue_repeat_minutes=3)
+    with pytest.raises(ValueError, match="at least 30 minutes"):
+        NotificationPolicy(overdue_repeat_minutes=3)

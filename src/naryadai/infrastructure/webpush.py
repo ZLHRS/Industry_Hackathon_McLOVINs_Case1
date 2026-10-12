@@ -23,6 +23,8 @@ if TYPE_CHECKING:
 
 _MAX_TIMEOUT_SECONDS = 30.0
 _MAX_RETRY_AFTER_SECONDS = 3_600
+_MAX_PUSH_TITLE_LENGTH = 120
+_MAX_PUSH_BODY_LENGTH = 240
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,11 +104,32 @@ def public_key(settings: Settings) -> str | None:
         raise ValueError("configured Web Push private key is invalid") from error
 
 
-def build_payload(notification_id: str, *, urgent: bool) -> dict[str, object]:
+def _compact_copy(value: str, *, fallback: str, limit: int) -> str:
+    """Make one lock-screen line readable without changing the inbox record."""
+
+    compact = " ".join(value.split())
+    if not compact:
+        return fallback
+    if len(compact) <= limit:
+        return compact
+    shortened = compact[: limit - 1].rsplit(" ", 1)[0]
+    return (shortened or compact[: limit - 1]).rstrip(".,;: ") + "…"
+
+
+def build_payload(
+    notification_id: str, *, title: str, body: str, urgent: bool
+) -> dict[str, object]:
+    """Build concise, event-specific copy for a device notification.
+
+    The inbox keeps its complete, access-controlled message.  Push text is
+    deliberately normalised and bounded because mobile operating systems show
+    it on compact lock-screen surfaces.
+    """
+
     return {
         "notification_id": notification_id,
-        "title": "Аварийный наряд" if urgent else "ТехНаряд",
-        "body": "Новое служебное уведомление. Откройте приложение.",
+        "title": _compact_copy(title, fallback="ТехНаряд", limit=_MAX_PUSH_TITLE_LENGTH),
+        "body": _compact_copy(body, fallback="Откройте приложение.", limit=_MAX_PUSH_BODY_LENGTH),
         "urgent": urgent,
         "url": f"/?notification={notification_id}",
         "tag": notification_id,

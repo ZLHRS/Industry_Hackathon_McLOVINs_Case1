@@ -43,7 +43,7 @@ _WORD = re.compile(r"[\w-]+", re.UNICODE)
 
 
 class AssistantQuestion(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
     question: str = Field(min_length=1, max_length=500)
     topic: Literal["attention", "repeated_faults", "accepted_repair_history"] | None = None

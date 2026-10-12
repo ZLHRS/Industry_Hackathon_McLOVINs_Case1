@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Any, cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,7 +39,7 @@ class NotificationPolicy:
     reminder_minutes: int = 30
     acceptance_minutes: int = 10
     emergency_acceptance_minutes: int = 3
-    overdue_repeat_minutes: int = 30
+    overdue_repeat_minutes: int = 120
     manager_escalation_minutes: int = 60
 
     def __post_init__(self) -> None:
@@ -54,6 +54,8 @@ class NotificationPolicy:
             )
         ):
             raise ValueError("notification policy intervals must be positive")
+        if self.overdue_repeat_minutes < 30:
+            raise ValueError("overdue reminders must be at least 30 minutes apart")
 
 
 _ACTIVE_DEADLINE_STATUSES = frozenset(
@@ -72,10 +74,6 @@ def _utc(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() != timedelta(0):
         raise ValueError("now must be timezone-aware UTC")
     return value
-
-
-def _bucket(elapsed: timedelta, interval: timedelta) -> int:
-    return int(elapsed.total_seconds() // interval.total_seconds())
 
 
 def _dedup(order: WorkOrder, kind: str, bucket: str) -> str:
@@ -156,6 +154,8 @@ async def _new_notification(
 ) -> bool:
     """Insert once, revision-bump and enqueue only current valid push sessions."""
 
+    title = title.strip() or "ТехНаряд"
+    body = body.strip() or "Откройте приложение."
     statement = insert(Notification).values(
         id=uuid4(),
         employee_id=employee_id,
@@ -219,6 +219,8 @@ async def new_fault_report_notification(
 ) -> bool:
     """Notify one report recipient and queue its active push subscriptions once."""
 
+    title = title.strip() or "ТехНаряд"
+    body = body.strip() or "Откройте приложение."
     statement = insert(Notification).values(
         id=uuid4(),
         employee_id=employee_id,
@@ -270,7 +272,7 @@ async def new_fault_report_notification(
 
 async def _event_recipients(
     session: AsyncSession, order: WorkOrder, event: WorkOrderEvent
-) -> tuple[list[UUID], str, str, bool, bool]:
+) -> tuple[list[UUID], str, str, str, bool, bool]:
     """Map only action-worthy lifecycle events to private inbox alerts.
 
     Realtime revisions still publish every event.  Alerts deliberately cover
@@ -280,10 +282,16 @@ async def _event_recipients(
 
     team = await _team_recipient_ids(session, order)
     if event.action in {"issue", "reassign"}:
+        title = (
+            f"Аварийный наряд {order.number} назначен"
+            if order.priority.value == "emergency"
+            else f"Назначен наряд {order.number}"
+        )
         return (
             team,
             "assignment",
-            f"Назначен наряд {order.number}",
+            title,
+            "Подтвердите получение и выберите следующий статус.",
             order.priority.value == "emergency",
             True,
         )
@@ -292,6 +300,7 @@ async def _event_recipients(
             [order.master_id],
             "review_ready",
             f"Готова проверка ремонта: {order.number}",
+            "Сверьте фото, материалы и заключение ИИ. Примите решение.",
             False,
             True,
         )
@@ -300,6 +309,7 @@ async def _event_recipients(
             team,
             "master_decision",
             f"Наряд {order.number}: требуется доработка",
+            "Откройте замечания мастера, устраните их и сдайте работу повторно.",
             False,
             True,
         )
@@ -308,6 +318,7 @@ async def _event_recipients(
             team,
             "master_decision",
             f"Наряд {order.number}: принят мастером",
+            "Работа принята и наряд закрыт. Действий не требуется.",
             False,
             False,
         )
@@ -316,6 +327,7 @@ async def _event_recipients(
             team,
             "master_decision",
             f"Наряд {order.number}: отменён",
+            "Наряд отменён мастером. Действий не требуется.",
             False,
             False,
         )
@@ -324,10 +336,11 @@ async def _event_recipients(
             [order.master_id],
             "refusal",
             f"Исполнитель отказался от наряда {order.number}",
+            "Выберите нового исполнителя или скорректируйте план работ.",
             False,
             True,
         )
-    return ([], "workflow", "", False, False)
+    return ([], "workflow", "", "", False, False)
 
 
 async def _team_recipient_ids(session: AsyncSession, order: WorkOrder) -> list[UUID]:
@@ -410,7 +423,7 @@ async def process_outbox(database: Database, *, now: datetime, limit: int = 100)
             relevant = current_attempt == order.attempt and event.to_status == order.status
             await _bump_current_viewers(session, order, event, now)
             if relevant:
-                recipients, kind, title, urgent, action_required = await _event_recipients(
+                recipients, kind, title, body, urgent, action_required = await _event_recipients(
                     session, order, event
                 )
                 for employee_id in recipients:
@@ -421,7 +434,7 @@ async def process_outbox(database: Database, *, now: datetime, limit: int = 100)
                         dedup_key=f"event:{event.id}",
                         kind=kind,
                         title=title,
-                        body=f"Наряд {order.number} требует внимания.",
+                        body=body,
                         urgent=urgent,
                         action_required=action_required,
                         payload={
@@ -493,6 +506,41 @@ async def _specialty_baseline(session: AsyncSession, order: WorkOrder) -> tuple[
     return (executor.specialty if fault is None else fault.specialty), executor.grade
 
 
+async def _repeat_key(
+    session: AsyncSession,
+    *,
+    order: WorkOrder,
+    employee_id: UUID,
+    kind: str,
+    now: datetime,
+    interval: timedelta,
+    maximum: int,
+) -> str | None:
+    """Rate-limit from the last actual notice, including entries made by older workers.
+
+    The order is locked by the scanner, so count-based keys remain safe across
+    concurrent scans. Acknowledgement silences only this recipient and deadline.
+    """
+    prefix = _dedup(order, kind, "")
+    count, latest, acknowledged = (
+        await session.execute(
+            select(
+                func.count(Notification.id),
+                func.max(Notification.created_at),
+                func.bool_or(Notification.acknowledged_at.is_not(None)),
+            ).where(
+                Notification.employee_id == employee_id,
+                Notification.work_order_id == order.id,
+                Notification.kind == kind,
+                Notification.dedup_key.startswith(prefix, autoescape=True),
+            )
+        )
+    ).one()
+    if acknowledged or count >= maximum or (latest is not None and now < latest + interval):
+        return None
+    return prefix + f"repeat:{count}"
+
+
 async def scan_deadlines(database: Database, *, now: datetime, policy: NotificationPolicy) -> int:
     """Create deduplicated deadline, acceptance and escalation inbox entries."""
 
@@ -511,6 +559,7 @@ async def scan_deadlines(database: Database, *, now: datetime, policy: Notificat
             base_payload = {"order_id": str(order.id), "attempt": order.attempt}
             reminder_at = order.deadline - timedelta(minutes=policy.reminder_minutes)
             if reminder_at <= now < order.deadline:
+                minutes_left = max(0, int((order.deadline - now).total_seconds() // 60))
                 created += int(
                     await _new_notification(
                         session,
@@ -518,8 +567,8 @@ async def scan_deadlines(database: Database, *, now: datetime, policy: Notificat
                         order=order,
                         dedup_key=_dedup(order, "deadline_reminder", "once"),
                         kind="deadline_reminder",
-                        title=f"Срок наряда {order.number} скоро истекает",
-                        body="Выполните наряд или обновите его статус до истечения срока.",  # noqa: RUF001
+                        title=f"До срока наряда {order.number} — {minutes_left} мин",
+                        body="Выполните наряд или обновите его статус до срока.",  # noqa: RUF001
                         urgent=False,
                         action_required=True,
                         payload=base_payload,
@@ -576,15 +625,24 @@ async def scan_deadlines(database: Database, *, now: datetime, policy: Notificat
                 continue
             context = await _order_context(session, order, now)
             repeat = timedelta(minutes=policy.overdue_repeat_minutes)
-            overdue_bucket = str(_bucket(now - order.deadline, repeat))
-            key = _dedup(order, "overdue", overdue_bucket)
             for employee_id in (order.executor_id, order.master_id):
+                repeat_key = await _repeat_key(
+                    session,
+                    order=order,
+                    employee_id=employee_id,
+                    kind="overdue",
+                    now=now,
+                    interval=repeat,
+                    maximum=3,
+                )
+                if repeat_key is None:
+                    continue
                 created += int(
                     await _new_notification(
                         session,
                         employee_id=employee_id,
                         order=order,
-                        dedup_key=key,
+                        dedup_key=repeat_key,
                         kind="overdue",
                         title=f"Просрочен наряд {order.number}",
                         body=_overdue_body(context),
@@ -607,18 +665,24 @@ async def scan_deadlines(database: Database, *, now: datetime, policy: Notificat
                         )
                     )
                 ).all()
-                key = _dedup(
-                    order,
-                    "manager_overdue",
-                    str(_bucket(now - manager_after, repeat)),
-                )
                 for employee_id in managers:
+                    repeat_key = await _repeat_key(
+                        session,
+                        order=order,
+                        employee_id=employee_id,
+                        kind="manager_overdue",
+                        now=now,
+                        interval=repeat,
+                        maximum=1,
+                    )
+                    if repeat_key is None:
+                        continue
                     created += int(
                         await _new_notification(
                             session,
                             employee_id=employee_id,
                             order=order,
-                            dedup_key=key,
+                            dedup_key=repeat_key,
                             kind="manager_overdue",
                             title=f"Эскалация просроченного наряда {order.number}",
                             body=(

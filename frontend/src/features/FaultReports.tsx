@@ -1,3 +1,4 @@
+import { Skeleton } from "../components/Skeleton";
 import { useEffect, useRef, useState } from "react";
 import type { Api, ApiError } from "../api";
 import { Dialog } from "../components/Dialog";
@@ -401,9 +402,11 @@ export function FaultReportsDialog({
             {error}
           </p>
         )}
-        {(mode === "detail" || reportsOpen) && !error && ((mode === "detail" && !detail) || pageLoading) && (
-          <p className="muted">{t("Загрузка…")}</p>
-        )}
+        {(mode === "detail" || reportsOpen) &&
+          !error &&
+          ((mode === "detail" && !detail) || (pageLoading && !page)) && (
+            <Skeleton variant={mode === "detail" ? "detail" : "list"} count={3} />
+          )}
         {(mode === "detail" || reportsOpen) &&
           reports.map((report) => (
             <article
@@ -455,17 +458,16 @@ export function FaultReportsDialog({
                   >
                     {t("Подготовить наряд")}
                   </button>
-                  <details
-                    className="fault-report-dismiss"
-                    open={dismissedId === report.id}
-                    onToggle={(event) => {
-                      if (event.currentTarget.open) {
-                        setDismissedId(report.id);
+                  <details className="fault-report-dismiss" open={dismissedId === report.id}>
+                    <summary
+                      data-testid={`fault-report-dismiss-${report.id}`}
+                      onClick={(event) => {
+                        // Native toggle fires later and can erase text typed after opening.
+                        event.preventDefault();
+                        setDismissedId((current) => (current === report.id ? "" : report.id));
                         setDismissReason("");
-                      } else setDismissedId((current) => (current === report.id ? "" : current));
-                    }}
-                  >
-                    <summary data-testid={`fault-report-dismiss-${report.id}`}>
+                      }}
+                    >
                       {t("Закрыть с пояснением")}
                     </summary>
                     <label>
@@ -492,7 +494,7 @@ export function FaultReportsDialog({
               )}
             </article>
           ))}
-        {(mode === "detail" || reportsOpen) && !pageLoading && !error && reports.length === 0 && (
+        {mode !== "detail" && reportsOpen && page && !pageLoading && !error && reports.length === 0 && (
           <p className="muted">{t("Сообщений пока нет.")}</p>
         )}
         {mode !== "detail" && reportsOpen && page && page.total > page.limit && (

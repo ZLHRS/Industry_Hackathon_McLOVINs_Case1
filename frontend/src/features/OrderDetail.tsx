@@ -1,3 +1,4 @@
+import { Skeleton } from "../components/Skeleton";
 import { t, getLocale, message } from "../lib/i18n";
 import "./order-ux.css";
 import { canReviewRepair, canViewRepairOutcome, roleLabels } from "../lib/roleAccess";
@@ -506,7 +507,13 @@ export function OrderDetailDialog({
   if (!detail)
     return (
       <Dialog title={t("Карточка наряда")} onClose={onClose}>
-        <p className={error ? "error" : "muted"}>{error || t("Загрузка…")}</p>
+        {error ? (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        ) : (
+          <Skeleton variant="detail" />
+        )}
       </Dialog>
     );
   const machine = catalog.equipment.find((item) => item.id === detail.equipment_id);

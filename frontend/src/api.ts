@@ -1,3 +1,4 @@
+import { inputJson, trimInputText } from "./lib/inputText";
 import type {
   ActionRequest,
   AdminEmployee,
@@ -59,11 +60,11 @@ export function clearMutationKeys(): void {
   }
 }
 function canonical(value: unknown): string {
-  return JSON.stringify(value, (_key, item: unknown) => {
+  return JSON.stringify(value, (key, item: unknown) => {
     if (item && typeof item === "object" && !Array.isArray(item)) {
       return Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)));
     }
-    return item;
+    return trimInputText(key, item);
   });
 }
 async function digest(value: string | ArrayBuffer): Promise<string> {
@@ -313,7 +314,7 @@ export class Api {
     return this.request<Token>("/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ login, secret }),
+      body: inputJson({ login, secret }),
     });
   }
   me() {
@@ -350,14 +351,14 @@ export class Api {
     return this.request<import("./types").Area>("/catalog/areas", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: inputJson(input),
     });
   }
   updateArea(id: string, input: { code: string; name: string }) {
     return this.request<import("./types").Area>(`/catalog/areas/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: inputJson(input),
     });
   }
   setAreaActive(id: string, is_active: boolean) {
@@ -371,14 +372,14 @@ export class Api {
     return this.request<import("./types").Equipment>("/catalog/equipment", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: inputJson(input),
     });
   }
   updateEquipment(id: string, input: Omit<import("./types").Equipment, "id" | "is_active">) {
     return this.request<import("./types").Equipment>(`/catalog/equipment/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: inputJson(input),
     });
   }
   setEquipmentActive(id: string, is_active: boolean) {
@@ -392,14 +393,14 @@ export class Api {
     return this.request<import("./types").Brigade>("/catalog/brigades", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: inputJson(input),
     });
   }
   updateBrigade(id: string, input: { code: string; name: string }) {
     return this.request<import("./types").Brigade>(`/catalog/brigades/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: inputJson(input),
     });
   }
   deleteBrigade(id: string) {
@@ -409,14 +410,14 @@ export class Api {
     return this.request<import("./types").FaultCode>("/catalog/fault-codes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: inputJson(input),
     });
   }
   updateFaultCode(id: string, input: { code: string; name: string; specialty: string }) {
     return this.request<import("./types").FaultCode>(`/catalog/fault-codes/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: inputJson(input),
     });
   }
   deleteFaultCode(id: string) {
@@ -426,14 +427,14 @@ export class Api {
     return this.request<import("./types").Material>("/catalog/materials", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: inputJson(input),
     });
   }
   updateMaterial(id: string, input: { code: string; name: string; unit: string }) {
     return this.request<import("./types").Material>(`/catalog/materials/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: inputJson(input),
     });
   }
   deleteMaterial(id: string) {
@@ -443,14 +444,14 @@ export class Api {
     return this.request<import("./types").TimeNorm>("/catalog/time-norms", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: inputJson(input),
     });
   }
   updateTimeNorm(id: string, input: { fault_code_id: string; equipment_type: string; minutes: number }) {
     return this.request<import("./types").TimeNorm>(`/catalog/time-norms/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: inputJson(input),
     });
   }
   deleteTimeNorm(id: string) {
@@ -471,14 +472,14 @@ export class Api {
     return this.request<AdminEmployee>("/catalog/employees", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: inputJson(input),
     });
   }
   updateEmployeeAccess(id: string, input: EmployeeAccessUpdate) {
     return this.request<AdminEmployee>(`/catalog/employees/${id}/access`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: inputJson(input),
     });
   }
   orders(params: Record<string, string | number | boolean | string[] | undefined> = {}) {
@@ -486,7 +487,7 @@ export class Api {
     Object.entries(params).forEach(([key, value]) =>
       Array.isArray(value)
         ? value.forEach((entry) => query.append(key, entry))
-        : value !== undefined && query.set(key, String(value)),
+        : value !== undefined && query.set(key, key === "q" ? String(value).trim() : String(value)),
     );
     return this.request<OrderPage>(`/work-orders${query.size ? `?${query}` : ""}`);
   }
@@ -507,7 +508,7 @@ export class Api {
       return this.request<import("./types").BrigadeAssignmentOptions>("/work-orders/brigade-options", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
+        body: inputJson(input),
       });
     }
     return this.request<import("./types").BrigadeAssignmentOptions>(
@@ -526,14 +527,14 @@ export class Api {
     return this.request<import("./types").OrderSuggestions>("/work-orders/suggestions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: inputJson(input),
     });
   }
   similarRepairs(input: SimilarRepairsRequest) {
     return this.request<SimilarRepairs>("/work-orders/similar-repairs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: inputJson(input),
     });
   }
   faultReportMasters(equipmentId: string) {
@@ -569,7 +570,7 @@ export class Api {
     return this.request<MasterAssistantAnswer>("/master-assistant/answer", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: inputJson(input),
     });
   }
   create(payload: CreateOrder, key?: string) {

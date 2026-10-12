@@ -1,3 +1,4 @@
+import { Skeleton } from "./components/Skeleton";
 import { t, getLocale, useLanguage, message } from "./lib/i18n";
 import { AppPreferences } from "./components/AppPreferences";
 import { ProfileMenu } from "./components/ProfileMenu";
@@ -41,6 +42,7 @@ import type {
 } from "./types";
 import "./styles.css";
 import "./shell.css";
+import "./layout-polish.css";
 import {
   useAppLocation,
   readRoute,
@@ -878,9 +880,7 @@ export default function App() {
               }}
             />
           ) : (
-            <section className="workspace">
-              <p>Загрузка карточки оборудования…</p>
-            </section>
+            <section className="workspace">{!error && <Skeleton variant="detail" />}</section>
           ))}
         {visibleView === "orders" && !route.equipmentId && (
           <OrdersView
@@ -914,16 +914,25 @@ export default function App() {
                 offset: 0,
               })
             }
-            loading={loading}
+            loading={loading || (!activeOrders && !error)}
           />
         )}{" "}
-        {visibleView === "workload" && !route.equipmentId && (
-          <WorkloadView
-            workers={data?.workload ?? []}
-            onOpen={setSelected}
-            onEmployeeOrders={openEmployeeOrders}
-          />
-        )}{" "}
+        {visibleView === "workload" &&
+          !route.equipmentId &&
+          (!data ? (
+            !error && (
+              <section className="workspace">
+                <h1>{t("Загрузка исполнителей")}</h1>
+                <Skeleton variant="list" />
+              </section>
+            )
+          ) : (
+            <WorkloadView
+              workers={data?.workload ?? []}
+              onOpen={setSelected}
+              onEmployeeOrders={openEmployeeOrders}
+            />
+          ))}{" "}
         {visibleView === "analytics" && !route.equipmentId && (
           <AnalyticsView
             api={api}
@@ -943,24 +952,38 @@ export default function App() {
               onSelfPasswordChanged={() => void invalidate(user.id)}
             />
           ) : (
-            <p>{t("Загрузка данных сотрудников…")}</p>
+            !error && (
+              <section className="workspace">
+                <h1>{t("Сотрудники и доступ")}</h1>
+                <Skeleton variant="list" />
+              </section>
+            )
           ))}
-        {visibleView === "reference" && !route.equipmentId && (
-          <ReferenceView
-            role={user.role}
-            catalog={data?.catalog ?? null}
-            employees={data?.employees ?? []}
-            api={api}
-            onCatalogChange={refresh}
-            onEmployees={() => setView("employees")}
-            onEmployeeOrders={openEmployeeOrders}
-            onEquipmentQr={(equipmentId) => navigate("/equipment/" + equipmentId)}
-            section={route.section}
-            onSectionChange={(section) => navigate(directoryUrl(section))}
-            directoryFilters={route.directoryFilters}
-            onDirectoryFiltersChange={(filters) => navigate(directoryUrl(route.section, filters), true)}
-          />
-        )}
+        {visibleView === "reference" &&
+          !route.equipmentId &&
+          (!data ? (
+            !error && (
+              <section className="workspace">
+                <h1>{t("Справочники")}</h1>
+                <Skeleton />
+              </section>
+            )
+          ) : (
+            <ReferenceView
+              role={user.role}
+              catalog={data?.catalog ?? null}
+              employees={data?.employees ?? []}
+              api={api}
+              onCatalogChange={refresh}
+              onEmployees={() => setView("employees")}
+              onEmployeeOrders={openEmployeeOrders}
+              onEquipmentQr={(equipmentId) => navigate("/equipment/" + equipmentId)}
+              section={route.section}
+              onSectionChange={(section) => navigate(directoryUrl(section))}
+              directoryFilters={route.directoryFilters}
+              onDirectoryFiltersChange={(filters) => navigate(directoryUrl(route.section, filters), true)}
+            />
+          ))}
       </main>
       <nav
         className="bottom-nav"

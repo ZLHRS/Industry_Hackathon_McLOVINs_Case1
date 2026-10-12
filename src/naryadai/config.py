@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     reminder_minutes: int = Field(default=30, ge=1, le=1440)
     acceptance_minutes: int = Field(default=10, ge=1, le=120)
     emergency_acceptance_minutes: int = Field(default=3, ge=1, le=30)
-    overdue_repeat_minutes: int = Field(default=30, ge=1, le=1440)
+    overdue_repeat_minutes: int = Field(default=120, ge=30, le=1440)
     manager_escalation_minutes: int = Field(default=60, ge=1, le=10080)
     web_push_private_key_file: Path | None = None
     web_push_subject: str | None = None

@@ -29,7 +29,8 @@ test("administrator creates, scopes, resets and disables an employee", async ({ 
   await signIn(page);
   await page.getByRole("button", { name: "Добавить сотрудника", exact: true }).click();
   let dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Логин", { exact: true }).fill(account);
+  await dialog.getByLabel("Логин", { exact: true }).fill(`  ${account}  `);
+  await expect(dialog.getByLabel("Логин", { exact: true })).toHaveValue(account);
   await dialog.getByLabel("ФИО сотрудника", { exact: true }).fill("Сотрудник проверки доступа");
   await dialog.getByLabel("Специальность", { exact: true }).selectOption(catalog.fault_codes[0].specialty);
   await dialog.getByLabel("Разряд", { exact: true }).fill("3");

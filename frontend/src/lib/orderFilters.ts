@@ -54,7 +54,7 @@ export function readOrderFilters(location: string, actor: Actor | null): OrderFi
           : actor?.role === "executor"
             ? uuid(master)
             : "",
-    query: (params.get("q") ?? "").slice(0, 200),
+    query: (params.get("q") ?? "").trim().slice(0, 120),
     attention: params.get("attention") === "true",
     sort: (["priority", "deadline", "newest", "oldest"] as const).includes(
       params.get("sort") as "priority" | "deadline" | "newest" | "oldest",
@@ -70,7 +70,7 @@ export function orderFiltersUrl(filters: OrderFilters): string {
   for (const name of ["master_id", "executor_id", "area_id", "equipment_id", "priority"] as const)
     if (filters[name]) params.set(name, filters[name]);
   if (filters.sort !== "priority") params.set("sort", filters.sort);
-  if (filters.query) params.set("q", filters.query);
+  if (filters.query.trim()) params.set("q", filters.query.trim().slice(0, 120));
   if (filters.overdue) params.set("overdue", "true");
   if (filters.attention) params.set("attention", "true");
   if (filters.offset) params.set("offset", String(filters.offset));

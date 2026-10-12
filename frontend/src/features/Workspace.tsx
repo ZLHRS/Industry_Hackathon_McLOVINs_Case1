@@ -1,3 +1,4 @@
+import { Skeleton } from "../components/Skeleton";
 import { suggestionText } from "../lib/suggestionText";
 import { boardColumnOrders, belongsToOverdueBoardColumn, currentBusyOrderNumber } from "./workspaceBoard";
 import { t, message } from "../lib/i18n";
@@ -228,7 +229,7 @@ export function OrdersView({
   const unfilteredEmpty = !hasAdditionalFilters && !filters.query && !filters.attention;
 
   return (
-    <section className="workspace orders-workspace">
+    <section className="workspace orders-workspace" aria-busy={loading}>
       <div className="page-head">
         <div>
           <p className="eyebrow">{view.eyebrow}</p>
@@ -322,6 +323,8 @@ export function OrdersView({
           <input
             type="search"
             value={searchInput}
+            maxLength={120}
+            onBlur={() => setSearchInput((value) => value.trim())}
             onChange={(event) => setSearchInput(event.target.value)}
             placeholder={t("Номер, задача или оборудование")}
             aria-label={t("Поиск наряда")}
@@ -482,8 +485,16 @@ export function OrdersView({
           {visibleOrders.length !== page.total && t(" из {0}", [page.total])}
         </p>
       )}
-      {loading && <p className="muted">{t("Обновляем наряды…")}</p>}
-      {emptyState ? (
+      {loading && page && (
+        <p className="muted" role="status">
+          {t("Обновляем наряды…")}
+        </p>
+      )}
+      {!page ? (
+        loading ? (
+          <Skeleton variant={role === "executor" ? "list" : "cards"} />
+        ) : null
+      ) : emptyState ? (
         <div className="empty orders-empty">
           <h2>
             {unfilteredEmpty

@@ -1,3 +1,4 @@
+import { Skeleton } from "../components/Skeleton";
 import { t, message } from "../lib/i18n";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Api, ApiError } from "../api";
@@ -216,11 +217,8 @@ export function EmployeesView({
         </p>
       )}
       {loading && !items ? (
-        <div className="empty">
-          <span className="spinner" />
-          <p>{t("Загружаем сотрудников…")}</p>
-        </div>
-      ) : visible.length ? (
+        <Skeleton variant="list" label={t("Загружаем сотрудников…")} />
+      ) : !items ? null : visible.length ? (
         <div className="employee-list" aria-label={t("Список сотрудников")}>
           {visible.map((employee) => (
             <article
@@ -414,7 +412,7 @@ function CreateDialog({
             {t("Логин")}
             <input
               value={input.login}
-              onChange={(event) => setInput({ ...input, login: event.target.value })}
+              onChange={(event) => setInput({ ...input, login: event.target.value.trim() })}
               autoComplete="off"
               aria-label={t("Логин")}
               aria-describedby="employee-login-hint"

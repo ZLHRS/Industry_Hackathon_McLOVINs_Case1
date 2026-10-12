@@ -1,5 +1,6 @@
+import { Skeleton } from "../components/Skeleton";
 import { t, getLocale, message } from "../lib/i18n";
-import { readableLimitation } from "../lib/presentationText";
+import { AnalyticsSummaryPanel } from "./AnalyticsSummaryPanel";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Api, ApiError } from "../api";
 import { Icon } from "../components/Icon";
@@ -8,6 +9,7 @@ import type {
   AnalyticsOptions,
   AnalyticsQuery,
   AnalyticsReport,
+  AnalyticsSummary,
   PreventiveDraft,
   PreventionSource,
   Role,
@@ -64,33 +66,42 @@ export function AnalyticsView({
   const [options, setOptions] = useState<AnalyticsOptions | null>(null);
   const [report, setReport] = useState<AnalyticsReport | null>(null);
   const [appliedQuery, setAppliedQuery] = useState<AnalyticsQuery | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reportRevision, setReportRevision] = useState(0);
-  const [summary, setSummary] = useState<{ text: string; source: string; limitations?: string[] } | null>(
-    null,
-  );
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [summaryError, setSummaryError] = useState("");
   const [summarizing, setSummarizing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const mounted = useRef(true);
+  const reportRequest = useRef(0);
+  const summaryRequest = useRef(0);
   const people = role === "master" || role === "manager";
   const refresh = async (next = query) => {
+    const request = ++reportRequest.current;
+    summaryRequest.current += 1;
+    setSummarizing(false);
+    setSummaryError("");
     setLoading(true);
     setError("");
     try {
-      setReport(await api.analyticsReport(next));
+      const nextReport = await api.analyticsReport(next);
+      if (!mounted.current || request !== reportRequest.current) return;
+      setReport(nextReport);
       setAppliedQuery(next);
       setReportRevision(revision);
       setSummary(null);
+      setSummaryError("");
     } catch (e) {
+      if (!mounted.current || request !== reportRequest.current) return;
       setError(
         e instanceof ApiError && e.status === 403
           ? t("Этот отчёт недоступен для вашей роли.")
           : t("Не удалось сформировать отчёт. Проверьте параметры периода и соединение."),
       );
     } finally {
-      setLoading(false);
+      if (mounted.current && request === reportRequest.current) setLoading(false);
     }
   };
   useEffect(() => {
@@ -107,6 +118,8 @@ export function AnalyticsView({
     mounted.current = true;
     return () => {
       mounted.current = false;
+      reportRequest.current += 1;
+      summaryRequest.current += 1;
     };
   }, []);
   const stale = report !== null && reportRevision < revision;
@@ -131,12 +144,17 @@ export function AnalyticsView({
     }
   };
   const requestSummary = async () => {
+    if (summarizing || loading) return;
+    const request = ++summaryRequest.current;
     setSummarizing(true);
+    setSummaryError("");
     try {
-      setSummary(await api.analyticsSummary(appliedQuery ?? query));
+      const next = await api.analyticsSummary(appliedQuery ?? query);
+      if (mounted.current && request === summaryRequest.current) setSummary(next);
     } catch (e) {
+      if (!mounted.current || request !== summaryRequest.current) return;
       const detail = e instanceof ApiError ? e.detail : "";
-      setError(
+      setSummaryError(
         detail === "summary_cooldown_30_seconds"
           ? t("Сводка уже формировалась. Подождите 30 секунд и повторите запрос.")
           : detail === "summary_capacity_reached"
@@ -144,7 +162,7 @@ export function AnalyticsView({
             : t("ИИ-сводка не сформирована. Исходные показатели доступны ниже."),
       );
     } finally {
-      setSummarizing(false);
+      if (mounted.current && request === summaryRequest.current) setSummarizing(false);
     }
   };
   const preparePreventive = async (source: PreventionSource) => {
@@ -313,10 +331,7 @@ export function AnalyticsView({
         </p>
       )}
       {loading && !report && (
-        <div className="empty">
-          <span className="spinner" />
-          <p>{t("Формируем отчёт по журналу нарядов…")}</p>
-        </div>
+        <Skeleton variant="report" count={4} label={t("Формируем отчёт по журналу нарядов…")} />
       )}
       {report && (
         <>
@@ -395,27 +410,14 @@ export function AnalyticsView({
           )}
           {people && <PreventionOutcomesPanel api={api} query={appliedQuery} revision={revision} />}
           {people && (
-            <section className="analytics-section ai-summary">
-              <Heading
-                eye={t("ПО ЗАПРОСУ")}
-                title={t("ИИ-сводка мастера")}
-                note={t("Основные выводы и рекомендации за выбранный период.")}
-              />
-              <button className="secondary" onClick={() => void requestSummary()} disabled={summarizing}>
-                {summarizing ? t("Формируем…") : t("Сформировать ИИ-сводку")}
-              </button>
-              {summary && (
-                <article className="summary-result">
-                  <p>{summary.text}</p>
-                  {summary.source !== "openai" && (
-                    <small>{t("Обзор показателей без ИИ-интерпретации.")}</small>
-                  )}
-                  {!!summary.limitations?.length && (
-                    <small>{summary.limitations.map(readableLimitation).join(" ")}</small>
-                  )}
-                </article>
-              )}
-            </section>
+            <AnalyticsSummaryPanel
+              summary={summary}
+              period={report.period.label}
+              busy={summarizing}
+              disabled={loading}
+              error={summaryError}
+              onGenerate={() => void requestSummary()}
+            />
           )}
         </>
       )}

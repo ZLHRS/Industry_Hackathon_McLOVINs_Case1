@@ -581,3 +581,38 @@ describe("employee administration", () => {
     expect(fetcher.mock.calls[1][0]).toBe("/api/v1/catalog/employees?limit=200&offset=200");
   });
 });
+
+describe("normalization at the API boundary", () => {
+  it("trims login and catalog fields while keeping passwords exact", async () => {
+    const fetcher = vi.fn(async () => success());
+    vi.stubGlobal("fetch", fetcher);
+    const api = new Api(() => null);
+    await api.login("  demo.master1  ", " exact secret ");
+    await api.createArea({ code: "  AREA-X ", name: "  Новый участок  " });
+    expect(JSON.parse((fetcher.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)).toEqual(
+      { login: "demo.master1", secret: " exact secret " },
+    );
+    expect(JSON.parse((fetcher.mock.calls[1] as unknown as [string, RequestInit])[1].body as string)).toEqual(
+      { code: "AREA-X", name: "Новый участок" },
+    );
+  });
+
+  it("reuses the mutation key after whitespace-only edits to a failed request", async () => {
+    const bodies: string[] = [];
+    const keys: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        bodies.push(init.body as string);
+        keys.push(new Headers(init.headers).get("Idempotency-Key")!);
+        if (keys.length === 1) throw new TypeError("network interrupted");
+        return success();
+      }),
+    );
+    const api = new Api(() => "token");
+    await expect(api.create({ ...input, description: "  Проверить насос  " })).rejects.toThrow();
+    await api.create(input);
+    expect(bodies[0]).toBe(bodies[1]);
+    expect(keys[0]).toBe(keys[1]);
+  });
+});

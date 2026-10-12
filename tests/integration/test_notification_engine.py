@@ -422,17 +422,52 @@ async def test_stale_issue_does_not_notify_completed_order_but_bumps_viewers(dat
 
 
 @pytest.mark.parametrize(
-    ("action", "target", "kind", "recipient", "action_required"),
+    ("action", "target", "kind", "recipient", "action_required", "expected_body"),
     [
-        ("record_ai_assessment", WorkOrderStatus.AI_REVIEW, "review_ready", "master", True),
-        ("mark_rework", WorkOrderStatus.REWORK, "master_decision", "executor", True),
-        ("close", WorkOrderStatus.CLOSED, "master_decision", "executor", False),
-        ("override_close", WorkOrderStatus.CLOSED, "master_decision", "executor", False),
-        ("request_rework", WorkOrderStatus.REWORK, "master_decision", "executor", True),
+        (
+            "record_ai_assessment",
+            WorkOrderStatus.AI_REVIEW,
+            "review_ready",
+            "master",
+            True,
+            "Сверьте фото, материалы и заключение ИИ. Примите решение.",
+        ),
+        (
+            "mark_rework",
+            WorkOrderStatus.REWORK,
+            "master_decision",
+            "executor",
+            True,
+            "Откройте замечания мастера, устраните их и сдайте работу повторно.",
+        ),
+        (
+            "close",
+            WorkOrderStatus.CLOSED,
+            "master_decision",
+            "executor",
+            False,
+            "Работа принята и наряд закрыт. Действий не требуется.",
+        ),
+        (
+            "override_close",
+            WorkOrderStatus.CLOSED,
+            "master_decision",
+            "executor",
+            False,
+            "Работа принята и наряд закрыт. Действий не требуется.",
+        ),
+        (
+            "request_rework",
+            WorkOrderStatus.REWORK,
+            "master_decision",
+            "executor",
+            True,
+            "Откройте замечания мастера, устраните их и сдайте работу повторно.",
+        ),
     ],
 )
 async def test_review_and_master_decision_notify_only_the_person_who_must_act(
-    database, action, target, kind, recipient, action_required
+    database, action, target, kind, recipient, action_required, expected_body
 ):
     now = datetime.now(UTC)
     order_id, executor_id, master_id, _ = await _order(
@@ -471,18 +506,37 @@ async def test_review_and_master_decision_notify_only_the_person_who_must_act(
         )
         expected = master_id if recipient == "master" else executor_id
         assert {row.employee_id for row in messages} == {expected}
-        assert all(row.kind == kind and row.action_required == action_required for row in messages)
+        assert all(
+            row.kind == kind
+            and row.action_required == action_required
+            and row.body == expected_body
+            for row in messages
+        )
 
 
 @pytest.mark.parametrize(
-    ("action", "target", "recipient", "kind", "action_required"),
+    ("action", "target", "recipient", "kind", "action_required", "expected_body"),
     [
-        ("reject", WorkOrderStatus.REJECTED, "master", "refusal", True),
-        ("cancel", WorkOrderStatus.CANCELLED, "executor", "master_decision", False),
+        (
+            "reject",
+            WorkOrderStatus.REJECTED,
+            "master",
+            "refusal",
+            True,
+            "Выберите нового исполнителя или скорректируйте план работ.",
+        ),
+        (
+            "cancel",
+            WorkOrderStatus.CANCELLED,
+            "executor",
+            "master_decision",
+            False,
+            "Наряд отменён мастером. Действий не требуется.",
+        ),
     ],
 )
 async def test_refusal_and_cancellation_notify_the_affected_person_once(
-    database, action, target, recipient, kind, action_required
+    database, action, target, recipient, kind, action_required, expected_body
 ):
     now = datetime.now(UTC)
     order_id, executor_id, master_id, _ = await _order(
@@ -516,7 +570,11 @@ async def test_refusal_and_cancellation_notify_the_affected_person_once(
         )
         assert message is not None
         assert message.employee_id == (master_id if recipient == "master" else executor_id)
-        assert message.kind == kind and message.action_required == action_required
+        assert (
+            message.kind == kind
+            and message.action_required == action_required
+            and message.body == expected_body
+        )
 
 
 @pytest.mark.parametrize(
@@ -557,3 +615,108 @@ async def test_routine_progress_only_refreshes_realtime_views_without_inbox_nois
             )
         )
         assert revisions == {executor_id, master_id, manager_id}
+
+
+async def test_overdue_repeats_wait_from_last_delivery_and_stop_after_two_repeats(database):
+    now = datetime.now(UTC)
+    order_id, *_ = await _order(
+        database, status=WorkOrderStatus.ACCEPTED, deadline=now - timedelta(minutes=119)
+    )
+    policy = NotificationPolicy(manager_escalation_minutes=10080)
+    assert await scan_deadlines(database, now=now, policy=policy) == 2
+    # Crossing a deadline-based bucket one minute later must not trigger a repeat.
+    for minutes in (1, 3, 119):
+        assert (
+            await scan_deadlines(database, now=now + timedelta(minutes=minutes), policy=policy) == 0
+        )
+    assert await scan_deadlines(database, now=now + timedelta(minutes=120), policy=policy) == 2
+    assert await scan_deadlines(database, now=now + timedelta(minutes=240), policy=policy) == 2
+    assert await scan_deadlines(database, now=now + timedelta(days=1), policy=policy) == 0
+    async with database.sessions() as session:
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(Notification)
+                .where(Notification.work_order_id == order_id, Notification.kind == "overdue")
+            )
+            == 6
+        )
+
+
+async def test_acknowledgement_silences_only_recipient_and_current_deadline(database):
+    now = datetime.now(UTC)
+    order_id, executor_id, master_id, _ = await _order(
+        database, status=WorkOrderStatus.ACCEPTED, deadline=now - timedelta(minutes=1)
+    )
+    policy = NotificationPolicy(manager_escalation_minutes=10080)
+    assert await scan_deadlines(database, now=now, policy=policy) == 2
+    async with database.sessions.begin() as session:
+        notice = await session.scalar(
+            select(Notification).where(
+                Notification.work_order_id == order_id, Notification.employee_id == master_id
+            )
+        )
+        notice.acknowledged_at = now
+        notice.read_at = now
+    later = now + timedelta(hours=2)
+    assert await scan_deadlines(database, now=later, policy=policy) == 1
+    async with database.sessions.begin() as session:
+        repeat = await session.scalar(
+            select(Notification).where(
+                Notification.work_order_id == order_id, Notification.created_at == later
+            )
+        )
+        assert repeat.employee_id == executor_id
+        order = await session.get(WorkOrder, order_id)
+        order.deadline = now + timedelta(minutes=90)
+    # A changed deadline is a new problem; old acknowledgements do not hide it.
+    assert await scan_deadlines(database, now=later, policy=policy) == 2
+
+
+async def test_manager_escalates_once_and_old_bucket_rows_count_towards_limit(database):
+    now = datetime.now(UTC)
+    order_id, executor_id, master_id, manager_id = await _order(
+        database, status=WorkOrderStatus.ACCEPTED, deadline=now - timedelta(hours=2)
+    )
+    async with database.sessions.begin() as session:
+        order = await session.get(WorkOrder, order_id)
+        # Simulate persisted notifications from the previous interval-bucket policy.
+        for employee_id in (executor_id, master_id):
+            for bucket in range(3):
+                session.add(
+                    Notification(
+                        employee_id=employee_id,
+                        work_order_id=order_id,
+                        dedup_key=f"overdue:{order.id}:{order.attempt}:{order.deadline.isoformat()}:{bucket}",
+                        kind="overdue",
+                        title="Просрочка",
+                        body="Тест",
+                        payload={},
+                        created_at=now - timedelta(minutes=60 - bucket * 30),
+                    )
+                )
+    assert await scan_deadlines(database, now=now, policy=NotificationPolicy()) == 1
+    assert (
+        await scan_deadlines(database, now=now + timedelta(days=1), policy=NotificationPolicy())
+        == 0
+    )
+    async with database.sessions() as session:
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(Notification)
+                .where(
+                    Notification.employee_id == manager_id, Notification.kind == "manager_overdue"
+                )
+            )
+            == 1
+        )
+
+
+async def test_parallel_deadline_scans_do_not_duplicate_repeats(database):
+    now = datetime.now(UTC)
+    await _order(database, status=WorkOrderStatus.ACCEPTED, deadline=now - timedelta(minutes=1))
+    results = await asyncio.gather(
+        *(scan_deadlines(database, now=now, policy=NotificationPolicy()) for _ in range(2))
+    )
+    assert sum(results) == 2

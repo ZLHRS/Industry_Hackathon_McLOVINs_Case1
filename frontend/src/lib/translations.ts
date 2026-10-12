@@ -1,5 +1,48 @@
 /** Interface copy only. User-entered and server-authored content is never translated here. */
 export const translations: Record<string, { kk: string; en: string }> = {
+  "Страница {0} из {1}": { kk: "{1} беттің {0}-і", en: "Page {0} of {1}" },
+  "Нажмите на карточку, чтобы посмотреть связанные события.": {
+    kk: "Байланысты оқиғаларды көру үшін карточканы басыңыз.",
+    en: "Select a card to view related events.",
+  },
+  "Требуется подтверждение": { kk: "Растау қажет", en: "Acknowledgement required" },
+  "ОБЗОР СМЕНЫ": { kk: "АУЫСЫМҒА ШОЛУ", en: "SHIFT OVERVIEW" },
+  "Обновить сводку": { kk: "Шолуды жаңарту", en: "Refresh summary" },
+  "Собираем выводы по показателям отчёта…": {
+    kk: "Есеп көрсеткіштері бойынша қорытынды дайындаудамыз…",
+    en: "Preparing insights from report metrics\u2026",
+  },
+  "Результат сводки": { kk: "Шолу нәтижесі", en: "Summary result" },
+  "ИИ-анализ": { kk: "ЖИ талдауы", en: "AI analysis" },
+  "Обзор по данным": { kk: "Деректерге шолу", en: "Data overview" },
+  "На основе показателей отчёта": { kk: "Есеп көрсеткіштері негізінде", en: "Based on report metrics" },
+  "Главное за период": { kk: "Кезеңнің негізгі нәтижелері", en: "Period highlights" },
+  "Рекомендуемые действия": { kk: "Ұсынылатын әрекеттер", en: "Recommended actions" },
+  "О данных и ограничениях сводки": {
+    kk: "Шолу деректері мен шектеулері туралы",
+    en: "Summary data and limitations",
+  },
+  "Наряд {0}": { kk: "Наряд {0}", en: "Work order {0}" },
+  "Системные уведомления": { kk: "Жүйелік хабарландырулар", en: "System notifications" },
+  "События по наряду": { kk: "Наряд оқиғалары", en: "Work order events" },
+  "Сообщения об оборудовании": { kk: "Жабдық туралы хабарламалар", en: "Equipment messages" },
+  "Служебные сообщения": { kk: "Қызметтік хабарламалар", en: "Service messages" },
+  "Служебное уведомление": { kk: "Қызметтік хабарландыру", en: "Service notification" },
+  "Откройте приложение, чтобы посмотреть детали.": {
+    kk: "Мәліметтерді көру үшін қолданбаны ашыңыз.",
+    en: "Open the app to view details.",
+  },
+  "На этой странице: {0} из {1} уведомлений.": {
+    kk: "Бұл бетте: {1} хабарландырудың {0}-і.",
+    en: "On this page: {0} of {1} notifications.",
+  },
+  "Событий: {0} · непрочитано: {1}": {
+    kk: "Оқиғалар: {0} · оқылмаған: {1}",
+    en: "Events: {0} · unread: {1}",
+  },
+  Срочно: { kk: "Шұғыл", en: "Urgent" },
+  Новое: { kk: "Жаңа", en: "New" },
+  "Навигация по уведомлениям": { kk: "Хабарландырулар бойынша навигация", en: "Notification navigation" },
   "Приложение и язык": { kk: "Қолданба және тіл", en: "App and language" },
   Язык: { kk: "Тіл", en: "Language" },
   "Приложение на устройстве": { kk: "Құрылғыдағы қолданба", en: "App on this device" },

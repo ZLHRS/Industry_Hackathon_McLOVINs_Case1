@@ -8,8 +8,10 @@ from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy import and_, exists, or_, select, update
+from sqlalchemy.orm import aliased
 
 from naryadai.config import Settings
+from naryadai.domain.lifecycle import WorkOrderStatus
 from naryadai.infrastructure.database import Database
 from naryadai.infrastructure.models import (
     Area,
@@ -21,6 +23,7 @@ from naryadai.infrastructure.models import (
     PushDelivery,
     PushSubscription,
     WorkOrder,
+    WorkOrderEvent,
     WorkOrderParticipant,
 )
 from naryadai.infrastructure.webpush import PushResult, build_payload, push_enabled, send_web_push
@@ -28,6 +31,34 @@ from naryadai.infrastructure.webpush import PushResult, build_payload, push_enab
 _MAX_BATCH = 100
 _MAX_CONCURRENCY = 4
 _MAX_RETRY_AFTER_SECONDS = 3_600
+_REMINDER_KINDS = frozenset(
+    {"deadline_reminder", "overdue", "manager_overdue", "acceptance_escalation"}
+)
+_ACTIVE_REMINDER_STATUSES = frozenset(
+    {
+        WorkOrderStatus.ISSUED,
+        WorkOrderStatus.ACCEPTED,
+        WorkOrderStatus.QUEUED,
+        WorkOrderStatus.IN_PROGRESS,
+        WorkOrderStatus.PAUSED,
+        WorkOrderStatus.REWORK,
+    }
+)
+_STALE_REMINDER_AGE = timedelta(hours=2)
+
+
+def _device_body(kind: str, body: str) -> str:
+    """Keep full inbox context while reserving compact copy for a lock screen."""
+
+    concise = {
+        "acceptance_escalation": (
+            "Исполнитель не подтвердил наряд. Откройте карточку: есть рекомендация по замене."
+        ),
+        "overdue": "Срок истёк. Откройте наряд и обновите статус работ.",
+        "manager_overdue": "Просрочка вышла на эскалацию. Проверьте ход работ в наряде.",
+        "fault_report_dismissed": "Сообщение отклонено. Причина указана в карточке сообщения.",
+    }
+    return concise.get(kind, body)
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,10 +72,23 @@ class _Claim:
 class _Target:
     subscription_id: UUID
     notification_id: UUID
+    employee_id: UUID
+    work_order_id: UUID | None
+    dedup_key: str
+    created_at: datetime
+    read_at: datetime | None
+    acknowledged_at: datetime | None
     endpoint: str
     p256dh: str
     auth: str
+    title: str
+    body: str
+    kind: str
     urgent: bool
+    order_status: WorkOrderStatus | None
+    order_issued_at: datetime | None
+    order_deadline: datetime | None
+    order_attempt: int | None
 
 
 async def deliver_push(
@@ -123,13 +167,22 @@ async def _deliver_claim(
     if target is None:
         await _finish(database, claim, now, error="push_recipient_ineligible")
         return 0
+    suppression = await _suppression_reason(database, target, now)
+    if suppression is not None:
+        await _finish(database, claim, now, error=suppression)
+        return 0
     try:
         outcome = await send_web_push(
             settings,
             endpoint=target.endpoint,
             p256dh=target.p256dh,
             auth=target.auth,
-            payload=build_payload(str(target.notification_id), urgent=target.urgent),
+            payload=build_payload(
+                str(target.notification_id),
+                title=target.title,
+                body=_device_body(target.kind, target.body),
+                urgent=target.urgent,
+            ),
         )
     except ValueError:
         outcome = PushResult(None, None, "push_invalid_subscription")
@@ -153,6 +206,74 @@ async def _deliver_claim(
     else:
         await _finish(database, claim, now, error=outcome.error_kind or "push_http_error")
     return 0
+
+
+async def _suppression_reason(database: Database, target: _Target, now: datetime) -> str | None:
+    """Prevent a delayed reminder from resurfacing after its context changed.
+
+    Notifications remain in the private inbox for auditability.  This check
+    only stops a stale device push immediately before the external transport.
+    """
+
+    if target.kind not in _REMINDER_KINDS:
+        return None
+    if target.read_at is not None or target.acknowledged_at is not None:
+        return "push_notification_seen"
+    if (
+        target.work_order_id is None
+        or target.order_status is None
+        or target.order_issued_at is None
+        or target.order_deadline is None
+        or target.order_attempt is None
+    ):
+        return "push_notification_stale"
+    expected_prefix = (
+        f"{target.kind}:{target.work_order_id}:{target.order_attempt}:"
+        f"{target.order_deadline.isoformat()}:"
+    )
+    if not target.dedup_key.startswith(expected_prefix):
+        return "push_notification_stale"
+    if target.created_at < now - _STALE_REMINDER_AGE:
+        return "push_notification_stale"
+    if target.kind == "deadline_reminder":
+        if target.order_status not in _ACTIVE_REMINDER_STATUSES or now >= target.order_deadline:
+            return "push_notification_stale"
+    elif target.kind in {"overdue", "manager_overdue"}:
+        if target.order_status not in _ACTIVE_REMINDER_STATUSES or now < target.order_deadline:
+            return "push_notification_stale"
+    elif target.kind == "acceptance_escalation":
+        if target.order_status is not WorkOrderStatus.ISSUED:
+            return "push_notification_stale"
+        basis_statement = (
+            select(WorkOrderEvent.occurred_at)
+            .where(
+                WorkOrderEvent.work_order_id == target.work_order_id,
+                WorkOrderEvent.action == "reassign",
+            )
+            .order_by(WorkOrderEvent.sequence.desc())
+            .limit(1)
+        )
+        async with database.sessions() as session:
+            basis = await session.scalar(basis_statement)
+        basis = basis or target.order_issued_at
+        if target.dedup_key != expected_prefix + f"basis:{basis.isoformat()}":
+            return "push_notification_stale"
+
+    newer = aliased(Notification)
+    statement = (
+        select(newer.id)
+        .where(
+            newer.employee_id == target.employee_id,
+            newer.work_order_id == target.work_order_id,
+            newer.kind == target.kind,
+            newer.created_at > target.created_at,
+        )
+        .limit(1)
+    )
+    async with database.sessions() as session:
+        if await session.scalar(statement) is not None:
+            return "push_notification_superseded"
+    return None
 
 
 async def _target(database: Database, now: datetime, claim: _Claim) -> _Target | None:
@@ -216,10 +337,23 @@ async def _target(database: Database, now: datetime, claim: _Claim) -> _Target |
         select(
             PushSubscription.id,
             Notification.id,
+            Notification.employee_id,
+            Notification.work_order_id,
+            Notification.dedup_key,
+            Notification.created_at,
+            Notification.read_at,
+            Notification.acknowledged_at,
             PushSubscription.endpoint,
             PushSubscription.p256dh,
             PushSubscription.auth,
+            Notification.title,
+            Notification.body,
+            Notification.kind,
             Notification.urgent,
+            WorkOrder.status,
+            WorkOrder.issued_at,
+            WorkOrder.deadline,
+            WorkOrder.attempt,
         )
         .select_from(PushDelivery)
         .join(Notification, Notification.id == PushDelivery.notification_id)

@@ -74,7 +74,7 @@ def test_session_disables_redirects_and_environment_proxy(monkeypatch: pytest.Mo
 
 
 @pytest.mark.asyncio
-async def test_send_encrypts_generic_payload_without_network(
+async def test_send_encrypts_event_specific_payload_without_network(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     key_file = tmp_path / "vapid.pem"
@@ -100,8 +100,41 @@ async def test_send_encrypts_generic_payload_without_network(
         endpoint="https://fcm.googleapis.com/fcm/send/token",
         p256dh=p256dh,
         auth=auth,
-        payload=webpush.build_payload("00000000-0000-0000-0000-000000000001", urgent=False),
+        payload=webpush.build_payload(
+            "00000000-0000-0000-0000-000000000001",
+            title="Назначен наряд NR-42",
+            body="Подтвердите получение и выберите следующий статус.",
+            urgent=False,
+        ),
     )
     assert result.status_code == 201
     assert captured["headers"]["Content-Encoding"] == "aes128gcm"
-    assert "Новое служебное уведомление".encode() not in captured["body"]
+    assert "Назначен наряд".encode() not in captured["body"]
+
+
+def test_payload_compacts_mobile_copy_and_keeps_event_identity() -> None:
+    notification_id = "00000000-0000-0000-0000-000000000001"
+    payload = webpush.build_payload(
+        notification_id,
+        title="  Назначен\n наряд NR-42  ",
+        body="  Проверьте  материалы\nи обновите статус.  ",
+        urgent=True,
+    )
+
+    assert payload == {
+        "notification_id": notification_id,
+        "title": "Назначен наряд NR-42",
+        "body": "Проверьте материалы и обновите статус.",
+        "urgent": True,
+        "url": f"/?notification={notification_id}",
+        "tag": notification_id,
+    }
+
+    limited = webpush.build_payload(
+        notification_id,
+        title="Наряд " * 30,
+        body="Проверьте статус " * 30,
+        urgent=False,
+    )
+    assert len(limited["title"]) <= 120 and limited["title"].endswith("…")
+    assert len(limited["body"]) <= 240 and limited["body"].endswith("…")
