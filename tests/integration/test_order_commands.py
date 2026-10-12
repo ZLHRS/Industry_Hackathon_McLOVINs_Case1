@@ -16,6 +16,7 @@ from naryadai.domain.lifecycle import AiAssessment, WorkOrderStatus
 from naryadai.infrastructure.models import (
     AIReview,
     Area,
+    Brigade,
     Employee,
     EmployeeArea,
     Equipment,
@@ -25,6 +26,7 @@ from naryadai.infrastructure.models import (
     Priority,
     WorkOrder,
     WorkOrderEvent,
+    WorkOrderParticipant,
     WorkType,
 )
 
@@ -362,6 +364,109 @@ async def test_concurrent_start_serializes_busy_executor_and_idempotency(databas
         )
         assert statuses.count(WorkOrderStatus.IN_PROGRESS) == 1
         assert statuses.count(WorkOrderStatus.ACCEPTED) == 1
+
+
+async def test_brigade_snapshot_visibility_reassign_and_participant_collision(database) -> None:
+    data = await _fixture(database)
+    async with database.sessions.begin() as session:
+        brigade = Brigade(code="BR-ONE", name="Shift team")
+        session.add(brigade)
+        await session.flush()
+        for principal in (data["first"], data["second"]):
+            employee = await session.get(Employee, principal.employee_id)
+            assert employee is not None
+            employee.brigade_id = brigade.id
+        brigade_id = brigade.id
+    body = _create_body(data).model_copy(
+        update={
+            "brigade_id": brigade_id,
+            "participant_ids": (data["first"].employee_id, data["second"].employee_id),
+        }
+    )
+    created = await create_order(database, data["master"], body, "brigade-create-001")
+    order_id = UUID(created["order_id"])
+    async with database.sessions() as session:
+        snapshots = list(
+            await session.scalars(
+                select(WorkOrderParticipant).where(WorkOrderParticipant.work_order_id == order_id)
+            )
+        )
+        assert {row.employee_id for row in snapshots} == {
+            data["first"].employee_id,
+            data["second"].employee_id,
+        }
+    # Frozen participants may contribute a comment, but only the responsible
+    # person advances the shared lifecycle.
+    comment = await execute_action(
+        database,
+        data["second"],
+        order_id,
+        OrderAction(action="comment", expected_version=1, comment="I have checked the unit."),
+        "brigade-comment-01",
+    )
+    accepted = await execute_action(
+        database,
+        data["first"],
+        order_id,
+        OrderAction(action="accept", expected_version=comment["version"]),
+        "brigade-accept-001",
+    )
+    started = await execute_action(
+        database,
+        data["first"],
+        order_id,
+        OrderAction(action="start", expected_version=accepted["version"]),
+        "brigade-start-0001",
+    )
+    assert started["status"] == WorkOrderStatus.IN_PROGRESS.value
+    individual = await create_order(
+        database,
+        data["master"],
+        _create_body(data).model_copy(update={"executor_id": data["second"].employee_id}),
+        "brigade-collision01",
+    )
+    individual_id = UUID(individual["order_id"])
+    individual_accepted = await execute_action(
+        database,
+        data["second"],
+        individual_id,
+        OrderAction(action="accept", expected_version=1),
+        "brigade-collision02",
+    )
+    # The target is an individual assignment, so its established external
+    # error remains executor_busy even though the conflicting work is a team.
+    with pytest.raises(OperationError, match="executor_busy"):
+        await execute_action(
+            database,
+            data["second"],
+            individual_id,
+            OrderAction(action="start", expected_version=individual_accepted["version"]),
+            "brigade-collision03",
+        )
+    reassigned = await execute_action(
+        database,
+        data["master"],
+        order_id,
+        OrderAction(
+            action="reassign",
+            expected_version=started["version"],
+            executor_id=data["first"].employee_id,
+            reason="Responsible continues alone.",
+        ),
+        "brigade-reassign-01",
+    )
+    with pytest.raises(OperationError, match="order_not_found"):
+        await execute_action(
+            database,
+            data["second"],
+            order_id,
+            OrderAction(
+                action="comment",
+                expected_version=reassigned["version"],
+                comment="Old access.",
+            ),
+            "brigade-revoked-001",
+        )
 
 
 async def test_completion_rejects_duplicate_material_lines() -> None:

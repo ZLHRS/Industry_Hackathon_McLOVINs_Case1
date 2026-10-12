@@ -22,6 +22,7 @@ from naryadai.infrastructure.models import (
     EmployeeRole,
     Equipment,
     FaultCode,
+    FaultReport,
     Notification,
     OutboxEvent,
     PushDelivery,
@@ -29,6 +30,7 @@ from naryadai.infrastructure.models import (
     RealtimeRevision,
     WorkOrder,
     WorkOrderEvent,
+    WorkOrderParticipant,
 )
 
 
@@ -204,6 +206,68 @@ async def _new_notification(
     return True
 
 
+async def new_fault_report_notification(
+    session: AsyncSession,
+    *,
+    employee_id: UUID,
+    report: FaultReport,
+    kind: str,
+    title: str,
+    body: str,
+    action_required: bool,
+    now: datetime,
+) -> bool:
+    """Notify one report recipient and queue its active push subscriptions once."""
+
+    statement = insert(Notification).values(
+        id=uuid4(),
+        employee_id=employee_id,
+        fault_report_id=report.id,
+        dedup_key=f"fault-report:{report.id}:{kind}",
+        kind=kind,
+        title=title,
+        body=body,
+        urgent=False,
+        action_required=action_required,
+        payload={"fault_report_id": str(report.id), "kind": kind},
+        created_at=now,
+    )
+    notification_id = await session.scalar(
+        statement.on_conflict_do_nothing(
+            index_elements=[Notification.employee_id, Notification.dedup_key]
+        ).returning(Notification.id)
+    )
+    if notification_id is None:
+        return False
+    await _bump_revision(session, employee_id, now)
+    subscriptions = (
+        await session.scalars(
+            select(PushSubscription.id)
+            .join(AuthSession, AuthSession.id == PushSubscription.session_id)
+            .where(
+                PushSubscription.employee_id == employee_id,
+                PushSubscription.disabled_at.is_(None),
+                AuthSession.revoked_at.is_(None),
+                AuthSession.expires_at > now,
+            )
+        )
+    ).all()
+    for subscription_id in subscriptions:
+        await session.execute(
+            insert(PushDelivery)
+            .values(
+                id=uuid4(),
+                notification_id=notification_id,
+                subscription_id=subscription_id,
+                next_attempt_at=now,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[PushDelivery.notification_id, PushDelivery.subscription_id]
+            )
+        )
+    return True
+
+
 async def _event_recipients(
     session: AsyncSession, order: WorkOrder, event: WorkOrderEvent
 ) -> tuple[list[UUID], str, str, bool, bool]:
@@ -214,9 +278,10 @@ async def _event_recipients(
     executor refusal; routine progress must not turn into push noise.
     """
 
+    team = await _team_recipient_ids(session, order)
     if event.action in {"issue", "reassign"}:
         return (
-            [order.executor_id],
+            team,
             "assignment",
             f"Назначен наряд {order.number}",
             order.priority.value == "emergency",
@@ -232,7 +297,7 @@ async def _event_recipients(
         )
     if event.action in {"mark_rework", "request_rework"}:
         return (
-            [order.executor_id],
+            team,
             "master_decision",
             f"Наряд {order.number}: требуется доработка",
             False,
@@ -240,7 +305,7 @@ async def _event_recipients(
         )
     if event.action in {"close", "override_close"}:
         return (
-            [order.executor_id],
+            team,
             "master_decision",
             f"Наряд {order.number}: принят мастером",
             False,
@@ -248,7 +313,7 @@ async def _event_recipients(
         )
     if event.action == "cancel":
         return (
-            [order.executor_id],
+            team,
             "master_decision",
             f"Наряд {order.number}: отменён",
             False,
@@ -265,6 +330,19 @@ async def _event_recipients(
     return ([], "workflow", "", False, False)
 
 
+async def _team_recipient_ids(session: AsyncSession, order: WorkOrder) -> list[UUID]:
+    """Shared lifecycle notices go to this assignment's frozen team exactly once."""
+
+    participant_ids = list(
+        await session.scalars(
+            select(WorkOrderParticipant.employee_id).where(
+                WorkOrderParticipant.work_order_id == order.id
+            )
+        )
+    )
+    return sorted(set(participant_ids or [order.executor_id]), key=str)
+
+
 async def _bump_current_viewers(
     session: AsyncSession, order: WorkOrder, event: WorkOrderEvent | None, now: datetime
 ) -> None:
@@ -279,6 +357,7 @@ async def _bump_current_viewers(
                     Employee.is_active.is_(True),
                     (
                         (Employee.id == order.executor_id)
+                        | Employee.id.in_(await _team_recipient_ids(session, order))
                         | (
                             (Employee.role.in_((EmployeeRole.MASTER, EmployeeRole.MANAGER)))
                             & (EmployeeArea.area_id == order.area_id)
@@ -292,6 +371,14 @@ async def _bump_current_viewers(
     if isinstance(previous, str):
         with suppress(ValueError):
             viewers.add(UUID(previous))
+    previous_participants = (
+        event.details.get("previous_participant_ids") if event is not None else None
+    )
+    if isinstance(previous_participants, list):
+        for participant_id in previous_participants:
+            if isinstance(participant_id, str):
+                with suppress(ValueError):
+                    viewers.add(UUID(participant_id))
     for employee_id in viewers:
         await _bump_revision(session, employee_id, now)
 
@@ -369,6 +456,11 @@ async def _candidate(
     unavailable = select(WorkOrder.executor_id).where(
         WorkOrder.status.in_(_ACTIVE_DEADLINE_STATUSES)
     )
+    brigade_unavailable = (
+        select(WorkOrderParticipant.employee_id)
+        .join(WorkOrder, WorkOrder.id == WorkOrderParticipant.work_order_id)
+        .where(WorkOrder.status.in_(_ACTIVE_DEADLINE_STATUSES))
+    )
     return cast(
         Employee | None,
         await session.scalar(
@@ -383,6 +475,7 @@ async def _candidate(
                 Employee.grade >= minimum_grade,
                 Employee.id != order.executor_id,
                 Employee.id.not_in(unavailable),
+                Employee.id.not_in(brigade_unavailable),
             )
             .order_by(Employee.grade.desc(), Employee.login)
             .limit(1)

@@ -14,7 +14,15 @@ import {
   validateMasterDecision,
   type MasterDecision,
 } from "./aiReview";
-import type { ActionRequest, Catalog, EventItem, OrderDetail, Role, Workload } from "../types";
+import type {
+  ActionRequest,
+  BrigadeAssignmentOptions,
+  Catalog,
+  EventItem,
+  OrderDetail,
+  Role,
+  Workload,
+} from "../types";
 
 const ruStatus: Record<string, string> = {
   get issued() {
@@ -207,6 +215,7 @@ type Props = {
     rejectionEventId: string,
     input: { expected_version: number; justified: boolean; reason: string },
   ) => Promise<unknown>;
+  onBrigadeOptions: (areaId: string) => Promise<BrigadeAssignmentOptions>;
   revision: number;
   onClose: () => void;
 };
@@ -223,6 +232,7 @@ export function OrderDetailDialog({
   onReport,
   onDowntime,
   onAssessRefusal,
+  onBrigadeOptions,
   revision,
   onClose,
 }: Props) {
@@ -241,6 +251,10 @@ export function OrderDetailDialog({
   const [priority, setPriority] = useState("");
   const [priorityReason, setPriorityReason] = useState("");
   const [reassignExecutorId, setReassignExecutorId] = useState("");
+  const [reassignBrigadeId, setReassignBrigadeId] = useState("");
+  const [reassignParticipantIds, setReassignParticipantIds] = useState<string[]>([]);
+  const [reassignBrigades, setReassignBrigades] = useState<BrigadeAssignmentOptions | null>(null);
+  const [reassignBrigadesLoading, setReassignBrigadesLoading] = useState(false);
   const [reassignReason, setReassignReason] = useState("");
   const [cancelReason, setCancelReason] = useState("");
   const [cancelConfirmed, setCancelConfirmed] = useState(false);
@@ -318,6 +332,8 @@ export function OrderDetailDialog({
       setPriority("");
       setPriorityReason("");
       setReassignExecutorId("");
+      setReassignBrigadeId("");
+      setReassignParticipantIds([]);
       setReassignReason("");
       setCancelReason("");
       setCancelConfirmed(false);
@@ -325,22 +341,44 @@ export function OrderDetailDialog({
     } catch (caught) {
       startRequested.current = false;
       const failure = caught as ApiError;
+      const brigadeMembershipChanged =
+        failure.status === 409 && failure.detail === "brigade_membership_changed";
+      if (brigadeMembershipChanged) {
+        setReassignExecutorId("");
+        setReassignBrigadeId("");
+        setReassignParticipantIds([]);
+        setReassignBrigades(null);
+        void loadReassignBrigades(true);
+      }
       setError(
         caught instanceof OfflineStorageError
           ? caught.message
-          : failure.status === 409 && failure.detail === "version_conflict"
-            ? t("Наряд изменился. Проверьте обновлённые данные и повторите действие.")
-            : failure.status === 409
-              ? t(
-                  "Действие недоступно в текущем состоянии наряда. Проверьте данные и выберите доступное действие.",
-                )
-              : failure.status === 401
-                ? t("Сессия завершена.")
-                : t("Действие не выполнено."),
+          : brigadeMembershipChanged
+            ? t("Состав бригады изменился. Выберите бригаду и ответственного заново.")
+            : failure.status === 409 && failure.detail === "version_conflict"
+              ? t("Наряд изменился. Проверьте обновлённые данные и повторите действие.")
+              : failure.status === 409
+                ? t(
+                    "Действие недоступно в текущем состоянии наряда. Проверьте данные и выберите доступное действие.",
+                  )
+                : failure.status === 401
+                  ? t("Сессия завершена.")
+                  : t("Действие не выполнено."),
       );
       if (failure.status === 409) await refresh();
     } finally {
       setBusy(false);
+    }
+  }
+  async function loadReassignBrigades(force = false) {
+    if (!detail || (!force && (reassignBrigades || reassignBrigadesLoading))) return;
+    setReassignBrigadesLoading(true);
+    try {
+      setReassignBrigades(await onBrigadeOptions(detail.area_id));
+    } catch {
+      setError(t("Не удалось загрузить доступные бригады."));
+    } finally {
+      setReassignBrigadesLoading(false);
     }
   }
   async function decideMaster(action: MasterDecision) {
@@ -465,7 +503,22 @@ export function OrderDetailDialog({
     );
   const machine = catalog.equipment.find((item) => item.id === detail.equipment_id);
   const area = catalog.areas.find((item) => item.id === detail.area_id);
-  const canExecutor = role === "executor" && detail.executor_id === currentUserId;
+  const assignment = detail.participants?.length
+    ? detail.participants
+    : [
+        {
+          employee_id: detail.executor_id,
+          display_name: detail.executor_name ?? detail.executor_id,
+          role: "responsible" as const,
+        },
+      ];
+  const currentParticipant = assignment.find((person) => person.employee_id === currentUserId);
+  const teamParticipant = role === "executor" && currentParticipant?.role === "participant";
+  const canExecutor =
+    role === "executor" &&
+    (currentParticipant?.role === "responsible" ||
+      (!currentParticipant && detail.executor_id === currentUserId));
+  const responsible = assignment.find((person) => person.role === "responsible");
   const detailedReview = canReviewRepair(role);
   const canViewOutcome = canViewRepairOutcome(role) && (!canExecutor || detail.executor_id === currentUserId);
   const masterOwns = role === "master" && detail.master_id === currentUserId;
@@ -490,19 +543,21 @@ export function OrderDetailDialog({
     cancelled: t("Наряд отменён. Выполнять это задание больше не нужно."),
     rejected: t("Отказ передан мастеру. Дальнейшее назначение определяет мастер."),
   };
-  const nextStep = canExecutor
-    ? executorNext[detail.status]
-    : masterOwns
-      ? ["completed", "ai_review"].includes(detail.status)
-        ? currentReview
-          ? t("Изучите отчёт исполнителя и проверку, затем примите ремонт или верните на доработку.")
-          : t("Работа сдана. Дождитесь результатов проверки перед решением по ремонту.")
-        : detail.status === "rejected"
-          ? t("Исполнитель отказался от наряда. Изучите причину и назначьте дальнейшие действия.")
-          : ["closed", "cancelled"].includes(detail.status)
-            ? t("Наряд завершён. Отчёт и история доступны для просмотра.")
-            : t("Наряд назначен исполнителю. При необходимости уточните приоритет или назначение.")
-      : t("Режим просмотра. Изменять наряд и принимать ремонт может выдавший его мастер.");
+  const nextStep = teamParticipant
+    ? t("Вы участник. Отчёт сдаёт {0}.", [responsible?.display_name ?? detail.executor_name ?? "—"])
+    : canExecutor
+      ? executorNext[detail.status]
+      : masterOwns
+        ? ["completed", "ai_review"].includes(detail.status)
+          ? currentReview
+            ? t("Изучите отчёт исполнителя и проверку, затем примите ремонт или верните на доработку.")
+            : t("Работа сдана. Дождитесь результатов проверки перед решением по ремонту.")
+          : detail.status === "rejected"
+            ? t("Исполнитель отказался от наряда. Изучите причину и назначьте дальнейшие действия.")
+            : ["closed", "cancelled"].includes(detail.status)
+              ? t("Наряд завершён. Отчёт и история доступны для просмотра.")
+              : t("Наряд назначен исполнителю. При необходимости уточните приоритет или назначение.")
+        : t("Режим просмотра. Изменять наряд и принимать ремонт может выдавший его мастер.");
   const executorAction =
     canExecutor &&
     ["issued", "accepted", "queued", "in_progress", "paused", "rework"].includes(detail.status);
@@ -606,11 +661,38 @@ export function OrderDetailDialog({
           )}
           {detail.executor_name && (
             <div>
-              <dt>{t("Исполнитель")}</dt>
+              <dt>{detail.brigade ? t("Ответственный") : t("Исполнитель")}</dt>
               <dd>{detail.executor_name}</dd>
             </div>
           )}
+          {detail.brigade && (
+            <div>
+              <dt>{t("Бригада")}</dt>
+              <dd>
+                {detail.brigade.code} · {detail.brigade.name}
+              </dd>
+            </div>
+          )}
+          {detail.brigade && (
+            <div className="team-assignment-fact">
+              <dt>{t("Состав бригады")}</dt>
+              <dd>
+                {assignment
+                  .map((person) =>
+                    person.role === "responsible"
+                      ? `${person.display_name} · ${t("Ответственный")}`
+                      : person.display_name,
+                  )
+                  .join(", ")}
+              </dd>
+            </div>
+          )}
         </dl>
+        {teamParticipant && (
+          <p className="team-participant-notice" role="status">
+            {t("Вы участник. Отчёт сдаёт {0}.", [responsible?.display_name ?? detail.executor_name ?? "—"])}
+          </p>
+        )}
         {detail.comment?.trim() && (
           <section className="order-comment">
             <h3>{t("Последний комментарий")}</h3>
@@ -619,7 +701,7 @@ export function OrderDetailDialog({
         )}
         {detail.last_submission_version !== null && detail.work_description && (
           <section className="repair-submission">
-            <h3>{t("Отчёт исполнителя")}</h3>
+            <h3>{detail.brigade ? t("Общий отчёт бригады") : t("Отчёт исполнителя")}</h3>
             <p className="review-explanation">{detail.work_description}</p>
             <p className="muted">
               {t("Неисправность:")}{" "}
@@ -1173,25 +1255,75 @@ export function OrderDetailDialog({
               </div>
             </details>
             {canReassign && (
-              <details className="master-action-panel">
+              <details
+                className="master-action-panel"
+                onToggle={(event) => {
+                  if (event.currentTarget.open) void loadReassignBrigades();
+                }}
+              >
                 <summary>{t("Переназначить исполнителя")}</summary>
                 <div className="master-panel-body">
+                  <label>
+                    {t("Бригада")}
+                    <select
+                      aria-label={t("Бригада")}
+                      value={reassignBrigadeId}
+                      disabled={busy || reassignBrigadesLoading}
+                      onChange={(event) => {
+                        const option = reassignBrigades?.items.find(
+                          (item) => item.brigade.id === event.target.value,
+                        );
+                        if (!option) {
+                          setReassignBrigadeId("");
+                          setReassignParticipantIds([]);
+                          return;
+                        }
+                        setReassignBrigadeId(option.brigade.id);
+                        setReassignParticipantIds(option.participant_ids);
+                        setReassignExecutorId(option.suggested_responsible_id);
+                      }}
+                    >
+                      <option value="">{t("Индивидуальное назначение")}</option>
+                      {reassignBrigades?.items.map((option) => (
+                        <option key={option.brigade.id} value={option.brigade.id}>
+                          {option.brigade.code} · {option.brigade.name} ·{" "}
+                          {t("Участников: {0}", [option.participants.length])}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <label>
                     {t("Новый исполнитель")}
                     <select
                       aria-label={t("Новый исполнитель")}
                       value={reassignExecutorId}
                       disabled={busy}
-                      onChange={(event) => setReassignExecutorId(event.target.value)}
+                      onChange={(event) => {
+                        if (!reassignBrigadeId) {
+                          setReassignBrigadeId("");
+                          setReassignParticipantIds([]);
+                        }
+                        setReassignExecutorId(event.target.value);
+                      }}
                     >
                       <option value="">{t("Выберите исполнителя…")}</option>
-                      {workers
-                        .filter((person) => person.is_on_shift && person.employee_id !== detail.executor_id)
-                        .map((person) => (
-                          <option key={person.employee_id} value={person.employee_id}>
-                            {person.display_name}
-                          </option>
-                        ))}
+                      {reassignBrigadeId
+                        ? reassignBrigades?.items
+                            .find((item) => item.brigade.id === reassignBrigadeId)
+                            ?.participants.map((person) => (
+                              <option key={person.employee_id} value={person.employee_id}>
+                                {person.display_name}
+                              </option>
+                            ))
+                        : workers
+                            .filter(
+                              (person) => person.is_on_shift && person.employee_id !== detail.executor_id,
+                            )
+                            .map((person) => (
+                              <option key={person.employee_id} value={person.employee_id}>
+                                {person.display_name}
+                              </option>
+                            ))}
                     </select>
                   </label>
                   <label>
@@ -1209,7 +1341,13 @@ export function OrderDetailDialog({
                       className="secondary"
                       disabled={busy || !reassignExecutorId || reassignReason.trim().length < 3}
                       onClick={() =>
-                        void act("reassign", { executor_id: reassignExecutorId, reason: reassignReason })
+                        void act("reassign", {
+                          executor_id: reassignExecutorId,
+                          reason: reassignReason,
+                          ...(reassignBrigadeId
+                            ? { brigade_id: reassignBrigadeId, participant_ids: reassignParticipantIds }
+                            : {}),
+                        })
                       }
                     >
                       {t("Переназначить")}
@@ -1254,25 +1392,26 @@ export function OrderDetailDialog({
             </details>
           </section>
         )}
-        {(canExecutor || masterOwns) && !["closed", "cancelled"].includes(detail.status) && (
-          <section className="action-block">
-            <h3>{t("Комментарий")}</h3>
-            <textarea
-              aria-label={t("Текст комментария")}
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              maxLength={5000}
-            />
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy || !comment.trim()}
-              onClick={() => void act("comment", { comment })}
-            >
-              {t("Добавить комментарий")}
-            </button>
-          </section>
-        )}
+        {(canExecutor || teamParticipant || masterOwns) &&
+          !["closed", "cancelled"].includes(detail.status) && (
+            <section className="action-block">
+              <h3>{t("Комментарий")}</h3>
+              <textarea
+                aria-label={t("Текст комментария")}
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                maxLength={5000}
+              />
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !comment.trim()}
+                onClick={() => void act("comment", { comment })}
+              >
+                {t("Добавить комментарий")}
+              </button>
+            </section>
+          )}
         <section>
           <h3>{t("Материалы текущей сдачи и фотографии")}</h3>
           {currentMaterials.length ? (

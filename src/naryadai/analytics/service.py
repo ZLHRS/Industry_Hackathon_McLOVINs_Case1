@@ -78,17 +78,24 @@ def _calculate(
 ) -> AnalyticsReport:
     start, end = period.from_, min(period.to, now)
     actors = set(query.executor_ids)
-    if query.brigade_ids:
-        brigade_people = {
-            p.id for p in data.employees.values() if p.brigade_id in query.brigade_ids
-        }
-        actors = actors & brigade_people if actors else brigade_people
+    legacy_brigade_people = {
+        person.id for person in data.employees.values() if person.brigade_id in query.brigade_ids
+    }
     if principal.role == "executor":
         actors = {principal.employee_id}
-    filter_people = bool(query.executor_ids or query.brigade_ids or principal.role == "executor")
+    filter_people = bool(query.executor_ids or principal.role == "executor")
     selected: list[WorkOrder] = []
     for order in data.orders:
         events = data.events.get(order.id, [])
+        if query.brigade_ids:
+            matches_brigade = (
+                order.brigade_id in query.brigade_ids
+                if order.brigade_id is not None
+                else order.executor_id in legacy_brigade_people
+                or any(event.actor_id in legacy_brigade_people for event in events)
+            )
+            if not matches_brigade:
+                continue
         if (
             filter_people
             and order.executor_id not in actors
@@ -151,8 +158,8 @@ def _calculate(
     warnings = [
         "Выдано/сдано/закрыто/отказы — уникальные наряды по событиям периода. Остаток и "
         "просрочка — на его наблюдаемый конец.",
-        "Фильтры исполнителя/бригады отбирают наряды по текущему назначению. Справочники "
-        "не хранят историю состава бригад.",
+        "Бригадные наряды отбираются по зафиксированному назначению; старые индивидуальные "
+        "наряды без снимка сохраняют прежнюю зависимость от справочника.",
         "Повторы и ППР проверяются с контекстом доступного оборудования вне границ периода "
         "и фильтра исполнителя.",
         "Нет записи простоя — нет доказательства остановки. При пересечении планового и "
@@ -287,14 +294,24 @@ async def analytics_options(database: Database, principal: Principal) -> Analyti
         if principal.role == "executor":
             query = query.where(Employee.id == principal.employee_id)
         people = list(await session.scalars(query))
+        brigade_ids = {person.brigade_id for person in people if person.brigade_id}
+        if principal.role != "executor":
+            brigade_ids.update(
+                await session.scalars(
+                    select(WorkOrder.brigade_id)
+                    .where(
+                        WorkOrder.area_id.in_(scope),
+                        WorkOrder.brigade_id.is_not(None),
+                    )
+                    .distinct()
+                )
+            )
         brigades = (
             []
             if principal.role == "executor"
             else list(
                 await session.scalars(
-                    select(Brigade)
-                    .where(Brigade.id.in_({p.brigade_id for p in people if p.brigade_id}))
-                    .order_by(Brigade.name)
+                    select(Brigade).where(Brigade.id.in_(brigade_ids)).order_by(Brigade.name)
                 )
             )
         )

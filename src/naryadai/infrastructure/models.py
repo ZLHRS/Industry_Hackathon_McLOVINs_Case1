@@ -259,6 +259,7 @@ class WorkOrder(UUIDPrimaryKey, Base):
         ),
         Index("ix_work_orders_area_status", "area_id", "status"),
         Index("ix_work_orders_executor_status", "executor_id", "status"),
+        Index("ix_work_orders_brigade_status", "brigade_id", "status"),
         Index("ix_work_orders_master_id", "master_id"),
         Index("ix_work_orders_deadline", "deadline"),
         Index(
@@ -280,6 +281,9 @@ class WorkOrder(UUIDPrimaryKey, Base):
     area_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     equipment_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     executor_id: Mapped[UUID] = mapped_column(ForeignKey("employees.id"), nullable=False)
+    # The accountable executor remains mandatory.  A brigade is an optional
+    # shared assignment whose actual people are frozen in WorkOrderParticipant.
+    brigade_id: Mapped[UUID | None] = mapped_column(ForeignKey("brigades.id"), nullable=True)
     master_id: Mapped[UUID] = mapped_column(ForeignKey("employees.id"), nullable=False)
     priority: Mapped[Priority] = mapped_column(priority_enum, nullable=False)
     status: Mapped[WorkOrderStatus] = mapped_column(work_order_status_enum, nullable=False)
@@ -300,6 +304,59 @@ class WorkOrder(UUIDPrimaryKey, Base):
     is_synthetic: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    fault_report_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("fault_reports.id"), nullable=True, unique=True
+    )
+
+
+class FaultReport(UUIDPrimaryKey, Base):
+    __tablename__ = "fault_reports"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('open', 'converted', 'dismissed')", name="ck_fault_report_status"
+        ),
+        CheckConstraint("version > 0", name="ck_fault_report_version_positive"),
+        Index("ix_fault_reports_master_status", "master_id", "status"),
+        Index("ix_fault_reports_reporter_created", "reporter_id", "created_at"),
+        UniqueConstraint("reporter_id", "idempotency_key", name="uq_fault_reports_reporter_key"),
+    )
+
+    equipment_id: Mapped[UUID] = mapped_column(ForeignKey("equipment.id"), nullable=False)
+    area_id: Mapped[UUID] = mapped_column(ForeignKey("areas.id"), nullable=False)
+    reporter_id: Mapped[UUID] = mapped_column(ForeignKey("employees.id"), nullable=False)
+    master_id: Mapped[UUID] = mapped_column(ForeignKey("employees.id"), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="open", server_default="open"
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, server_default=func.now()
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dismissal_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class WorkOrderParticipant(Base):
+    """Immutable-at-issue participant snapshot for a brigade work order."""
+
+    __tablename__ = "work_order_participants"
+    __table_args__ = (
+        CheckConstraint(
+            "assignment_role IN ('responsible', 'participant')",
+            name="ck_work_order_participant_role",
+        ),
+        Index("ix_work_order_participants_employee", "employee_id"),
+    )
+
+    work_order_id: Mapped[UUID] = mapped_column(
+        ForeignKey("work_orders.id", ondelete="CASCADE"), primary_key=True
+    )
+    employee_id: Mapped[UUID] = mapped_column(ForeignKey("employees.id"), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    assignment_role: Mapped[str] = mapped_column(String(16), nullable=False)
 
 
 class WorkOrderEvent(UUIDPrimaryKey, Base):
@@ -534,10 +591,17 @@ class Notification(UUIDPrimaryKey, Base):
     __table_args__ = (
         UniqueConstraint("employee_id", "dedup_key", name="uq_notification_employee_dedup"),
         Index("ix_notifications_employee_inbox", "employee_id", "created_at"),
+        CheckConstraint(
+            "(work_order_id IS NOT NULL) <> (fault_report_id IS NOT NULL)",
+            name="ck_notification_one_subject",
+        ),
     )
 
     employee_id: Mapped[UUID] = mapped_column(ForeignKey("employees.id"), nullable=False)
-    work_order_id: Mapped[UUID] = mapped_column(ForeignKey("work_orders.id"), nullable=False)
+    work_order_id: Mapped[UUID | None] = mapped_column(ForeignKey("work_orders.id"), nullable=True)
+    fault_report_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("fault_reports.id"), nullable=True
+    )
     dedup_key: Mapped[str] = mapped_column(String(200), nullable=False)
     kind: Mapped[str] = mapped_column(String(64), nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)

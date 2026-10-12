@@ -7,17 +7,21 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import and_, func, select, text
+from sqlalchemy import and_, exists, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from naryadai.auth.dependencies import Principal
 from naryadai.domain.lifecycle import ActorRole, WorkOrderStatus
 from naryadai.infrastructure.models import (
+    Employee,
+    EmployeeArea,
+    EmployeeRole,
     IdempotencyRecord,
     OutboxEvent,
     WorkOrder,
     WorkOrderEvent,
+    WorkOrderParticipant,
 )
 
 
@@ -37,7 +41,30 @@ def visible_orders(principal: Principal) -> ColumnElement[bool]:
     ensure_role(principal, "master", "executor", "manager")
     scope: ColumnElement[bool] = WorkOrder.area_id.in_(principal.area_ids)
     if principal.role == "executor":
-        scope = and_(scope, WorkOrder.executor_id == principal.employee_id)
+        scope = and_(
+            scope,
+            exists(
+                select(Employee.id)
+                .join(EmployeeArea, EmployeeArea.employee_id == Employee.id)
+                .where(
+                    Employee.id == principal.employee_id,
+                    Employee.role == EmployeeRole.EXECUTOR,
+                    Employee.is_active.is_(True),
+                    EmployeeArea.area_id == WorkOrder.area_id,
+                    or_(
+                        WorkOrder.executor_id == principal.employee_id,
+                        exists(
+                            select(WorkOrderParticipant.work_order_id)
+                            .where(
+                                WorkOrderParticipant.work_order_id == WorkOrder.id,
+                                WorkOrderParticipant.employee_id == principal.employee_id,
+                            )
+                            .correlate(WorkOrder)
+                        ),
+                    ),
+                )
+            ),
+        )
     return scope
 
 
@@ -63,6 +90,16 @@ def require_executor(order: WorkOrder, principal: Principal) -> None:
     ensure_role(principal, "executor")
     if order.executor_id != principal.employee_id:
         raise OperationError(404, "order_not_found")
+
+
+def require_participant(order: WorkOrder, principal: Principal) -> None:
+    """The caller was scoped by get_order; responsible and snapshots may comment."""
+
+    ensure_role(principal, "executor")
+    if order.executor_id == principal.employee_id:
+        return
+    # Callers reach this point only through get_order(), whose correlated
+    # snapshot predicate hides unrelated executor UUIDs as 404.
 
 
 def check_version(order: WorkOrder, expected_version: int) -> None:

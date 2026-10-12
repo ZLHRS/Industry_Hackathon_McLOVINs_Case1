@@ -17,6 +17,7 @@ from naryadai.infrastructure.database import Database
 from naryadai.infrastructure.models import (
     AIReview,
     Area,
+    Brigade,
     Employee,
     Equipment,
     FaultCode,
@@ -24,6 +25,7 @@ from naryadai.infrastructure.models import (
     MaterialUsage,
     Photo,
     WorkOrderEvent,
+    WorkOrderParticipant,
 )
 from naryadai.infrastructure.photo_store import PhotoStore, PhotoStoreError
 from naryadai.reporting.workbooks import ReportWorkbook
@@ -79,8 +81,19 @@ async def export_order(
         equipment = await session.get(Equipment, order.equipment_id)
         area = await session.get(Area, order.area_id)
         executor = await session.get(Employee, order.executor_id)
+        brigade = await session.get(Brigade, order.brigade_id) if order.brigade_id else None
         master = await session.get(Employee, order.master_id)
         fault = await session.get(FaultCode, order.fault_code_id) if order.fault_code_id else None
+        participants = list(
+            await session.scalars(
+                select(WorkOrderParticipant)
+                .where(WorkOrderParticipant.work_order_id == order.id)
+                .order_by(
+                    WorkOrderParticipant.assignment_role.desc(),
+                    WorkOrderParticipant.display_name,
+                )
+            )
+        )
         materials = (
             await session.execute(
                 select(MaterialUsage, Material)
@@ -132,7 +145,20 @@ async def export_order(
             ["Вид", "Плановый" if order.work_type.value == "planned" else "Внеплановый"],
             ["Участок", area.name if area else None],
             ["Оборудование", equipment.name if equipment else None],
-            ["Исполнитель", executor.display_name if executor else None],
+            [
+                "Ответственный" if brigade else "Исполнитель",
+                executor.display_name if executor else None,
+            ],
+            ["Бригада", f"{brigade.code} — {brigade.name}" if brigade else None],
+            [
+                "Участники бригады",
+                ", ".join(
+                    f"{item.display_name} "
+                    f"({'ответственный' if item.assignment_role == 'responsible' else 'участник'})"
+                    for item in participants
+                )
+                or None,
+            ],
             ["Мастер", master.display_name if master else None],
             ["Задание", order.description],
             ["Выдан (UTC)", order.issued_at],

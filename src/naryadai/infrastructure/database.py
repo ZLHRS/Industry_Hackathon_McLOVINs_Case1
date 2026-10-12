@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 
 _POSTGRESQL_PREFIX: Final = "postgresql+psycopg://"
-SCHEMA_REVISION: Final = "0006_photo_ai_consent"
+SCHEMA_REVISION: Final = "0008_fault_reports"
 
 
 class Database:

@@ -52,7 +52,7 @@ async def test_initial_migration_roundtrip_on_empty_schema(database):
     async with database.sessions() as session:
         assert (
             await session.execute(text("SELECT version_num FROM alembic_version"))
-        ).scalar_one() == "0006_photo_ai_consent"
+        ).scalar_one() == "0008_fault_reports"
 
 
 async def test_photo_consent_migration_makes_existing_photos_private(database):
@@ -125,3 +125,16 @@ async def test_photo_consent_migration_makes_existing_photos_private(database):
                 text("SELECT ai_share_allowed FROM photos WHERE id = :id"), {"id": photo_id}
             )
         ).scalar_one() is False
+        # A pre-brigade order stays individual with the original responsible
+        # person; migration must not invent a historical crew from today's roster.
+        order = (
+            await session.execute(
+                text("SELECT executor_id, brigade_id FROM work_orders WHERE id = :id"),
+                {"id": order_id},
+            )
+        ).one()
+        assert order.executor_id == executor_id
+        assert order.brigade_id is None
+        assert (
+            await session.execute(text("SELECT count(*) FROM work_order_participants"))
+        ).scalar_one() == 0

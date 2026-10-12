@@ -26,6 +26,7 @@ from naryadai.infrastructure.models import (
     MaterialUsage,
     TimeNorm,
     WorkOrder,
+    WorkOrderParticipant,
 )
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
@@ -328,6 +329,11 @@ async def change_access(
             participant = or_(
                 WorkOrder.executor_id == employee_id,
                 WorkOrder.master_id == employee_id,
+                WorkOrder.id.in_(
+                    select(WorkOrderParticipant.work_order_id).where(
+                        WorkOrderParticipant.employee_id == employee_id
+                    )
+                ),
             )
             role_changed = body.role is not None and body.role != employee.role.value
             if (body.is_active is False or role_changed) and await session.scalar(
@@ -346,7 +352,7 @@ async def change_access(
             if body.is_on_shift is False and await session.scalar(
                 select(WorkOrder.id)
                 .where(
-                    WorkOrder.executor_id == employee_id,
+                    participant,
                     WorkOrder.status == WorkOrderStatus.IN_PROGRESS,
                 )
                 .limit(1)
@@ -638,6 +644,8 @@ async def delete_brigade(record_id: UUID, principal: PrincipalDep, database: Dat
             raise HTTPException(status_code=404, detail="not_found")
         if await session.scalar(
             select(Employee.id).where(Employee.brigade_id == record_id).limit(1)
+        ) or await session.scalar(
+            select(WorkOrder.id).where(WorkOrder.brigade_id == record_id).limit(1)
         ):
             raise HTTPException(status_code=409, detail="reference_in_use")
         await session.delete(row)

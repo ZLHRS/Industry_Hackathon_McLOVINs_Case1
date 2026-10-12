@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from naryadai.application.common import (
@@ -20,6 +20,7 @@ from naryadai.application.common import (
     remember,
     require_executor,
     require_master_owner,
+    require_participant,
 )
 from naryadai.application.contracts import Completion, CreateOrder, OrderAction
 from naryadai.application.prevention import prevention_event_details, validate_prevention_source
@@ -39,14 +40,17 @@ from naryadai.infrastructure.models import (
     AIReview,
     AIReviewJob,
     Area,
+    Brigade,
     Employee,
     EmployeeArea,
     EmployeeRole,
     Equipment,
     FaultCode,
+    FaultReport,
     Material,
     MaterialUsage,
     WorkOrder,
+    WorkOrderParticipant,
 )
 
 _SYSTEM_PRINCIPAL = Principal(
@@ -104,6 +108,69 @@ async def _executor_for_area(
     if employee is None:
         raise OperationError(422, "executor_must_be_active_on_shift_and_area_qualified")
     return employee
+
+
+async def _brigade_participants_for_area(
+    session: AsyncSession,
+    *,
+    brigade_id: UUID,
+    participant_ids: tuple[UUID, ...],
+    executor_id: UUID,
+    area_id: UUID,
+) -> dict[UUID, Employee]:
+    """Validate the UI's exact, fresh snapshot while holding involved people."""
+
+    brigade = await session.scalar(
+        select(Brigade).where(Brigade.id == brigade_id).with_for_update()
+    )
+    if brigade is None:
+        raise OperationError(422, "brigade_not_found")
+    actual = set(
+        (
+            await session.scalars(
+                select(Employee.id)
+                .join(EmployeeArea, EmployeeArea.employee_id == Employee.id)
+                .where(
+                    Employee.brigade_id == brigade_id,
+                    Employee.role == EmployeeRole.EXECUTOR,
+                    Employee.is_active.is_(True),
+                    Employee.is_on_shift.is_(True),
+                    EmployeeArea.area_id == area_id,
+                )
+                .order_by(Employee.id)
+                .with_for_update()
+            )
+        ).all()
+    )
+    requested = set(participant_ids)
+    if requested != actual:
+        raise OperationError(409, "brigade_membership_changed")
+    if executor_id not in requested:
+        raise OperationError(422, "executor_must_belong_to_brigade")
+    rows = await _lock_employees(session, requested)
+    if len(rows) != len(requested):
+        raise OperationError(409, "brigade_membership_changed")
+    return rows
+
+
+async def _store_participants(
+    session: AsyncSession, order: WorkOrder, people: dict[UUID, Employee] | None
+) -> None:
+    await session.execute(
+        delete(WorkOrderParticipant).where(WorkOrderParticipant.work_order_id == order.id)
+    )
+    if people is None:
+        return
+    session.add_all(
+        WorkOrderParticipant(
+            work_order_id=order.id,
+            employee_id=employee.id,
+            display_name=employee.display_name,
+            assignment_role="responsible" if employee.id == order.executor_id else "participant",
+        )
+        for employee in people.values()
+    )
+    await session.flush()
 
 
 async def _master_for_area(session: AsyncSession, employee_id: UUID, area_id: UUID) -> None:
@@ -244,6 +311,21 @@ async def _active_catalog_for_order(
         raise OperationError(409, "equipment_inactive")
 
 
+async def _fault_report_for_conversion(
+    session: AsyncSession, report_id: UUID, principal: Principal, body: CreateOrder
+) -> FaultReport:
+    report = await session.scalar(
+        select(FaultReport).where(FaultReport.id == report_id).with_for_update()
+    )
+    if report is None or report.master_id != principal.employee_id:
+        raise OperationError(404, "fault_report_not_found")
+    if report.status != "open":
+        raise OperationError(409, "fault_report_not_open")
+    if report.equipment_id != body.equipment_id or report.area_id != body.area_id:
+        raise OperationError(422, "fault_report_equipment_mismatch")
+    return report
+
+
 async def create_order(
     database: Database, principal: Principal, body: CreateOrder, key: str
 ) -> dict[str, Any]:
@@ -277,7 +359,24 @@ async def create_order(
                 raise OperationError(409, "prevention_area_mismatch")
 
         await _active_catalog_for_order(session, body.area_id, body.equipment_id)
-        await _executor_for_area(session, body.executor_id, body.area_id, lock=True)
+        report = (
+            await _fault_report_for_conversion(session, body.fault_report_id, principal, body)
+            if body.fault_report_id is not None
+            else None
+        )
+        brigade_people = (
+            await _brigade_participants_for_area(
+                session,
+                brigade_id=body.brigade_id,
+                participant_ids=body.participant_ids,
+                executor_id=body.executor_id,
+                area_id=body.area_id,
+            )
+            if body.brigade_id is not None
+            else None
+        )
+        if brigade_people is None:
+            await _executor_for_area(session, body.executor_id, body.area_id, lock=True)
         await _verify_fault_code(session, body.fault_code_id)
 
         issued_at = _now()
@@ -290,6 +389,7 @@ async def create_order(
             area_id=body.area_id,
             equipment_id=body.equipment_id,
             executor_id=body.executor_id,
+            brigade_id=body.brigade_id,
             master_id=principal.employee_id,
             priority=body.priority,
             status=WorkOrderStatus.ISSUED,
@@ -297,11 +397,29 @@ async def create_order(
             deadline=body.deadline.astimezone(UTC),
             fault_code_id=body.fault_code_id,
             comment=body.comment,
+            fault_report_id=body.fault_report_id,
             version=1,
             attempt=1,
         )
         session.add(order)
         await session.flush()
+        await _store_participants(session, order, brigade_people)
+        if report is not None:
+            report.status = "converted"
+            report.version += 1
+            report.resolved_at = issued_at
+            from naryadai.application.notification_engine import new_fault_report_notification
+
+            await new_fault_report_notification(
+                session,
+                employee_id=report.reporter_id,
+                report=report,
+                kind="fault_report_converted",
+                title="По сообщению создан наряд",
+                body=f"Мастер создал наряд {order.number} по вашему сообщению.",
+                action_required=False,
+                now=issued_at,
+            )
         await record_event(
             session,
             order,
@@ -315,6 +433,9 @@ async def create_order(
                 "area_id": str(order.area_id),
                 "equipment_id": str(order.equipment_id),
                 "executor_id": str(order.executor_id),
+                "brigade_id": None if order.brigade_id is None else str(order.brigade_id),
+                "participant_ids": [str(item) for item in body.participant_ids],
+                **({"fault_report_id": str(body.fault_report_id)} if body.fault_report_id else {}),
                 "priority": order.priority.value,
                 "deadline": order.deadline.isoformat(),
                 **(
@@ -339,7 +460,7 @@ def _authorize_command(order: WorkOrder, principal: Principal, action: str) -> N
         return
     if action == "comment":
         if principal.role == "executor":
-            require_executor(order, principal)
+            require_participant(order, principal)
         else:
             require_master_owner(order, principal)
         return
@@ -347,31 +468,50 @@ def _authorize_command(order: WorkOrder, principal: Principal, action: str) -> N
 
 
 async def _prepare_active_executor(session: AsyncSession, order: WorkOrder) -> None:
-    rows = await _lock_employees(session, {order.executor_id})
-    executor = rows.get(order.executor_id)
-    if (
-        executor is None
-        or executor.role is not EmployeeRole.EXECUTOR
-        or not executor.is_active
-        or not executor.is_on_shift
-    ):
-        raise OperationError(409, "executor_must_be_active_and_on_shift")
-    membership = await session.scalar(
-        select(EmployeeArea.employee_id).where(
-            EmployeeArea.employee_id == executor.id, EmployeeArea.area_id == order.area_id
-        )
+    snapshot_ids = set(
+        (
+            await session.scalars(
+                select(WorkOrderParticipant.employee_id).where(
+                    WorkOrderParticipant.work_order_id == order.id
+                )
+            )
+        ).all()
     )
-    if membership is None:
-        raise OperationError(409, "executor_not_qualified_for_order_area")
+    participant_ids = snapshot_ids or {order.executor_id}
+    rows = await _lock_employees(session, participant_ids)
+    if set(rows) != participant_ids:
+        raise OperationError(409, "participant_unavailable")
+    for participant in rows.values():
+        if (
+            participant.role is not EmployeeRole.EXECUTOR
+            or not participant.is_active
+            or not participant.is_on_shift
+        ):
+            raise OperationError(409, "participant_must_be_active_and_on_shift")
+        membership = await session.scalar(
+            select(EmployeeArea.employee_id).where(
+                EmployeeArea.employee_id == participant.id, EmployeeArea.area_id == order.area_id
+            )
+        )
+        if membership is None:
+            raise OperationError(409, "participant_not_qualified_for_order_area")
     busy = await session.scalar(
         select(WorkOrder.id).where(
-            WorkOrder.executor_id == executor.id,
             WorkOrder.status == WorkOrderStatus.IN_PROGRESS,
             WorkOrder.id != order.id,
+            or_(
+                WorkOrder.executor_id.in_(participant_ids),
+                exists(
+                    select(WorkOrderParticipant.work_order_id).where(
+                        WorkOrderParticipant.work_order_id == WorkOrder.id,
+                        WorkOrderParticipant.employee_id.in_(participant_ids),
+                    )
+                ),
+            ),
         )
     )
     if busy is not None:
-        raise OperationError(409, "executor_busy")
+        raise OperationError(409, "participant_busy" if snapshot_ids else "executor_busy")
 
 
 async def _apply_completion(
@@ -467,7 +607,19 @@ async def execute_action(
         elif body.action == "reassign":
             assert body.executor_id is not None
             await _active_catalog_for_order(session, order.area_id, order.equipment_id)
-            await _executor_for_area(session, body.executor_id, order.area_id, lock=True)
+            brigade_people = (
+                await _brigade_participants_for_area(
+                    session,
+                    brigade_id=body.brigade_id,
+                    participant_ids=body.participant_ids,
+                    executor_id=body.executor_id,
+                    area_id=order.area_id,
+                )
+                if body.brigade_id is not None
+                else None
+            )
+            if brigade_people is None:
+                await _executor_for_area(session, body.executor_id, order.area_id, lock=True)
             changed = _apply_transition(
                 await _lifecycle_state(session, order),
                 Action.REASSIGN,
@@ -476,7 +628,17 @@ async def execute_action(
                 reason=body.reason,
             )
             previous_executor_id = order.executor_id
+            previous_brigade_id = order.brigade_id
+            previous_participant_ids = list(
+                await session.scalars(
+                    select(WorkOrderParticipant.employee_id).where(
+                        WorkOrderParticipant.work_order_id == order.id
+                    )
+                )
+            )
             order.executor_id = body.executor_id
+            order.brigade_id = body.brigade_id
+            await _store_participants(session, order, brigade_people)
             order.status = changed.after.status
             order.started_at = None
             order.completed_at = None
@@ -497,6 +659,12 @@ async def execute_action(
                 details={
                     "previous_executor_id": str(previous_executor_id),
                     "executor_id": str(order.executor_id),
+                    "previous_brigade_id": (
+                        None if previous_brigade_id is None else str(previous_brigade_id)
+                    ),
+                    "brigade_id": None if order.brigade_id is None else str(order.brigade_id),
+                    "participant_ids": [str(item) for item in body.participant_ids],
+                    "previous_participant_ids": [str(item) for item in previous_participant_ids],
                 },
                 at=at,
             )

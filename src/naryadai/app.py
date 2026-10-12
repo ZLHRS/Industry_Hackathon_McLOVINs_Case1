@@ -15,6 +15,7 @@ from naryadai.api.analytics import router as analytics_router
 from naryadai.api.auth import router as auth_router
 from naryadai.api.catalog import router as catalog_router
 from naryadai.api.catalog_import import router as catalog_import_router
+from naryadai.api.fault_reports import router as fault_reports_router
 from naryadai.api.health import router as health_router
 from naryadai.api.master_assistant import router as master_assistant_router
 from naryadai.api.notifications import router as notifications_router
@@ -82,6 +83,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(catalog_router, prefix="/api/v1")
     app.include_router(catalog_import_router, prefix="/api/v1")
     app.include_router(master_assistant_router, prefix="/api/v1")
+    app.include_router(fault_reports_router, prefix="/api/v1")
     app.include_router(orders_router, prefix="/api/v1")
     app.include_router(order_reports_router, prefix="/api/v1")
     app.include_router(photos_router, prefix="/api/v1")

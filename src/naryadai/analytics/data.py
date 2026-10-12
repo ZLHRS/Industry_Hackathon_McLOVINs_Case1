@@ -98,13 +98,12 @@ async def load_snapshot(
             )
         }
         areas = {a.id: a for a in await session.scalars(select(Area).where(Area.id.in_(area_ids)))}
+        brigade_ids = {o.brigade_id for o in orders if o.brigade_id} | {
+            p.brigade_id for p in employees.values() if p.brigade_id
+        }
         brigades = {
             b.id: b
-            for b in await session.scalars(
-                select(Brigade).where(
-                    Brigade.id.in_({p.brigade_id for p in employees.values() if p.brigade_id})
-                )
-            )
+            for b in await session.scalars(select(Brigade).where(Brigade.id.in_(brigade_ids)))
         }
         faults = {
             f.id: f

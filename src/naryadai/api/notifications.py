@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select, text
+from sqlalchemy import exists, func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert
 
 from naryadai.application.common import OperationError, ensure_role, visible_orders
@@ -15,6 +15,8 @@ from naryadai.auth.dependencies import DatabaseDep, Principal, PrincipalDep
 from naryadai.config import Settings
 from naryadai.infrastructure.models import (
     Employee,
+    EmployeeArea,
+    FaultReport,
     Notification,
     PushSubscription,
     RealtimeRevision,
@@ -33,7 +35,8 @@ router = APIRouter(prefix="/notifications", tags=["notifications"])
 class NotificationView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
-    order_id: UUID = Field(validation_alias="work_order_id")
+    order_id: UUID | None = Field(validation_alias="work_order_id")
+    fault_report_id: UUID | None
     kind: str
     title: str
     body: str
@@ -52,7 +55,32 @@ class NotificationPage(BaseModel):
 
 
 def inbox_scope(principal: Principal) -> Any:
-    return (Notification.employee_id == principal.employee_id) & visible_orders(principal)
+    report_live = exists(
+        select(Employee.id)
+        .join(EmployeeArea, EmployeeArea.employee_id == Employee.id)
+        .where(
+            Employee.id == principal.employee_id,
+            Employee.is_active.is_(True),
+            Employee.role == principal.role,
+            EmployeeArea.area_id == FaultReport.area_id,
+        )
+        .correlate(FaultReport)
+    )
+    report_scope: Any
+    if principal.role == "executor":
+        report_scope = (FaultReport.reporter_id == principal.employee_id) & report_live
+    elif principal.role == "master":
+        report_scope = (
+            (FaultReport.master_id == principal.employee_id)
+            & FaultReport.area_id.in_(principal.area_ids)
+            & report_live
+        )
+    else:
+        report_scope = FaultReport.id.is_(None)
+    return (Notification.employee_id == principal.employee_id) & or_(
+        (Notification.work_order_id.is_not(None)) & visible_orders(principal),
+        Notification.fault_report_id.in_(select(FaultReport.id).where(report_scope)),
+    )
 
 
 @router.get("", response_model=NotificationPage)
@@ -68,7 +96,7 @@ async def inbox(
         await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
         query = (
             select(Notification)
-            .join(WorkOrder, WorkOrder.id == Notification.work_order_id)
+            .outerjoin(WorkOrder, WorkOrder.id == Notification.work_order_id)
             .where(scope)
         )
         if unread_only:
@@ -78,7 +106,7 @@ async def inbox(
             await session.scalar(
                 select(func.count())
                 .select_from(Notification)
-                .join(WorkOrder, WorkOrder.id == Notification.work_order_id)
+                .outerjoin(WorkOrder, WorkOrder.id == Notification.work_order_id)
                 .where(scope, Notification.read_at.is_(None))
             )
             or 0
@@ -102,7 +130,7 @@ async def _mark(
     async with database.sessions.begin() as session:
         notification = await session.scalar(
             select(Notification)
-            .join(WorkOrder, WorkOrder.id == Notification.work_order_id)
+            .outerjoin(WorkOrder, WorkOrder.id == Notification.work_order_id)
             .where(Notification.id == notification_id, inbox_scope(principal))
             .with_for_update(of=Notification)
         )
@@ -257,7 +285,7 @@ async def get_notification(
     async with database.sessions() as session:
         item = await session.scalar(
             select(Notification)
-            .join(WorkOrder, WorkOrder.id == Notification.work_order_id)
+            .outerjoin(WorkOrder, WorkOrder.id == Notification.work_order_id)
             .where(Notification.id == notification_id, inbox_scope(principal))
         )
         if item is None:

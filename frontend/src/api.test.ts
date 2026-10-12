@@ -222,6 +222,51 @@ describe("preventive draft", () => {
   });
 });
 
+describe("fault reports", () => {
+  it("creates a report through the idempotent mutation path", async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            id: "report",
+            equipment_id: "equipment",
+            equipment_inventory_number: "P-1",
+            equipment_name: "Насос",
+            area_id: "area",
+            area_name: "Участок",
+            reporter_id: "executor",
+            reporter_name: "Исполнитель",
+            master_id: "master",
+            master_name: "Мастер",
+            description: "Течь у уплотнения",
+            status: "open",
+            version: 1,
+            created_at: "2026-10-12T00:00:00Z",
+            resolved_at: null,
+            dismissal_reason: null,
+            work_order_number: null,
+          }),
+        ),
+    );
+    vi.stubGlobal("fetch", fetcher);
+
+    await new Api(() => "session").createFaultReport({
+      equipment_id: "equipment",
+      master_id: "master",
+      description: "Течь у уплотнения",
+    });
+
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/v1/fault-reports");
+    expect(JSON.parse(String(init.body))).toEqual({
+      equipment_id: "equipment",
+      master_id: "master",
+      description: "Течь у уплотнения",
+    });
+    expect(new Headers(init.headers).get("Idempotency-Key")).toBeTruthy();
+  });
+});
+
 describe("similar repairs", () => {
   it("sends the current issue context only when the caller requests it", async () => {
     const input: SimilarRepairsRequest = {

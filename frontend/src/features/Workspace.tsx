@@ -19,6 +19,8 @@ import { SimilarRepairsPanel } from "./SimilarRepairsPanel";
 import { CatalogImport } from "./CatalogImport";
 import type {
   Catalog,
+  BrigadeAssignmentOption,
+  BrigadeAssignmentOptions,
   CreateOrder,
   MasterOption,
   Order,
@@ -62,6 +64,13 @@ function endOfCurrentShift() {
   return almatyInputDate(new Date(Date.now() + Math.max(1, minutesToBoundary) * 60_000));
 }
 
+function brigadeAvailabilityLabel(value: BrigadeAssignmentOption["participants"][number]["availability"]) {
+  if (value === "free") return t("Свободен");
+  if (value === "busy") return t("Занят");
+  if (value === "queued") return t("В очереди");
+  return t("Пауза");
+}
+
 export function OrdersView({
   role,
   page,
@@ -74,10 +83,13 @@ export function OrdersView({
   onOpen,
   onCreate,
   onAssistant,
+  faultReportCount,
+  onFaultReports,
   onHistory,
   onSuggest,
   onSimilar,
   onViewEvidence,
+  onBrigadeOptions,
   loading,
 }: {
   role: Role;
@@ -91,6 +103,8 @@ export function OrdersView({
   onOpen: (id: string) => void;
   onCreate: (input: CreateOrder) => Promise<void>;
   onAssistant: () => void;
+  faultReportCount: number;
+  onFaultReports: () => void;
   onHistory: (equipmentId: string) => Promise<void>;
   onSuggest: (input: {
     area_id: string;
@@ -100,6 +114,7 @@ export function OrdersView({
   }) => Promise<OrderSuggestions>;
   onSimilar: (input: SimilarRepairsRequest) => Promise<import("../types").SimilarRepairs>;
   onViewEvidence: (id: string) => Promise<OrderDetail>;
+  onBrigadeOptions: (areaId: string) => Promise<BrigadeAssignmentOptions>;
   loading: boolean;
 }) {
   const [creating, setCreating] = useState(false);
@@ -190,9 +205,19 @@ export function OrdersView({
             <button className="secondary" type="button" onClick={onAssistant}>
               {t("Помощник")}
             </button>
+            <button className="secondary" type="button" onClick={onFaultReports}>
+              {t("Сообщения о поломках")} ({faultReportCount})
+            </button>
             <button className="primary with-icon" onClick={() => setCreating(true)}>
               <Icon name="plus" />
               {t("Выдать наряд")}
+            </button>
+          </div>
+        )}
+        {role === "executor" && (
+          <div className="orders-page-actions">
+            <button className="secondary" type="button" onClick={onFaultReports}>
+              {t("Сообщить о поломке")}
             </button>
           </div>
         )}
@@ -474,6 +499,7 @@ export function OrdersView({
           onSuggest={onSuggest}
           onSimilar={onSimilar}
           onViewEvidence={onViewEvidence}
+          onBrigadeOptions={onBrigadeOptions}
         />
       )}
     </section>
@@ -645,6 +671,18 @@ function OrderRow({
         <span className="order-main">
           <strong>{description}</strong>
           <small>{machine ? `${machine.inventory_number} · ${machine.name}` : t("Оборудование")}</small>
+          {order.brigade && (
+            <small className="order-brigade">
+              {t("Бригада:")} {order.brigade.code} · {order.brigade.name}
+              {order.participants?.find((person) => person.role === "responsible") && (
+                <>
+                  {" · "}
+                  {t("Ответственный:")}{" "}
+                  {order.participants.find((person) => person.role === "responsible")?.display_name}
+                </>
+              )}
+            </small>
+          )}
         </span>
         <span className={`status status-${order.status}`}>{ruStatus[order.status]}</span>
         <span className={order.overdue ? "deadline danger-text" : "deadline"}>
@@ -675,7 +713,9 @@ export function CreateOrderDialog({
   initialAreaId,
   initialEquipmentId,
   preventiveDraft,
+  faultReportDraft,
   onViewEvidence,
+  onBrigadeOptions,
 }: {
   catalog: Catalog;
   workers: Workload[];
@@ -691,24 +731,34 @@ export function CreateOrderDialog({
   initialAreaId?: string;
   initialEquipmentId?: string;
   preventiveDraft?: PreventiveDraft;
+  faultReportDraft?: Pick<
+    import("../types").FaultReportView,
+    "id" | "area_id" | "equipment_id" | "description"
+  >;
   onViewEvidence?: (id: string) => Promise<OrderDetail>;
+  onBrigadeOptions: (areaId: string) => Promise<BrigadeAssignmentOptions>;
 }) {
   const initialEquipment = catalog.equipment.find(
-    (item) => item.id === (preventiveDraft?.equipment_id ?? initialEquipmentId),
+    (item) =>
+      item.id === (preventiveDraft?.equipment_id ?? faultReportDraft?.equipment_id ?? initialEquipmentId),
   );
   const initialArea =
     preventiveDraft?.area_id ??
+    faultReportDraft?.area_id ??
     initialEquipment?.area_id ??
     initialAreaId ??
     catalog.areas.find((item) => item.is_active !== false)?.id ??
     "";
+  const linkedEquipment = Boolean(preventiveDraft || faultReportDraft);
   const [input, setInput] = useState({
     work_type: preventiveDraft ? "planned" : "unplanned",
-    description: preventiveDraft?.description ?? "",
+    description: preventiveDraft?.description ?? faultReportDraft?.description ?? "",
     area_id: initialArea,
     equipment_id: initialEquipment?.id ?? "",
     fault_code_id: preventiveDraft?.fault_code_id ?? "",
     executor_id: "",
+    brigade_id: "",
+    participant_ids: [] as string[],
     priority: "normal",
     deadline: "",
     comment: "",
@@ -717,6 +767,10 @@ export function CreateOrderDialog({
   const [suggestionError, setSuggestionError] = useState("");
   const [suggestions, setSuggestions] = useState<OrderSuggestions | null>(null);
   const [suggesting, setSuggesting] = useState(false);
+  const [brigadeOptions, setBrigadeOptions] = useState<BrigadeAssignmentOptions | null>(null);
+  const [brigadesLoading, setBrigadesLoading] = useState(false);
+  const [brigadesError, setBrigadesError] = useState("");
+  const [brigadeRefresh, setBrigadeRefresh] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [evidence, setEvidence] = useState<OrderDetail | null>(null);
   const [evidenceLoading, setEvidenceLoading] = useState("");
@@ -724,10 +778,15 @@ export function CreateOrderDialog({
   const evidenceRequest = useRef(0);
   const [equipmentQuery, setEquipmentQuery] = useState("");
   const requestId = useRef(0);
+  const brigadeRequestId = useRef(0);
   const suggestRef = useRef(onSuggest);
+  const brigadeOptionsRef = useRef(onBrigadeOptions);
   useEffect(() => {
     suggestRef.current = onSuggest;
   }, [onSuggest]);
+  useEffect(() => {
+    brigadeOptionsRef.current = onBrigadeOptions;
+  }, [onBrigadeOptions]);
   const activeEquipment = useMemo(
     () => catalog.equipment.filter((item) => item.is_active !== false),
     [catalog.equipment],
@@ -763,18 +822,50 @@ export function CreateOrderDialog({
   const updateInput = (next: typeof input, invalidatesSuggestions = false) => {
     if (invalidatesSuggestions) {
       requestId.current += 1;
+      brigadeRequestId.current += 1;
       setSuggesting(false);
+      setBrigadesLoading(false);
       setSuggestionError("");
+      setBrigadesError("");
       setReceivedKey("");
+      setBrigadeOptions(null);
     }
-    setInput(next);
+    setInput(invalidatesSuggestions ? { ...next, brigade_id: "", participant_ids: [] } : next);
   };
   useEffect(
     () => () => {
       requestId.current += 1;
+      brigadeRequestId.current += 1;
     },
     [],
   );
+
+  useEffect(() => {
+    if (!canSuggest) {
+      brigadeRequestId.current += 1;
+      return;
+    }
+    const request = ++brigadeRequestId.current;
+    const timer = window.setTimeout(() => {
+      setBrigadesLoading(true);
+      setBrigadesError("");
+      void brigadeOptionsRef
+        .current(input.area_id)
+        .then((result) => {
+          if (request !== brigadeRequestId.current) return;
+          setBrigadeOptions(result);
+        })
+        .catch(() => {
+          if (request !== brigadeRequestId.current) return;
+          setBrigadeOptions(null);
+          setBrigadesError(t("Не удалось подобрать бригаду. Выберите исполнителя или повторите попытку."));
+        })
+        .finally(() => {
+          if (request === brigadeRequestId.current) setBrigadesLoading(false);
+        });
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [brigadeRefresh, canSuggest, input.area_id]);
 
   useEffect(() => {
     const description = input.description.trim();
@@ -828,16 +919,27 @@ export function CreateOrderDialog({
     }
     try {
       setSubmitting(true);
+      const { brigade_id, participant_ids, ...orderInput } = input;
       await onCreate({
-        ...input,
+        ...orderInput,
         work_type: preventiveDraft ? "planned" : (input.work_type as CreateOrder["work_type"]),
         priority: input.priority as CreateOrder["priority"],
         deadline: input.deadline + ":00+05:00",
         fault_code_id: input.fault_code_id || undefined,
         comment: input.comment || undefined,
         prevention_source: preventiveDraft?.source,
+        fault_report_id: faultReportDraft?.id,
+        ...(brigade_id ? { brigade_id, participant_ids } : {}),
       });
     } catch (caught) {
+      if (caught instanceof ApiError && caught.detail === "brigade_membership_changed") {
+        brigadeRequestId.current += 1;
+        setInput((current) => ({ ...current, brigade_id: "", participant_ids: [], executor_id: "" }));
+        setBrigadeOptions(null);
+        setBrigadesError(t("Состав бригады изменился. Выберите бригаду и ответственного заново."));
+        setBrigadeRefresh((value) => value + 1);
+        return;
+      }
       setError(
         preventiveDraft && caught instanceof ApiError && caught.detail === "prevention_source_stale"
           ? t("Основание изменилось. Закройте форму, обновите отчёт и подготовьте наряд заново.")
@@ -858,7 +960,7 @@ export function CreateOrderDialog({
   }
   function chooseExecutor(person: OrderSuggestionExecutor) {
     setSelectedSuggestedExecutor(person);
-    updateInput({ ...input, executor_id: person.employee_id });
+    updateInput({ ...input, executor_id: person.employee_id, brigade_id: "", participant_ids: [] });
   }
   async function viewEvidence(orderId: string) {
     if (!onViewEvidence) return;
@@ -884,6 +986,10 @@ export function CreateOrderDialog({
     suggestions?.executors.find((person) => person.employee_id === input.executor_id) ??
     selectedSuggestedExecutor ??
     workers.find((person) => person.employee_id === input.executor_id);
+  const selectedBrigade = brigadeOptions?.items.find((item) => item.brigade.id === input.brigade_id) ?? null;
+  const selectedBrigadeResponsible = selectedBrigade?.participants.find(
+    (person) => person.employee_id === input.executor_id,
+  );
   const activeSuggestions = canSuggest && receivedKey === suggestionKey ? suggestions : null;
   const activeSuggestionError = canSuggest ? suggestionError : "";
   const similarInput = useMemo<SimilarRepairsRequest | null>(
@@ -1033,10 +1139,12 @@ export function CreateOrderDialog({
         <section className="order-suggestions" aria-label={t("Подбор вариантов")}>
           <div className="order-suggestions-head">
             <div>
-              <h3>2. {t("Исполнитель")}</h3>
+              <h3>2. {t("Исполнитель или бригада")}</h3>
               <p>{t("Подбор запускается после описания и не назначает исполнителя сам.")}</p>
             </div>
-            {canSuggest && suggesting && <span className="suggestion-loading">{t("Подбираем…")}</span>}
+            {canSuggest && (suggesting || brigadesLoading) && (
+              <span className="suggestion-loading">{t("Подбираем…")}</span>
+            )}
           </div>
           {(!input.equipment_id || !input.description.trim()) && (
             <p className="muted">{t("Сначала выберите оборудование и опишите работу.")}</p>
@@ -1046,9 +1154,62 @@ export function CreateOrderDialog({
               {message(activeSuggestionError)}
             </p>
           )}
-          {activeSuggestions && (
+          {brigadesError && (
+            <p className="muted suggestion-note" role="status">
+              {brigadesError}
+            </p>
+          )}
+          {(activeSuggestions || brigadeOptions) && (
             <div className="suggestion-results">
-              {activeSuggestions.executors.length > 0 && (
+              {brigadeOptions?.items[0] &&
+                (() => {
+                  const option = brigadeOptions.items[0];
+                  const responsible = option.participants.find(
+                    (person) => person.employee_id === option.suggested_responsible_id,
+                  );
+                  return (
+                    <section className="brigade-suggestion" aria-label={t("Бригада")}>
+                      <h4>{t("Бригада")}</h4>
+                      <button
+                        className="suggestion-card quick-choice quick-executor-choice quick-brigade-choice"
+                        type="button"
+                        data-testid={`quick-brigade-${option.brigade.id}`}
+                        aria-pressed={input.brigade_id === option.brigade.id}
+                        onClick={() => {
+                          setSelectedSuggestedExecutor(null);
+                          setInput((current) => ({
+                            ...current,
+                            executor_id: option.suggested_responsible_id,
+                            brigade_id: option.brigade.id,
+                            participant_ids: option.participant_ids,
+                          }));
+                        }}
+                      >
+                        <div>
+                          <strong>
+                            {option.brigade.code} · {option.brigade.name}
+                          </strong>
+                          <small>
+                            {t("Участников: {0}", [option.participants.length])} · {t("Ответственный:")}{" "}
+                            {responsible?.display_name ?? "—"}
+                          </small>
+                          <small className="brigade-members">
+                            {option.participants
+                              .map(
+                                (person) =>
+                                  `${person.display_name} · ${brigadeAvailabilityLabel(person.availability)}`,
+                              )
+                              .join("; ")}
+                          </small>
+                        </div>
+                        <span className="quick-choice-action">
+                          {input.brigade_id === option.brigade.id ? t("Выбрано") : t("Выбрать")}
+                        </span>
+                      </button>
+                    </section>
+                  );
+                })()}
+              {activeSuggestions && activeSuggestions.executors.length > 0 && (
                 <section>
                   <h4>{t("Исполнители")}</h4>
                   {activeSuggestions.executors.map((person) => {
@@ -1065,7 +1226,7 @@ export function CreateOrderDialog({
                         key={person.employee_id}
                         type="button"
                         data-testid={`quick-executor-${person.employee_id}`}
-                        aria-pressed={input.executor_id === person.employee_id}
+                        aria-pressed={!input.brigade_id && input.executor_id === person.employee_id}
                         disabled={!person.is_on_shift}
                         onClick={() => chooseExecutor(person)}
                       >
@@ -1103,14 +1264,16 @@ export function CreateOrderDialog({
                           </small>
                         </div>
                         <span className="quick-choice-action">
-                          {input.executor_id === person.employee_id ? t("Выбрано") : t("Выбрать")}
+                          {!input.brigade_id && input.executor_id === person.employee_id
+                            ? t("Выбрано")
+                            : t("Выбрать")}
                         </span>
                       </button>
                     );
                   })}
                 </section>
               )}
-              {activeSuggestions.notes.map((note, index) => (
+              {activeSuggestions?.notes.map((note, index) => (
                 <p className="muted suggestion-note" key={index}>
                   {suggestionText(note)}
                 </p>
@@ -1187,7 +1350,11 @@ export function CreateOrderDialog({
           {selectedEquipment
             ? `${selectedEquipment.inventory_number} · ${selectedEquipment.name}`
             : t("оборудование не выбрано")}
-          {selectedExecutor ? ` · ${selectedExecutor.display_name}` : ` · ${t("исполнитель не выбран")}`}
+          {selectedBrigade
+            ? ` · ${selectedBrigade.brigade.code} · ${selectedBrigade.brigade.name} · ${t("Ответственный:")} ${selectedBrigadeResponsible?.display_name ?? "—"} · ${t("Участники:")} ${selectedBrigade.participants.map((person) => person.display_name).join(", ")}`
+            : selectedExecutor
+              ? ` · ${selectedExecutor.display_name}`
+              : ` · ${t("исполнитель не выбран")}`}
           {input.deadline ? ` · ${input.deadline.replace("T", " ")}` : ` · ${t("срок не выбран")}`}
         </p>
         <details className="order-advanced-options">
@@ -1197,7 +1364,7 @@ export function CreateOrderDialog({
               {t("Участок")}
               <select
                 value={input.area_id}
-                disabled={Boolean(preventiveDraft)}
+                disabled={linkedEquipment}
                 onChange={(event) => {
                   setSelectedSuggestedExecutor(null);
                   updateInput(
@@ -1225,7 +1392,7 @@ export function CreateOrderDialog({
               {t("Оборудование")}
               <select
                 value={input.equipment_id}
-                disabled={Boolean(preventiveDraft)}
+                disabled={linkedEquipment}
                 onChange={(event) => chooseEquipment(event.target.value)}
               >
                 <option value="">{t("Выберите оборудование")}</option>
@@ -1285,6 +1452,47 @@ export function CreateOrderDialog({
               </p>
             ) : null}
             <label>
+              {t("Бригада")}
+              <select
+                aria-label={t("Бригада")}
+                value={input.brigade_id}
+                onChange={(event) => {
+                  const option = brigadeOptions?.items.find((item) => item.brigade.id === event.target.value);
+                  if (option) {
+                    setSelectedSuggestedExecutor(null);
+                    setInput((current) => ({
+                      ...current,
+                      executor_id: option.suggested_responsible_id,
+                      brigade_id: option.brigade.id,
+                      participant_ids: option.participant_ids,
+                    }));
+                    return;
+                  }
+                  setSelectedSuggestedExecutor(null);
+                  updateInput({ ...input, brigade_id: "", participant_ids: [] });
+                }}
+              >
+                <option value="">{t("Индивидуальное назначение")}</option>
+                {brigadeOptions?.items.map((option) => (
+                  <option key={option.brigade.id} value={option.brigade.id}>
+                    {option.brigade.code} · {option.brigade.name} ·{" "}
+                    {t("Участников: {0}", [option.participants.length])}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {selectedBrigade && (
+              <p className="brigade-selection" aria-live="polite">
+                <strong>
+                  {selectedBrigade.brigade.code} · {selectedBrigade.brigade.name}
+                </strong>
+                <span>
+                  {t("Участники:")}{" "}
+                  {selectedBrigade.participants.map((person) => person.display_name).join(", ")}
+                </span>
+              </p>
+            )}
+            <label>
               {t("Исполнитель")}
               <select
                 value={input.executor_id}
@@ -1300,27 +1508,33 @@ export function CreateOrderDialog({
                     {selectedSuggestedExecutor.grade} {t("разряд")}
                   </option>
                 )}
-                {workers
-                  .filter((person) => person.area_ids?.includes(input.area_id))
-                  .map((person) => (
-                    <option
-                      key={person.employee_id}
-                      value={person.employee_id}
-                      disabled={!person.is_on_shift}
-                    >
-                      {person.display_name} · {person.specialty} · {person.grade} {t("разряд ·")}{" "}
-                      {person.availability === "free"
-                        ? t("Свободен")
-                        : person.availability === "queued"
-                          ? t("В очереди")
-                          : person.availability === "busy"
-                            ? t("В работе")
-                            : t("Не на смене")}
-                      {currentBusyOrderNumber(person)
-                        ? ` · ${t("текущий наряд:")} ${currentBusyOrderNumber(person)}`
-                        : ""}
-                    </option>
-                  ))}
+                {selectedBrigade
+                  ? selectedBrigade.participants.map((person) => (
+                      <option key={person.employee_id} value={person.employee_id}>
+                        {person.display_name} · {brigadeAvailabilityLabel(person.availability)}
+                      </option>
+                    ))
+                  : workers
+                      .filter((person) => person.area_ids?.includes(input.area_id))
+                      .map((person) => (
+                        <option
+                          key={person.employee_id}
+                          value={person.employee_id}
+                          disabled={!person.is_on_shift}
+                        >
+                          {person.display_name} · {person.specialty} · {person.grade} {t("разряд ·")}{" "}
+                          {person.availability === "free"
+                            ? t("Свободен")
+                            : person.availability === "queued"
+                              ? t("В очереди")
+                              : person.availability === "busy"
+                                ? t("В работе")
+                                : t("Не на смене")}
+                          {currentBusyOrderNumber(person)
+                            ? ` · ${t("текущий наряд:")} ${currentBusyOrderNumber(person)}`
+                            : ""}
+                        </option>
+                      ))}
               </select>
             </label>
             <label>
@@ -1597,9 +1811,9 @@ export function ReferenceView({
       ))}
     </div>
   );
-  const search = (placeholder: string) => (
-    <label className="reference-search">
-      <span className="sr-only">{t("Поиск по справочнику")}</span>
+  const search = (placeholder: string, visibleLabel = false) => (
+    <label className={`reference-search${visibleLabel ? " reference-search-labeled" : ""}`}>
+      <span className={visibleLabel ? "reference-filter-label" : "sr-only"}>{t("Поиск по справочнику")}</span>
       <input
         aria-label={t("Поиск по справочнику")}
         value={directorySearch}
@@ -1766,7 +1980,7 @@ export function ReferenceView({
       {section === "equipment" && (
         <section className="reference-directory" aria-label={t("Список оборудования")}>
           <div className="directory-controls equipment-controls">
-            {search(t("Код, инвентарный номер или название"))}
+            {search(t("Код, инвентарный номер или название"), true)}
             <label className="reference-area-filter">
               <span>{t("Участок")}</span>
               <select
@@ -1782,7 +1996,10 @@ export function ReferenceView({
                 ))}
               </select>
             </label>
-            {stateTabs(t("Статус оборудования"))}
+            <div className="reference-status-filter">
+              <span className="reference-filter-label">{t("Статус")}</span>
+              {stateTabs(t("Статус оборудования"))}
+            </div>
           </div>
           {resultCount(equipment.length)}
           <div className="reference-list">

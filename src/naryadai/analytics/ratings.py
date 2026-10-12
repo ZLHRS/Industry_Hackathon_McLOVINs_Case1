@@ -324,22 +324,32 @@ def build_ratings(
                 list(rework_rows[person_id].values()),
             )
         )
+    # A team result belongs to the brigade frozen on the order, once only.
+    # Individual legacy rows retain their historical directory-based behavior.
     grouped: dict[UUID, list[WorkOrder]] = defaultdict(list)
     brigade_actors: dict[UUID, set[UUID]] = defaultdict(set)
-    brigade_rework_rows: dict[UUID, list[tuple[WorkOrder, bool]]] = defaultdict(list)
-    for person in people:
-        brigade = snapshot.employees[person.subject_id].brigade_id
-        if brigade:
-            grouped[brigade].extend(by_person[person.subject_id])
-            brigade_actors[brigade].add(person.subject_id)
-            brigade_rework_rows[brigade].extend(rework_rows[person.subject_id].values())
+    brigade_rework_rows: dict[UUID, dict[UUID, tuple[WorkOrder, bool]]] = defaultdict(dict)
+    for order in closed:
+        actor = final_submission_actor(order, snapshot)
+        brigade = getattr(order, "brigade_id", None)
+        if brigade is None and actor is not None and actor in snapshot.employees:
+            brigade = snapshot.employees[actor].brigade_id
+        if brigade is None:
+            continue
+        if allowed_actors is not None and actor not in allowed_actors:
+            continue
+        grouped[brigade].append(order)
+        if actor is not None:
+            brigade_actors[brigade].add(actor)
+            if order.id in rework_rows[actor]:
+                brigade_rework_rows[brigade][order.id] = rework_rows[actor][order.id]
     brigades = [
         one(
             bid,
             snapshot.brigades[bid].name,
             rows,
             brigade_actors[bid],
-            brigade_rework_rows[bid],
+            list(brigade_rework_rows[bid].values()),
         )
         for bid, rows in grouped.items()
         if bid in snapshot.brigades
@@ -353,8 +363,8 @@ def build_ratings(
         "5%. Доступные веса перенормируются.",
         "Менее 5 закрытых нарядов — малая выборка: рейтинг предварительный; недавние "
         "ремонты исключены из семидневного компонента.",
-        "Бригада и нормативы взяты из текущих справочников; их исторические изменения "
-        "не сохраняются.",
+        "Бригадные наряды используют зафиксированное назначение; старые индивидуальные "
+        "наряды без снимка сохраняют прежнюю зависимость от текущего справочника.",
         "Повторная неисправность — сигнал для разбора, не доказательство вины исполнителя.",
         "Знаменатель доработок — уникальные закрытые наряды с известной сдачей "
         "исполнителя; сдача до переназначения относится к её автору. Без истории сдачи "

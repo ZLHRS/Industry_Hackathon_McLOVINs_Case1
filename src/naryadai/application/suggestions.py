@@ -11,7 +11,7 @@ from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import func, select, text
+from sqlalchemy import select, text
 
 from naryadai.analytics.data import Snapshot
 from naryadai.analytics.history import group_events
@@ -30,6 +30,7 @@ from naryadai.infrastructure.models import (
     TimeNorm,
     WorkOrder,
     WorkOrderEvent,
+    WorkOrderParticipant,
 )
 
 _TOKEN = re.compile(r"[0-9a-zа-яёәғқңөұүһі]+", re.IGNORECASE)
@@ -378,18 +379,27 @@ async def work_order_suggestions(
         load: dict[UUID, tuple[int, int, int]] = {}
         if candidate_ids:
             workload_rows = await session.execute(
-                select(
-                    WorkOrder.executor_id,
-                    func.count().filter(WorkOrder.status == WorkOrderStatus.IN_PROGRESS),
-                    func.count().filter(WorkOrder.status != WorkOrderStatus.IN_PROGRESS),
-                    func.count().filter(WorkOrder.status == WorkOrderStatus.PAUSED),
+                select(WorkOrder, WorkOrderParticipant.employee_id)
+                .outerjoin(
+                    WorkOrderParticipant,
+                    WorkOrderParticipant.work_order_id == WorkOrder.id,
                 )
-                .where(WorkOrder.executor_id.in_(candidate_ids), WorkOrder.status.in_(_ACTIVE_WORK))
-                .group_by(WorkOrder.executor_id)
+                .where(
+                    WorkOrder.status.in_(_ACTIVE_WORK),
+                    (WorkOrder.executor_id.in_(candidate_ids))
+                    | (WorkOrderParticipant.employee_id.in_(candidate_ids)),
+                )
             )
+            totals: dict[UUID, list[int]] = {}
+            for order, participant_id in workload_rows:
+                for employee_id in {order.executor_id, participant_id} & set(candidate_ids):
+                    values = totals.setdefault(employee_id, [0, 0, 0])
+                    values[0] += int(order.status == WorkOrderStatus.IN_PROGRESS)
+                    values[1] += int(order.status != WorkOrderStatus.IN_PROGRESS)
+                    values[2] += int(order.status == WorkOrderStatus.PAUSED)
             load = {
-                employee_id: (int(running), int(queue), int(paused))
-                for employee_id, running, queue, paused in workload_rows
+                employee_id: (values[0], values[1], values[2])
+                for employee_id, values in totals.items()
             }
 
         history_rows = list(

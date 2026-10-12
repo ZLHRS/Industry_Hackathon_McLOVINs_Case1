@@ -12,13 +12,16 @@ from sqlalchemy import and_, exists, or_, select, update
 from naryadai.config import Settings
 from naryadai.infrastructure.database import Database
 from naryadai.infrastructure.models import (
+    Area,
     AuthSession,
     Employee,
     EmployeeArea,
+    FaultReport,
     Notification,
     PushDelivery,
     PushSubscription,
     WorkOrder,
+    WorkOrderParticipant,
 )
 from naryadai.infrastructure.webpush import PushResult, build_payload, push_enabled, send_web_push
 
@@ -154,11 +157,60 @@ async def _deliver_claim(
 
 async def _target(database: Database, now: datetime, claim: _Claim) -> _Target | None:
     """Recheck all mutable authorization facts immediately before sending."""
-    area_scope = exists(
-        select(EmployeeArea.employee_id).where(
+    order_area_scope = exists(
+        select(EmployeeArea.employee_id)
+        .join(Area, Area.id == EmployeeArea.area_id)
+        .where(
             EmployeeArea.employee_id == Notification.employee_id,
             EmployeeArea.area_id == WorkOrder.area_id,
+            Area.is_active.is_(True),
         )
+        .correlate(WorkOrder, Notification)
+    )
+    report_area_scope = exists(
+        select(EmployeeArea.employee_id)
+        .join(Area, Area.id == EmployeeArea.area_id)
+        .where(
+            EmployeeArea.employee_id == Notification.employee_id,
+            EmployeeArea.area_id == FaultReport.area_id,
+            Area.is_active.is_(True),
+        )
+        .correlate(FaultReport, Notification)
+    )
+    order_recipient = and_(
+        Notification.work_order_id.is_not(None),
+        order_area_scope,
+        or_(
+            and_(
+                Employee.role == "executor",
+                or_(
+                    WorkOrder.executor_id == Notification.employee_id,
+                    exists(
+                        select(WorkOrderParticipant.work_order_id)
+                        .where(
+                            WorkOrderParticipant.work_order_id == WorkOrder.id,
+                            WorkOrderParticipant.employee_id == Notification.employee_id,
+                        )
+                        .correlate(WorkOrder, Notification)
+                    ),
+                ),
+            ),
+            Employee.role.in_(("master", "manager")),
+        ),
+    )
+    report_recipient = and_(
+        Notification.fault_report_id.is_not(None),
+        report_area_scope,
+        or_(
+            and_(
+                Employee.role == "executor",
+                FaultReport.reporter_id == Notification.employee_id,
+            ),
+            and_(
+                Employee.role == "master",
+                FaultReport.master_id == Notification.employee_id,
+            ),
+        ),
     )
     statement = (
         select(
@@ -174,7 +226,8 @@ async def _target(database: Database, now: datetime, claim: _Claim) -> _Target |
         .join(PushSubscription, PushSubscription.id == PushDelivery.subscription_id)
         .join(AuthSession, AuthSession.id == PushSubscription.session_id)
         .join(Employee, Employee.id == PushSubscription.employee_id)
-        .join(WorkOrder, WorkOrder.id == Notification.work_order_id)
+        .outerjoin(WorkOrder, WorkOrder.id == Notification.work_order_id)
+        .outerjoin(FaultReport, FaultReport.id == Notification.fault_report_id)
         .where(
             PushDelivery.id == claim.delivery_id,
             PushDelivery.lease_token == claim.lease_token,
@@ -186,14 +239,7 @@ async def _target(database: Database, now: datetime, claim: _Claim) -> _Target |
             AuthSession.revoked_at.is_(None),
             AuthSession.expires_at > now,
             Employee.is_active.is_(True),
-            or_(
-                and_(
-                    Employee.role == "executor",
-                    WorkOrder.executor_id == Notification.employee_id,
-                ),
-                Employee.role.in_(("master", "manager")),
-            ),
-            area_scope,
+            or_(order_recipient, report_recipient),
         )
     )
     async with database.sessions() as session:

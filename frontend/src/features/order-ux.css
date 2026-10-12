@@ -23,6 +23,18 @@
 .order-detail .facts dd {
   overflow-wrap: anywhere;
 }
+.team-assignment-fact {
+  grid-column: span 2;
+}
+.team-participant-notice {
+  margin: 0;
+  padding: 0.8rem 0.9rem;
+  border-left: 3px solid #357a69;
+  background: #f2f8f5;
+  color: #2e5149;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
 .order-comment {
   padding: 0.9rem 1rem;
   border: 1px solid var(--line, #d8d5ce);
@@ -153,6 +165,9 @@
   .order-next-step {
     flex-direction: column;
     align-items: stretch;
+  }
+  .team-assignment-fact {
+    grid-column: auto;
   }
 }
 

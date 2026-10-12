@@ -76,16 +76,30 @@ class CreateOrder(BaseModel):
     area_id: UUID
     equipment_id: UUID
     executor_id: UUID
+    brigade_id: UUID | None = None
+    participant_ids: tuple[UUID, ...] = Field(default=(), max_length=100)
     priority: Priority
     deadline: datetime
     fault_code_id: UUID | None = None
     comment: str | None = Field(default=None, max_length=5_000)
     prevention_source: PreventionSource | None = None
+    fault_report_id: UUID | None = None
 
     @model_validator(mode="after")
     def validate_deadline(self) -> CreateOrder:
         if self.deadline.tzinfo is None or self.deadline.utcoffset() is None:
             raise ValueError("deadline must be timezone-aware")
+        if self.brigade_id is None and self.participant_ids:
+            raise ValueError("participant_ids are allowed only with brigade_id")
+        if self.brigade_id is not None:
+            if len(self.participant_ids) < 2:
+                raise ValueError("brigade assignment requires at least two participant_ids")
+            if len(set(self.participant_ids)) != len(self.participant_ids):
+                raise ValueError("participant_ids must be unique")
+            if self.executor_id not in self.participant_ids:
+                raise ValueError("executor_id must be a brigade participant")
+        if self.fault_report_id is not None and self.prevention_source is not None:
+            raise ValueError("fault_report_id cannot be combined with prevention_source")
         return self
 
 
@@ -114,6 +128,8 @@ class OrderAction(BaseModel):
     expected_version: int = Field(ge=1)
     reason: str | None = Field(default=None, min_length=3, max_length=1_000)
     executor_id: UUID | None = None
+    brigade_id: UUID | None = None
+    participant_ids: tuple[UUID, ...] = Field(default=(), max_length=100)
     priority: Priority | None = None
     comment: str | None = Field(default=None, min_length=1, max_length=5_000)
     completion: Completion | None = None
@@ -138,6 +154,18 @@ class OrderAction(BaseModel):
             raise ValueError(f"reason is not allowed for {self.action}")
         if (self.action == "reassign") != (self.executor_id is not None):
             raise ValueError("executor_id is required only for reassign")
+        if self.action != "reassign" and (self.brigade_id is not None or self.participant_ids):
+            raise ValueError("brigade assignment is allowed only for reassign")
+        if self.action == "reassign":
+            if self.brigade_id is None and self.participant_ids:
+                raise ValueError("participant_ids are allowed only with brigade_id")
+            if self.brigade_id is not None:
+                if len(self.participant_ids) < 2:
+                    raise ValueError("brigade assignment requires at least two participant_ids")
+                if len(set(self.participant_ids)) != len(self.participant_ids):
+                    raise ValueError("participant_ids must be unique")
+                if self.executor_id not in self.participant_ids:
+                    raise ValueError("executor_id must be a brigade participant")
         if (self.action == "change_priority") != (self.priority is not None):
             raise ValueError("priority is required only for change_priority")
         if (self.action == "comment") != (self.comment is not None):

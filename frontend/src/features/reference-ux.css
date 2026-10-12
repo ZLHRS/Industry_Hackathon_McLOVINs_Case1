@@ -79,6 +79,17 @@
 .reference-search {
   flex: 1 1 16rem;
 }
+.reference-search-labeled,
+.reference-status-filter {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.reference-filter-label {
+  color: var(--muted-ink);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
 .reference-search input,
 .reference-area-filter select {
   box-sizing: border-box;
@@ -92,6 +103,21 @@
   color: var(--muted-ink);
   font-size: 0.78rem;
   font-weight: 800;
+}
+.equipment-controls {
+  display: grid !important;
+  grid-template-columns: minmax(17rem, 1.4fr) minmax(13rem, 0.9fr) max-content;
+  align-items: end !important;
+}
+.equipment-controls .reference-search,
+.equipment-controls .reference-area-filter {
+  min-width: 0;
+}
+.equipment-controls .reference-status-filter {
+  width: max-content;
+}
+.equipment-controls .directory-tabs {
+  min-height: 44px;
 }
 .reference-list {
   border-top: 1px solid var(--line);
@@ -155,6 +181,13 @@
   .equipment-controls .directory-tabs {
     width: 100%;
   }
+  .equipment-controls {
+    grid-template-columns: minmax(0, 1fr) minmax(12rem, 0.8fr);
+  }
+  .equipment-controls .reference-status-filter {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
 }
 @media (max-width: 460px) {
   .reference-overview {
@@ -168,6 +201,12 @@
   }
   .reference-area-filter {
     flex-basis: auto;
+  }
+  .equipment-controls {
+    grid-template-columns: 1fr;
+  }
+  .equipment-controls .reference-status-filter {
+    grid-column: auto;
   }
   .reference-directory .reference-row {
     gap: 0.65rem;

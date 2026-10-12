@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Area, Equipment, Role } from "../types";
 import { equipmentLink, isLocalQrOrigin, qrSvgDataUrl } from "../lib/equipmentQr";
+import { t } from "../lib/i18n";
 
 type Props = {
   equipment: Equipment | null;
@@ -10,6 +11,7 @@ type Props = {
   closeLabel: string;
   onCreateOrder: () => void;
   onShowOrders: () => void;
+  onFaultReport?: () => void;
 };
 
 export function EquipmentCard({
@@ -20,15 +22,18 @@ export function EquipmentCard({
   closeLabel,
   onCreateOrder,
   onShowOrders,
+  onFaultReport,
 }: Props) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   if (!equipment)
     return (
       <section className="equipment-card workspace">
-        <p className="eyebrow">QR-КАРТОЧКА</p>
-        <h1>Оборудование недоступно</h1>
+        <p className="eyebrow">{t("QR-КАРТОЧКА")}</p>
+        <h1>{t("Оборудование недоступно")}</h1>
         <p className="muted">
-          Проверьте QR-код или доступ к участку. Карточка доступна только для оборудования вашего контура.
+          {t(
+            "Проверьте QR-код или доступ к участку. Карточка доступна только для оборудования вашего контура.",
+          )}
         </p>
         <button className="secondary" type="button" onClick={onClose}>
           {closeLabel}
@@ -61,11 +66,11 @@ export function EquipmentCard({
     <section className="equipment-card workspace">
       <div className="page-head">
         <div>
-          <p className="eyebrow">QR-КАРТОЧКА ОБОРУДОВАНИЯ</p>
+          <p className="eyebrow">{t("QR-КАРТОЧКА ОБОРУДОВАНИЯ")}</p>
           <h1>
             {equipment.inventory_number} · {equipment.name}
           </h1>
-          <p className="muted">{area ? area.code + " · " + area.name : "Участок недоступен"}</p>
+          <p className="muted">{area ? area.code + " · " + area.name : t("Участок недоступен")}</p>
         </div>
         <button className="text-button" type="button" onClick={onClose}>
           {closeLabel}
@@ -73,65 +78,79 @@ export function EquipmentCard({
       </div>
       <dl className="equipment-facts">
         <div>
-          <dt>Тип</dt>
+          <dt>{t("Тип")}</dt>
           <dd>{equipment.equipment_type}</dd>
         </div>
         <div>
-          <dt>Статус</dt>
-          <dd>{active ? "Активно" : "В архиве или участок отключён"}</dd>
+          <dt>{t("Статус")}</dt>
+          <dd>{active ? t("Активно") : t("В архиве или участок отключён")}</dd>
         </div>
       </dl>
       {canIssue && (
         <button className="primary" type="button" onClick={onCreateOrder}>
-          Выдать наряд
+          {t("Выдать наряд")}
         </button>
       )}
       {canShowOrders && (
         <button className="secondary" type="button" onClick={onShowOrders}>
-          {role === "executor" ? "Мои наряды" : "Наряды оборудования"}
+          {role === "executor" ? t("Мои наряды") : t("Наряды оборудования")}
+        </button>
+      )}
+      {role === "executor" && onFaultReport && active && (
+        <button className="secondary" type="button" onClick={onFaultReport}>
+          {t("Сообщить о поломке")}
         </button>
       )}
       {(role === "master" || role === "admin") && (
         <section className="equipment-qr-panel">
           <div className="equipment-qr-label">
-            <h2>QR-код</h2>
-            <p>Откройте эту карточку камерой телефона.</p>
+            <h2>{t("QR-код")}</h2>
+            <p>{t("Откройте эту карточку камерой телефона.")}</p>
           </div>
-          <div className="equipment-qr-print-context">
-            <strong>
-              {equipment.inventory_number} · {equipment.name}
-            </strong>
-            <span>{area ? area.code + " · " + area.name : "Участок недоступен"}</span>
+          <div className="equipment-qr-preview">
+            <img src={qr} alt={t("QR-код оборудования")} />
+            <div className="equipment-qr-preview-copy">
+              <p className="equipment-qr-preview-label">{t("Оборудование")}</p>
+              <div className="equipment-qr-print-context">
+                <strong>
+                  {equipment.inventory_number} · {equipment.name}
+                </strong>
+                <span>{area ? area.code + " · " + area.name : t("Участок недоступен")}</span>
+              </div>
+              <a className="equipment-qr-link" href={url}>
+                {url}
+              </a>
+            </div>
           </div>
-          <img src={qr} alt="QR-код оборудования" />
-          <a href={url}>{url}</a>
           <div className="equipment-qr-actions">
             <button className="secondary" type="button" onClick={() => void copy()}>
-              Копировать ссылку
+              {t("Копировать ссылку")}
             </button>
             <button className="secondary" type="button" onClick={download}>
-              Скачать QR-код
+              {t("Скачать QR-код")}
             </button>
             <button className="text-button" type="button" onClick={() => window.print()}>
-              Печать наклейки
+              {t("Печать наклейки")}
             </button>
           </div>
           {copyState === "copied" && (
             <p className="equipment-qr-feedback" role="status">
-              Ссылка скопирована.
+              {t("Ссылка скопирована.")}
             </p>
           )}
           {copyState === "failed" && (
             <p className="equipment-qr-feedback" role="status">
-              Не удалось скопировать ссылку. Скопируйте её из строки выше.
+              {t("Не удалось скопировать ссылку. Скопируйте её из строки выше.")}
             </p>
           )}
           {isLocalQrOrigin(window.location.origin) && (
-            <p className="notice">Телефон не откроет localhost. Для проверки используйте адрес туннеля.</p>
+            <p className="notice">
+              {t("Телефон не откроет localhost. Для проверки используйте адрес туннеля.")}
+            </p>
           )}
           {temporaryTunnel && (
             <p className="notice">
-              Это временный адрес туннеля. После его перезапуска напечатайте новый QR-код.
+              {t("Это временный адрес туннеля. После его перезапуска напечатайте новый QR-код.")}
             </p>
           )}
         </section>

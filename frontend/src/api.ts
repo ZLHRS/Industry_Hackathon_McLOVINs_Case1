@@ -16,6 +16,9 @@ import type {
   NotificationPage,
   NotificationItem,
   PushConfig,
+  FaultReportMaster,
+  FaultReportPage,
+  FaultReportView,
 } from "./types";
 import type {
   AnalyticsOptions,
@@ -239,7 +242,7 @@ function forgetMutation(fingerprint: string): void {
 }
 
 export class Api {
-  private inFlight = new Map<string, Promise<Mutation>>();
+  private inFlight = new Map<string, Promise<unknown>>();
   constructor(
     private getToken: () => string | null,
     private onUnauthorized?: (invalidToken: string) => void | Promise<void>,
@@ -269,20 +272,20 @@ export class Api {
     return response.status === 204 ? (undefined as T) : (response.json() as Promise<T>);
   }
 
-  private async mutate(
+  private async mutate<T = Mutation>(
     path: string,
     init: RequestInit,
     identity: string,
     providedKey?: string,
-  ): Promise<Mutation> {
+  ): Promise<T> {
     const fingerprint = keyPrefix + (await digest(`${this.getToken() ?? ""}\n${path}\n${identity}`));
     const coalescingKey = fingerprint + (providedKey ?? "");
     const running = this.inFlight.get(coalescingKey);
-    if (running) return running;
+    if (running) return running as Promise<T>;
     const key = providedKey ?? mutationKey(fingerprint);
     const headers = new Headers(init.headers);
     headers.set("Idempotency-Key", key);
-    const task = this.request<Mutation>(path, { ...init, method: "POST", headers })
+    const task = this.request<T>(path, { ...init, method: "POST", headers })
       .then((result) => {
         if (!providedKey) forgetMutation(fingerprint);
         return result;
@@ -499,6 +502,11 @@ export class Api {
   workload(areaId?: string) {
     return this.request<Workload[]>(`/workload${areaId ? `?area_id=${areaId}` : ""}`);
   }
+  brigadeOptions(areaId: string) {
+    return this.request<import("./types").BrigadeAssignmentOptions>(
+      `/work-orders/brigade-options?area_id=${encodeURIComponent(areaId)}`,
+    );
+  }
   equipmentHistory(id: string, offset = 0) {
     return this.request<OrderPage>(`/equipment/${id}/history?offset=${offset}`);
   }
@@ -520,6 +528,35 @@ export class Api {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     });
+  }
+  faultReportMasters(equipmentId: string) {
+    return this.request<{ items: FaultReportMaster[] }>(
+      `/fault-reports/masters?equipment_id=${encodeURIComponent(equipmentId)}`,
+    );
+  }
+  faultReports(status: "open" | "all", offset = 0, limit = 10) {
+    return this.request<FaultReportPage>(`/fault-reports?status=${status}&offset=${offset}&limit=${limit}`);
+  }
+  faultReport(id: string) {
+    return this.request<FaultReportView>(`/fault-reports/${encodeURIComponent(id)}`);
+  }
+  createFaultReport(input: { equipment_id: string; master_id: string; description: string }, key?: string) {
+    const body = canonical(input);
+    return this.mutate<FaultReportView>(
+      "/fault-reports",
+      { headers: { "Content-Type": "application/json" }, body },
+      body,
+      key,
+    );
+  }
+  dismissFaultReport(id: string, input: { expected_version: number; reason: string }, key?: string) {
+    const body = canonical(input);
+    return this.mutate<FaultReportView>(
+      `/fault-reports/${encodeURIComponent(id)}/dismiss`,
+      { headers: { "Content-Type": "application/json" }, body },
+      body,
+      key,
+    );
   }
   masterAssistant(input: MasterAssistantRequest) {
     return this.request<MasterAssistantAnswer>("/master-assistant/answer", {

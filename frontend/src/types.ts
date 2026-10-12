@@ -81,6 +81,31 @@ export interface Brigade {
   code: string;
   name: string;
 }
+export interface OrderBrigade {
+  id: string;
+  code: string;
+  name: string;
+}
+export interface OrderParticipant {
+  employee_id: string;
+  display_name: string;
+  role: "responsible" | "participant";
+}
+export interface BrigadeAssignmentMember {
+  employee_id: string;
+  display_name: string;
+  availability: "free" | "busy" | "queued" | "paused";
+}
+export interface BrigadeAssignmentOption {
+  brigade: OrderBrigade;
+  participant_ids: string[];
+  participants: BrigadeAssignmentMember[];
+  excluded_count: number;
+  suggested_responsible_id: string;
+}
+export interface BrigadeAssignmentOptions {
+  items: BrigadeAssignmentOption[];
+}
 export interface Material {
   id: string;
   code: string;
@@ -158,6 +183,8 @@ export interface Order {
   last_submission_version: number | null;
   is_synthetic: boolean;
   overdue: boolean;
+  brigade?: OrderBrigade | null;
+  participants?: OrderParticipant[];
 }
 export interface OrderPage {
   items: Order[];
@@ -426,12 +453,49 @@ export interface CreateOrder {
   deadline: string;
   fault_code_id?: string;
   comment?: string;
+  brigade_id?: string;
+  /** Backend-validated snapshot of the selected brigade members. */
+  participant_ids?: string[];
   /** Server-canonical evidence for an analytics-originated preventive order. */
   prevention_source?: PreventionSource;
+  /** Links a master-confirmed work order to the originating fault report. */
+  fault_report_id?: string;
+}
+export type FaultReportStatus = "open" | "converted" | "dismissed";
+export interface FaultReportMaster {
+  id: string;
+  display_name: string;
+}
+export interface FaultReportView {
+  id: string;
+  equipment_id: string;
+  equipment_inventory_number: string;
+  equipment_name: string;
+  area_id: string;
+  area_name: string;
+  reporter_id: string;
+  reporter_name: string;
+  master_id: string;
+  master_name: string;
+  description: string;
+  status: FaultReportStatus;
+  version: number;
+  created_at: string;
+  resolved_at: string | null;
+  dismissal_reason: string | null;
+  /** Visible to the reporter as a reference only; its order id remains private. */
+  work_order_number: string | null;
+}
+export interface FaultReportPage {
+  items: FaultReportView[];
+  total: number;
+  offset: number;
+  limit: number;
 }
 export interface NotificationItem {
   id: string;
   order_id: string | null;
+  fault_report_id: string | null;
   kind: string;
   title: string;
   body: string;

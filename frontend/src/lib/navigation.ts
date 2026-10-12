@@ -35,6 +35,11 @@ export function navigate(path: string, replace = false) {
   else window.history.pushState(state, "", path);
   window.dispatchEvent(new Event(eventName));
 }
+export function replaceRouteIfCurrent(expected: string, path: string) {
+  if (snapshot() !== expected) return false;
+  navigate(path, true);
+  return true;
+}
 export function readRoute(value: string) {
   const url = new URL(value, "https://technaryad.invalid");
   const parts = url.pathname.split("/").filter(Boolean);

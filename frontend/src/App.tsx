@@ -15,6 +15,7 @@ import { EquipmentCard } from "./features/EquipmentCard";
 import { EmployeesView } from "./features/Employees";
 import { AnalyticsView } from "./features/Analytics";
 import { MasterAssistant } from "./features/MasterAssistant";
+import { FaultReportsDialog } from "./features/FaultReports";
 import {
   clearActor,
   enqueue,
@@ -34,12 +35,20 @@ import type {
   MasterOption,
   OrderPage,
   PreventiveDraft,
+  FaultReportView,
   User,
   Workload,
 } from "./types";
 import "./styles.css";
 import "./shell.css";
-import { useAppLocation, readRoute, navigate, directoryUrl, closeOrderPage } from "./lib/navigation";
+import {
+  useAppLocation,
+  readRoute,
+  navigate,
+  directoryUrl,
+  closeOrderPage,
+  replaceRouteIfCurrent,
+} from "./lib/navigation";
 
 import {
   archivedOrderStatuses,
@@ -143,6 +152,14 @@ export default function App() {
   const [equipmentForOrder, setEquipmentForOrder] = useState<Equipment | null>(null);
   const [preventiveDraft, setPreventiveDraft] = useState<PreventiveDraft | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [faultReportDialog, setFaultReportDialog] = useState<{
+    mode: "executor" | "master" | "detail";
+    reportId?: string;
+    equipmentId?: string;
+  } | null>(null);
+  const [faultReportDraft, setFaultReportDraft] = useState<FaultReportView | null>(null);
+  const [faultReportRevision, setFaultReportRevision] = useState(0);
+  const [faultReportCount, setFaultReportCount] = useState(0);
   const appLocation = useAppLocation();
   const route = readRoute(appLocation);
   const view = route.view;
@@ -168,12 +185,12 @@ export default function App() {
     // Equipment QR cards are a protected detail route for every role.
     if (current.equipmentId) return;
     if (user.role === "admin" && current.view === "reference" && current.section === "employees") {
-      navigate("/employees", true);
+      replaceRouteIfCurrent(appLocation, "/employees");
       return;
     }
     const allowed = permittedView(user.role, current.view);
     if (allowed !== current.view) {
-      navigate("/" + allowed, true);
+      replaceRouteIfCurrent(appLocation, "/" + allowed);
       return;
     }
     const path = current.section
@@ -182,7 +199,7 @@ export default function App() {
         ? "/orders/" + current.orderId
         : "/" + allowed;
     const query = appLocation.includes("?") ? appLocation.slice(appLocation.indexOf("?")) : "";
-    navigate(path + query, true);
+    replaceRouteIfCurrent(appLocation, path + query);
   }, [appLocation, user]);
   const [loading, setLoading] = useState(Boolean(token));
   const [notice, setNotice] = useState("");
@@ -233,6 +250,8 @@ export default function App() {
       setEquipmentForOrder(null);
       setPreventiveDraft(null);
       setAssistantOpen(false);
+      setFaultReportDialog(null);
+      setFaultReportDraft(null);
       setPending([]);
       setSavedAt(null);
       navigate(preserveEquipmentRoute && equipmentRoute ? equipmentRoute : "/", true);
@@ -475,6 +494,24 @@ export default function App() {
     };
   }, [api, invalidate, token, user]);
   useEffect(() => {
+    if (user?.role !== "master") {
+      setFaultReportCount(0);
+      return;
+    }
+    let active = true;
+    void api
+      .faultReports("open", 0, 1)
+      .then((page) => {
+        if (active) setFaultReportCount(page.total);
+      })
+      .catch(() => {
+        if (active) setFaultReportCount(0);
+      });
+    return () => {
+      active = false;
+    };
+  }, [api, faultReportRevision, liveRevision, user?.role]);
+  useEffect(() => {
     if (!user || user.role === "admin") return;
     const id = new URLSearchParams(location.search).get("notification");
     if (!id || !/^[0-9a-f-]{36}$/i.test(id)) return;
@@ -483,7 +520,10 @@ export default function App() {
       .notification(id)
       .then((item) => {
         if (!active) return;
-        navigate(item.order_id ? "/orders/" + item.order_id : "/orders", true);
+        if (item.fault_report_id) {
+          setFaultReportDialog({ mode: "detail", reportId: item.fault_report_id });
+          navigate("/orders", true);
+        } else navigate(item.order_id ? "/orders/" + item.order_id : "/orders", true);
         setInboxOpen(false);
         navigate(location.pathname, true);
         void api.markNotificationRead(id).catch(() => undefined);
@@ -832,6 +872,10 @@ export default function App() {
               onShowOrders={() => {
                 if (equipmentFromRoute) openEquipmentOrders(equipmentFromRoute.id);
               }}
+              onFaultReport={() => {
+                if (equipmentFromRoute && user.role === "executor")
+                  setFaultReportDialog({ mode: "executor", equipmentId: equipmentFromRoute.id });
+              }}
             />
           ) : (
             <section className="workspace">
@@ -854,7 +898,12 @@ export default function App() {
               await refresh();
             }}
             onAssistant={() => setAssistantOpen(true)}
+            faultReportCount={faultReportCount}
+            onFaultReports={() =>
+              setFaultReportDialog({ mode: user.role === "master" ? "master" : "executor" })
+            }
             onSuggest={(input) => api.suggestions(input)}
+            onBrigadeOptions={(areaId) => api.brigadeOptions(areaId)}
             onSimilar={(input) => api.similarRepairs(input)}
             onViewEvidence={(id) => api.order(id)}
             onHistory={async (equipmentId) =>
@@ -938,6 +987,10 @@ export default function App() {
             setInboxOpen(false);
             setSelected(id);
           }}
+          onFaultReport={(id) => {
+            setInboxOpen(false);
+            setFaultReportDialog({ mode: "detail", reportId: id });
+          }}
           onPushBound={(id) => {
             pushSubscriptionId.current = id;
           }}
@@ -973,6 +1026,7 @@ export default function App() {
               await refresh();
             }}
             onSuggest={(input) => api.suggestions(input)}
+            onBrigadeOptions={(areaId) => api.brigadeOptions(areaId)}
             onSimilar={(input) => api.similarRepairs(input)}
             onViewEvidence={(id) => api.order(id)}
           />
@@ -991,8 +1045,47 @@ export default function App() {
             setNotice(t("Наряд выдан"));
           }}
           onSuggest={(input) => api.suggestions(input)}
+          onBrigadeOptions={(areaId) => api.brigadeOptions(areaId)}
           onSimilar={(input) => api.similarRepairs(input)}
           onViewEvidence={(id) => api.order(id)}
+        />
+      )}
+      {faultReportDraft && data?.catalog && user.role === "master" && (
+        <CreateOrderDialog
+          key={faultReportDraft.id}
+          catalog={data.catalog}
+          workers={data.workload}
+          faultReportDraft={faultReportDraft}
+          onClose={() => setFaultReportDraft(null)}
+          onCreate={async (input) => {
+            await api.create(input);
+            setFaultReportDraft(null);
+            await refresh();
+            setNotice(t("Наряд выдан"));
+            setFaultReportRevision((value) => value + 1);
+          }}
+          onSuggest={(input) => api.suggestions(input)}
+          onBrigadeOptions={(areaId) => api.brigadeOptions(areaId)}
+          onSimilar={(input) => api.similarRepairs(input)}
+          onViewEvidence={(id) => api.order(id)}
+        />
+      )}
+      {faultReportDialog && data?.catalog && (user.role === "executor" || user.role === "master") && (
+        <FaultReportsDialog
+          key={`${faultReportDialog.mode}:${faultReportDialog.reportId ?? faultReportDialog.equipmentId ?? "list"}`}
+          api={api}
+          role={user.role}
+          catalog={data.catalog}
+          mode={faultReportDialog.mode}
+          reportId={faultReportDialog.reportId}
+          initialEquipmentId={faultReportDialog.equipmentId}
+          revision={liveRevision + faultReportRevision}
+          onClose={() => setFaultReportDialog(null)}
+          onPrepare={(report) => {
+            setFaultReportDialog(null);
+            setFaultReportDraft(report);
+          }}
+          onChanged={() => setFaultReportRevision((value) => value + 1)}
         />
       )}
       {selected && data && user.role !== "admin" && (
@@ -1006,6 +1099,7 @@ export default function App() {
           load={loadOrderDetail}
           revision={liveRevision}
           onAction={directAction}
+          onBrigadeOptions={(areaId) => api.brigadeOptions(areaId)}
           photoUrl={(path) => api.photoBlob(path)}
           onReport={(id) => api.orderReport(id)}
           onDowntime={(id, input) => api.downtime(id, input)}

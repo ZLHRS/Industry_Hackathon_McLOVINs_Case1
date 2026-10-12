@@ -11,7 +11,7 @@ from typing import Literal, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 
 from naryadai.analytics.contracts import AnalyticsQuery, PeriodView
 from naryadai.analytics.periods import resolve_period
@@ -226,7 +226,12 @@ async def prevention_outcomes(
         if query.executor_ids:
             filters.append(WorkOrder.executor_id.in_(query.executor_ids))
         if query.brigade_ids:
-            filters.append(Employee.brigade_id.in_(query.brigade_ids))
+            filters.append(
+                or_(
+                    WorkOrder.brigade_id.in_(query.brigade_ids),
+                    WorkOrder.brigade_id.is_(None) & Employee.brigade_id.in_(query.brigade_ids),
+                )
+            )
 
         statement = (
             select(WorkOrder, WorkOrderEvent, Equipment).join(WorkOrderEvent).join(Equipment)
@@ -235,8 +240,10 @@ async def prevention_outcomes(
             select(func.count()).select_from(WorkOrder).join(WorkOrderEvent).join(Equipment)
         )
         if query.brigade_ids:
-            statement = statement.join(Employee, Employee.id == WorkOrder.executor_id)
-            count_statement = count_statement.join(Employee, Employee.id == WorkOrder.executor_id)
+            statement = statement.outerjoin(Employee, Employee.id == WorkOrder.executor_id)
+            count_statement = count_statement.outerjoin(
+                Employee, Employee.id == WorkOrder.executor_id
+            )
         total = int(await session.scalar(count_statement.where(*filters)) or 0)
         rows = list(
             await session.execute(

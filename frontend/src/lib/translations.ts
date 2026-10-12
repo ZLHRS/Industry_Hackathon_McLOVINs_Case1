@@ -51,6 +51,42 @@ export const translations: Record<string, { kk: string; en: string }> = {
   "Найти оборудование": { kk: "Жабдықты табу", en: "Find equipment" },
   "Участок не указан": { kk: "Учаске көрсетілмеген", en: "Area not set" },
   "Оборудование не найдено.": { kk: "Жабдық табылмады.", en: "No equipment found." },
+  "Оборудование недоступно": { kk: "Жабдық қолжетімсіз", en: "Equipment unavailable" },
+  "Участок недоступен": { kk: "Учаске қолжетімсіз", en: "Area unavailable" },
+  Активно: { kk: "Белсенді", en: "Active" },
+  "В архиве или участок отключён": {
+    kk: "Мұрағатта немесе учаске өшірілген",
+    en: "Archived or area disabled",
+  },
+  "Наряды оборудования": { kk: "Жабдық нарядтары", en: "Equipment work orders" },
+  "QR-КАРТОЧКА": { kk: "QR-КАРТОЧКА", en: "QR CARD" },
+  "QR-КАРТОЧКА ОБОРУДОВАНИЯ": { kk: "ЖАБДЫҚТЫҢ QR-КАРТОЧКАСЫ", en: "EQUIPMENT QR CARD" },
+  "QR-код": { kk: "QR-код", en: "QR code" },
+  "QR-код оборудования": { kk: "Жабдықтың QR-коды", en: "Equipment QR code" },
+  "Проверьте QR-код или доступ к участку. Карточка доступна только для оборудования вашего контура.": {
+    kk: "QR-кодты немесе учаскеге қолжетімділікті тексеріңіз. Карточка тек сіздің контурыңыздағы жабдыққа қолжетімді.",
+    en: "Check the QR code or area access. This card is available only for equipment in your assigned scope.",
+  },
+  "Откройте эту карточку камерой телефона.": {
+    kk: "Осы карточканы телефон камерасымен ашыңыз.",
+    en: "Open this card with your phone camera.",
+  },
+  "Копировать ссылку": { kk: "Сілтемені көшіру", en: "Copy link" },
+  "Скачать QR-код": { kk: "QR-кодты жүктеу", en: "Download QR code" },
+  "Печать наклейки": { kk: "Жапсырманы басып шығару", en: "Print label" },
+  "Ссылка скопирована.": { kk: "Сілтеме көшірілді.", en: "Link copied." },
+  "Не удалось скопировать ссылку. Скопируйте её из строки выше.": {
+    kk: "Сілтемені көшіру мүмкін болмады. Оны жоғарыдағы жолдан көшіріңіз.",
+    en: "Could not copy the link. Copy it from the address above.",
+  },
+  "Телефон не откроет localhost. Для проверки используйте адрес туннеля.": {
+    kk: "Телефон localhost-ты ашпайды. Тексеру үшін туннель мекенжайын пайдаланыңыз.",
+    en: "A phone cannot open localhost. Use a tunnel address for testing.",
+  },
+  "Это временный адрес туннеля. После его перезапуска напечатайте новый QR-код.": {
+    kk: "Бұл туннельдің уақытша мекенжайы. Қайта іске қосқаннан кейін жаңа QR-кодты басып шығарыңыз.",
+    en: "This tunnel address is temporary. Print a new QR code after it restarts.",
+  },
   "Подбор запускается после описания и не назначает исполнителя сам.": {
     kk: "Іріктеу сипаттамадан кейін басталады және орындаушыны өзі тағайындамайды.",
     en: "Suggestions start after the description and never assign a technician automatically.",
@@ -1120,6 +1156,95 @@ export const translations: Record<string, { kk: string; en: string }> = {
   Бригада: {
     kk: "Бригада",
     en: "Team",
+  },
+  "Исполнитель или бригада": { kk: "Орындаушы немесе бригада", en: "Technician or team" },
+  "Индивидуальное назначение": { kk: "Жеке тағайындау", en: "Individual assignment" },
+  "Участников: {0}": { kk: "Қатысушылар: {0}", en: "Members: {0}" },
+  "Ответственный:": { kk: "Жауапты:", en: "Responsible:" },
+  Ответственный: { kk: "Жауапты", en: "Responsible" },
+  "Участники:": { kk: "Қатысушылар:", en: "Members:" },
+  "Бригада:": { kk: "Бригада:", en: "Team:" },
+  "Состав бригады": { kk: "Бригада құрамы", en: "Team members" },
+  "Не удалось подобрать бригаду. Выберите исполнителя или повторите попытку.": {
+    kk: "Бригаданы таңдау мүмкін болмады. Орындаушыны таңдаңыз немесе қайталап көріңіз.",
+    en: "Could not choose a team. Select a technician or try again.",
+  },
+  "Состав бригады изменился. Выберите бригаду и ответственного заново.": {
+    kk: "Бригада құрамы өзгерді. Бригада мен жауаптыны қайта таңдаңыз.",
+    en: "The team membership changed. Choose the team and responsible technician again.",
+  },
+  "Участник бригады занят другим нарядом. Завершите или приостановите его работу, либо попросите мастера проверить состав бригады.":
+    {
+      kk: "Бригада қатысушысы басқа нарядпен айналысып жатыр. Оның жұмысын аяқтаңыз не тоқтатыңыз немесе шеберден бригада құрамын тексеруді сұраңыз.",
+      en: "A team member is busy with another work order. Finish or pause that work, or ask the supervisor to check the team assignment.",
+    },
+  "Участник бригады недоступен по роли, смене или участку. Попросите мастера проверить состав бригады.": {
+    kk: "Бригада қатысушысы рөлі, ауысымы немесе учаскесі бойынша қолжетімсіз. Шеберден бригада құрамын тексеруді сұраңыз.",
+    en: "A team member is unavailable for the role, shift, or area. Ask the supervisor to check the team assignment.",
+  },
+  "Вы участник. Отчёт сдаёт {0}.": {
+    kk: "Сіз қатысушысыз. Есепті {0} тапсырады.",
+    en: "You are a participant. {0} submits the report.",
+  },
+  "Общий отчёт бригады": { kk: "Бригаданың ортақ есебі", en: "Shared team report" },
+  "Не удалось загрузить доступные бригады.": {
+    kk: "Қолжетімді бригадаларды жүктеу мүмкін болмады.",
+    en: "Could not load available teams.",
+  },
+  "Сообщить о поломке": { kk: "Ақау туралы хабарлау", en: "Report a fault" },
+  "Сообщения о поломках": { kk: "Ақаулар туралы хабарламалар", en: "Fault reports" },
+  "Сообщение о поломке": { kk: "Ақау туралы хабарлама", en: "Fault report" },
+  "Новое сообщение о поломке": { kk: "Ақау туралы жаңа хабарлама", en: "New fault report" },
+  "Опишите поломку. Мастер получит сообщение и решит, нужен ли наряд.": {
+    kk: "Ақауды сипаттаңыз. Шебер хабарламаны алып, наряд қажет пе, соны шешеді.",
+    en: "Describe the fault. The supervisor will receive the report and decide whether a work order is needed.",
+  },
+  "Выберите оборудование, мастера и опишите неисправность.": {
+    kk: "Жабдық пен шеберді таңдаңыз және ақауды сипаттаңыз.",
+    en: "Choose equipment and a supervisor, then describe the fault.",
+  },
+  "Для этого оборудования сейчас нет доступного мастера.": {
+    kk: "Бұл жабдық үшін қазір қолжетімді шебер жоқ.",
+    en: "There is no available supervisor for this equipment right now.",
+  },
+  "Что произошло": { kk: "Не болды", en: "What happened" },
+  "Отправить сообщение": { kk: "Хабарлама жіберу", en: "Send report" },
+  "Отправляем…": { kk: "Жіберілуде…", en: "Sending…" },
+  "Мои сообщения": { kk: "Менің хабарламаларым", en: "My reports" },
+  "Открытые сообщения": { kk: "Ашық хабарламалар", en: "Open reports" },
+  Открытые: { kk: "Ашық", en: "Open" },
+  "Все сообщения": { kk: "Барлық хабарламалар", en: "All reports" },
+  "Сообщений пока нет.": { kk: "Әзірге хабарламалар жоқ.", en: "There are no reports yet." },
+  Открыто: { kk: "Ашық", en: "Open" },
+  "Закрыто с пояснением": { kk: "Түсіндірмемен жабылды", en: "Closed with an explanation" },
+  "Закрыть с пояснением": { kk: "Түсіндірмемен жабу", en: "Close with an explanation" },
+  Сообщил: { kk: "Хабарлаған", en: "Reported by" },
+  "Отклонить с причиной": { kk: "Себебін көрсетіп қабылдамау", en: "Dismiss with a reason" },
+  "Подтвердить отклонение": { kk: "Қабылдамауды растау", en: "Confirm dismissal" },
+  "Открыть сообщение": { kk: "Хабарламаны ашу", en: "Open report" },
+  "Не удалось подтвердить отправку. Повторите попытку — сообщение не продублируется.": {
+    kk: "Жіберуді растау мүмкін болмады. Қайталап көріңіз — хабарлама қайталанбайды.",
+    en: "Could not confirm delivery. Try again — the report will not be duplicated.",
+  },
+  "Нет соединения. Не удалось подтвердить отправку. Повторите попытку — сообщение не продублируется.": {
+    kk: "Байланыс жоқ. Жіберуді растау мүмкін болмады. Қайталап көріңіз — хабарлама қайталанбайды.",
+    en: "No connection. Could not confirm delivery. Try again — the report will not be duplicated.",
+  },
+  "Сообщение больше недоступно. Обновите список.": {
+    kk: "Хабарлама енді қолжетімсіз. Тізімді жаңартыңыз.",
+    en: "The report is no longer available. Refresh the list.",
+  },
+  "Сообщение уже обработано. Откройте актуальный список.": {
+    kk: "Хабарлама өңделіп қойған. Өзекті тізімді ашыңыз.",
+    en: "The report has already been handled. Open the current list.",
+  },
+  "Сообщение изменилось. Проверьте актуальные данные и повторите действие.": {
+    kk: "Хабарлама өзгерді. Өзекті деректерді тексеріп, әрекетті қайталаңыз.",
+    en: "The report changed. Check the current details and try the action again.",
+  },
+  "Не удалось выполнить действие. Проверьте соединение и повторите.": {
+    kk: "Әрекетті орындау мүмкін болмады. Байланысты тексеріп, қайталаңыз.",
+    en: "Could not complete the action. Check the connection and try again.",
   },
   Применить: {
     kk: "Қолдану",

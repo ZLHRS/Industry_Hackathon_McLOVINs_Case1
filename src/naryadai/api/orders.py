@@ -9,12 +9,14 @@ from pydantic import BaseModel
 from naryadai.application.contracts import CreateOrder, OrderAction
 from naryadai.application.orders import create_order, execute_action
 from naryadai.application.queries import (
+    BrigadeOptionsView,
     EventPage,
     MasterOption,
     OrderDetail,
     OrderPage,
     OrderSort,
     WorkloadView,
+    brigade_options,
     equipment_history,
     list_orders,
     master_options,
@@ -115,6 +117,13 @@ async def orders(
 @router.get("/work-orders/masters", response_model=list[MasterOption])
 async def order_masters(principal: PrincipalDep, database: DatabaseDep) -> list[MasterOption]:
     return await master_options(database, principal)
+
+
+@router.get("/work-orders/brigade-options", response_model=BrigadeOptionsView)
+async def order_brigade_options(
+    area_id: UUID, principal: PrincipalDep, database: DatabaseDep
+) -> BrigadeOptionsView:
+    return await brigade_options(database, principal, area_id)
 
 
 @router.post("/work-orders/suggestions", response_model=SuggestionsView)

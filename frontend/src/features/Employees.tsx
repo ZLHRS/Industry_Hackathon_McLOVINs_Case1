@@ -394,7 +394,7 @@ function CreateDialog({
     }
   };
   return (
-    <Dialog title={t("Новый сотрудник")} onClose={busy ? () => undefined : onClose}>
+    <Dialog title={t("Новый сотрудник")} onClose={busy ? () => undefined : onClose} size="wide">
       <form className="dialog-form employee-form" onSubmit={(event) => void submit(event)}>
         <p className="muted">
           {t("Сначала укажите сотрудника и его работу, затем выберите участки и задайте пароль.")}
@@ -575,7 +575,7 @@ function AccessDialog({
     }
   };
   return (
-    <Dialog title={t("Доступ сотрудника")} onClose={busy ? () => undefined : onClose}>
+    <Dialog title={t("Доступ сотрудника")} onClose={busy ? () => undefined : onClose} size="wide">
       <form className="dialog-form employee-form" onSubmit={(event) => void submit(event)}>
         <div className="employee-dialog-summary">
           <strong>{employee.display_name}</strong>

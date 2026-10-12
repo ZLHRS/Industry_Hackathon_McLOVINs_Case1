@@ -69,7 +69,7 @@ class ReportWorkbook:
         sheet.set_landscape()
         sheet.fit_to_pages(1, 0)
         sheet.repeat_rows(0)
-        sheet.set_footer("ТехНаряд · &P / &N")
+        sheet.set_footer("&CТехНаряд · &P / &N")  # noqa: RUF001
         return sheet
 
     def finish(self) -> bytes:

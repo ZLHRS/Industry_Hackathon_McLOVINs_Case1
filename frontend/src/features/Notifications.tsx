@@ -52,6 +52,7 @@ type NotificationsDialogProps = {
   api: Api;
   onClose: () => void;
   onOrder: (orderId: string) => void;
+  onFaultReport: (reportId: string) => void;
   onPushBound?: (subscriptionId: string) => void;
   revision: number;
 };
@@ -60,6 +61,7 @@ export function NotificationsDialog({
   api,
   onClose,
   onOrder,
+  onFaultReport,
   onPushBound,
   revision,
 }: NotificationsDialogProps) {
@@ -192,6 +194,16 @@ export function NotificationsDialog({
                 <button type="button" className="secondary" onClick={() => onOrder(item.order_id!)}>
                   <Icon name="open" />
                   {t("Открыть наряд")}
+                </button>
+              )}
+              {item.fault_report_id && (
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => onFaultReport(item.fault_report_id!)}
+                >
+                  <Icon name="open" />
+                  {t("Открыть сообщение")}
                 </button>
               )}
               {!item.read_at && (

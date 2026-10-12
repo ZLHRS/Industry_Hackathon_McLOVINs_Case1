@@ -89,8 +89,11 @@
 .access-status.inactive::before {
   background: #b42318;
 }
-.employee-form {
-  min-width: min(720px, calc(100vw - 2.25rem));
+.dialog.dialog-wide:has(.employee-form) {
+  width: min(calc(100vw - 2rem), 54rem);
+}
+.dialog-wide .employee-form {
+  min-width: 0;
 }
 .employee-form-grid {
   display: grid;
@@ -210,6 +213,9 @@
   }
   .employee-form {
     min-width: 0;
+  }
+  .dialog.dialog-wide:has(.employee-form) {
+    width: calc(100vw - 1rem);
   }
   .employee-danger-zone {
     align-items: stretch;

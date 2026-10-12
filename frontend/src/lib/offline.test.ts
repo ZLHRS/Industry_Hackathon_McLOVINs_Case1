@@ -117,6 +117,25 @@ describe("offline executor commands", () => {
     expect((await retryPending(alice, queued.id, retry)).sent).toBe(1);
   });
 
+  it("explains when a brigade participant is busy or no longer eligible", async () => {
+    await enqueue(action("participant-busy"));
+    await enqueue(action("participant-unavailable"));
+    const send = vi.fn(async (entry: PendingAction) => {
+      throw {
+        status: 409,
+        detail: entry.orderId === "participant-busy" ? "participant_busy" : "participant_unavailable",
+      };
+    });
+    expect((await syncPending(alice, send)).blocked).toBe(2);
+    const entries = await listPending(alice);
+    expect(entries.find((entry) => entry.orderId === "participant-busy")?.error).toContain(
+      "Участник бригады занят",
+    );
+    expect(entries.find((entry) => entry.orderId === "participant-unavailable")?.error).toContain(
+      "Участник бригады недоступен",
+    );
+  });
+
   it("keeps unsent requests and stops after unauthorized or transient errors", async () => {
     await enqueue(action("a"));
     await enqueue(action("b"));

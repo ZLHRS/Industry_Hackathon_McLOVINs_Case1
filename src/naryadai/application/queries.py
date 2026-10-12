@@ -9,6 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import case, func, or_, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from naryadai.auth.dependencies import Principal
 from naryadai.domain.lifecycle import LifecycleState, WorkOrderStatus, is_overdue
@@ -16,8 +17,10 @@ from naryadai.infrastructure.database import Database
 from naryadai.infrastructure.models import (
     AIReview,
     AIReviewJob,
+    Brigade,
     Employee,
     EmployeeArea,
+    EmployeeRole,
     Equipment,
     Material,
     MaterialUsage,
@@ -25,6 +28,7 @@ from naryadai.infrastructure.models import (
     Priority,
     WorkOrder,
     WorkOrderEvent,
+    WorkOrderParticipant,
     WorkType,
 )
 
@@ -70,6 +74,8 @@ class OrderView(BaseModel):
     attempt: int
     last_submission_version: int | None
     is_synthetic: bool
+    brigade: "BrigadeAssignmentView | None" = None
+    participants: list["ParticipantView"] = Field(default_factory=list)
     overdue: bool = False
 
 
@@ -165,6 +171,36 @@ class OrderDetail(OrderView):
     executor_feedback: list[ExecutorFeedback]
 
 
+class BrigadeAssignmentView(BaseModel):
+    id: UUID
+    code: str
+    name: str
+
+
+class ParticipantView(BaseModel):
+    employee_id: UUID
+    display_name: str
+    role: Literal["responsible", "participant"]
+
+
+class BrigadeOptionParticipant(BaseModel):
+    employee_id: UUID
+    display_name: str
+    availability: Literal["free", "busy", "queued", "paused"]
+
+
+class BrigadeOptionItem(BaseModel):
+    brigade: BrigadeAssignmentView
+    participant_ids: list[UUID]
+    participants: list[BrigadeOptionParticipant]
+    excluded_count: int
+    suggested_responsible_id: UUID
+
+
+class BrigadeOptionsView(BaseModel):
+    items: list[BrigadeOptionItem]
+
+
 class EventView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
@@ -221,13 +257,83 @@ class WorkloadView(BaseModel):
     paused_count: int
 
 
-def order_view(order: WorkOrder, now: datetime) -> OrderView:
+def order_view(
+    order: WorkOrder,
+    now: datetime,
+    *,
+    brigade: BrigadeAssignmentView | None = None,
+    participants: list[ParticipantView] | None = None,
+) -> OrderView:
     view = OrderView.model_validate(order)
     return view.model_copy(
         update={
-            "overdue": is_overdue(LifecycleState(order.status), deadline=order.deadline, at=now)
+            "overdue": is_overdue(LifecycleState(order.status), deadline=order.deadline, at=now),
+            "brigade": brigade,
+            "participants": participants or [],
         }
     )
+
+
+async def _assignment_views(
+    session: AsyncSession, orders: Sequence[WorkOrder]
+) -> dict[UUID, tuple[BrigadeAssignmentView | None, list[ParticipantView]]]:
+    if not orders:
+        return {}
+    order_ids = [order.id for order in orders]
+    brigade_ids = {order.brigade_id for order in orders if order.brigade_id is not None}
+    brigades = (
+        {
+            row.id: BrigadeAssignmentView(id=row.id, code=row.code, name=row.name)
+            for row in await session.scalars(select(Brigade).where(Brigade.id.in_(brigade_ids)))
+        }
+        if brigade_ids
+        else {}
+    )
+    snapshots = list(
+        await session.scalars(
+            select(WorkOrderParticipant)
+            .where(WorkOrderParticipant.work_order_id.in_(order_ids))
+            .order_by(
+                WorkOrderParticipant.work_order_id,
+                WorkOrderParticipant.assignment_role.desc(),
+                WorkOrderParticipant.employee_id,
+            )
+        )
+    )
+    grouped: dict[UUID, list[ParticipantView]] = {order.id: [] for order in orders}
+    for item in snapshots:
+        grouped[item.work_order_id].append(
+            ParticipantView(
+                employee_id=item.employee_id,
+                display_name=item.display_name,
+                role=item.assignment_role,
+            )
+        )
+    legacy_ids = {order.executor_id for order in orders if not grouped[order.id]}
+    people = (
+        {
+            row.id: row.display_name
+            for row in await session.scalars(select(Employee).where(Employee.id.in_(legacy_ids)))
+        }
+        if legacy_ids
+        else {}
+    )
+    for order in orders:
+        if not grouped[order.id]:
+            grouped[order.id] = [
+                ParticipantView(
+                    employee_id=order.executor_id,
+                    display_name=people.get(order.executor_id, "Неизвестный исполнитель"),
+                    role="responsible",
+                )
+            ]
+    return {
+        order.id: (
+            None if order.brigade_id is None else brigades.get(order.brigade_id),
+            grouped[order.id],
+        )
+        for order in orders
+    }
 
 
 def _safe_feedback_number(value: object) -> float | None:
@@ -404,9 +510,18 @@ async def list_orders(
         attention_count = await session.scalar(
             select(func.count()).select_from(WorkOrder).where(*predicates, needs_attention)
         )
-        orders = await session.scalars(orders_query.offset(offset).limit(limit))
+        orders = list((await session.scalars(orders_query.offset(offset).limit(limit))).all())
+        assignments = await _assignment_views(session, orders)
         return OrderPage(
-            items=[order_view(row, now) for row in orders],
+            items=[
+                order_view(
+                    row,
+                    now,
+                    brigade=assignments[row.id][0],
+                    participants=assignments[row.id][1],
+                )
+                for row in orders
+            ],
             total=sum(counts.values()),
             counts=counts,
             offset=offset,
@@ -442,10 +557,152 @@ async def master_options(database: Database, principal: Principal) -> list[Maste
         ]
 
 
+async def brigade_options(
+    database: Database, principal: Principal, area_id: UUID
+) -> BrigadeOptionsView:
+    """Return a deliberately small, scope-safe brigade snapshot for issuance."""
+
+    ensure_role(principal, "master")
+    if area_id not in principal.area_ids:
+        raise OperationError(404, "area_not_found")
+    async with database.sessions() as session:
+        eligible = list(
+            (
+                await session.scalars(
+                    select(Employee)
+                    .join(EmployeeArea, EmployeeArea.employee_id == Employee.id)
+                    .where(
+                        Employee.role == EmployeeRole.EXECUTOR,
+                        Employee.is_active.is_(True),
+                        Employee.is_on_shift.is_(True),
+                        Employee.brigade_id.is_not(None),
+                        EmployeeArea.area_id == area_id,
+                    )
+                    .order_by(Employee.brigade_id, Employee.display_name, Employee.id)
+                )
+            ).all()
+        )
+        eligible_ids = {employee.id for employee in eligible}
+        loads: dict[UUID, str] = {}
+        if eligible_ids:
+            orders = list(
+                (
+                    await session.execute(
+                        select(WorkOrder.executor_id, WorkOrder.status).where(
+                            WorkOrder.executor_id.in_(eligible_ids),
+                            WorkOrder.status.not_in(
+                                [
+                                    WorkOrderStatus.REJECTED,
+                                    WorkOrderStatus.COMPLETED,
+                                    WorkOrderStatus.AI_REVIEW,
+                                    WorkOrderStatus.CLOSED,
+                                    WorkOrderStatus.CANCELLED,
+                                ]
+                            ),
+                        )
+                    )
+                ).all()
+            )
+            participant_rows = list(
+                (
+                    await session.execute(
+                        select(WorkOrderParticipant.employee_id, WorkOrder.status)
+                        .join(WorkOrder, WorkOrder.id == WorkOrderParticipant.work_order_id)
+                        .where(
+                            WorkOrderParticipant.employee_id.in_(eligible_ids),
+                            WorkOrder.status.not_in(
+                                [
+                                    WorkOrderStatus.REJECTED,
+                                    WorkOrderStatus.COMPLETED,
+                                    WorkOrderStatus.AI_REVIEW,
+                                    WorkOrderStatus.CLOSED,
+                                    WorkOrderStatus.CANCELLED,
+                                ]
+                            ),
+                        )
+                    )
+                ).all()
+            )
+            for employee_id, status in orders + participant_rows:
+                candidate = (
+                    "busy"
+                    if status is WorkOrderStatus.IN_PROGRESS
+                    else "paused"
+                    if status is WorkOrderStatus.PAUSED
+                    else "queued"
+                )
+                rank = {"free": 0, "queued": 1, "paused": 2, "busy": 3}
+                if rank[candidate] > rank.get(loads.get(employee_id, "free"), 0):
+                    loads[employee_id] = candidate
+        groups: dict[UUID, list[Employee]] = {}
+        for employee in eligible:
+            assert employee.brigade_id is not None
+            groups.setdefault(employee.brigade_id, []).append(employee)
+        brigades = {
+            brigade.id: brigade
+            for brigade in await session.scalars(
+                select(Brigade).where(Brigade.id.in_(groups)).order_by(Brigade.code)
+            )
+        }
+        all_members = {
+            brigade_id: count
+            for brigade_id, count in (
+                await session.execute(
+                    select(Employee.brigade_id, func.count())
+                    .where(Employee.brigade_id.in_(groups))
+                    .group_by(Employee.brigade_id)
+                )
+            ).all()
+        }
+        items: list[BrigadeOptionItem] = []
+        rank = {"free": 0, "queued": 1, "paused": 2, "busy": 3}
+        for brigade_id, people in groups.items():
+            if len(people) < 2 or brigade_id not in brigades:
+                continue
+            members = [
+                BrigadeOptionParticipant(
+                    employee_id=person.id,
+                    display_name=person.display_name,
+                    availability=loads.get(person.id, "free"),
+                )
+                for person in people
+            ]
+            suggested = min(
+                members,
+                key=lambda item: (
+                    rank[item.availability],
+                    item.display_name,
+                    str(item.employee_id),
+                ),
+            )
+            items.append(
+                BrigadeOptionItem(
+                    brigade=BrigadeAssignmentView(
+                        id=brigades[brigade_id].id,
+                        code=brigades[brigade_id].code,
+                        name=brigades[brigade_id].name,
+                    ),
+                    participant_ids=[member.employee_id for member in members],
+                    participants=members,
+                    excluded_count=int(all_members.get(brigade_id, len(members))) - len(members),
+                    suggested_responsible_id=suggested.employee_id,
+                )
+            )
+        items.sort(
+            key=lambda item: (
+                sum(member.availability != "free" for member in item.participants),
+                item.brigade.code,
+                str(item.brigade.id),
+            )
+        )
+        return BrigadeOptionsView(items=items)
+
+
 async def order_detail(database: Database, principal: Principal, order_id: UUID) -> OrderDetail:
     async with database.sessions.begin() as session:
         await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
         order = await get_order(session, order_id, principal)
+        assignment = (await _assignment_views(session, [order]))[order.id]
         participants = {
             employee_id: display_name
             for employee_id, display_name in (
@@ -535,7 +792,12 @@ async def order_detail(database: Database, principal: Principal, order_id: UUID)
                     )
                 )
         return OrderDetail(
-            **order_view(order, datetime.now(UTC)).model_dump(),
+            **order_view(
+                order,
+                datetime.now(UTC),
+                brigade=assignment[0],
+                participants=assignment[1],
+            ).model_dump(),
             master_name=participants[order.master_id],
             executor_name=participants[order.executor_id],
             work_description=order.work_description,
@@ -673,16 +935,29 @@ async def workload(
         ).all()
         # Include all their running jobs for truthful availability, but never reveal
         # an inaccessible order id/number or queue count across another area.
-        jobs = (
-            await session.scalars(
-                select(WorkOrder).where(
-                    WorkOrder.executor_id.in_([p.id for p in people]),
+        person_ids = [person.id for person in people]
+        job_rows = (
+            await session.execute(
+                select(WorkOrder, WorkOrderParticipant.employee_id)
+                .outerjoin(
+                    WorkOrderParticipant,
+                    WorkOrderParticipant.work_order_id == WorkOrder.id,
+                )
+                .where(
                     WorkOrder.status.in_(
                         ["issued", "accepted", "queued", "in_progress", "paused", "rework"]
+                    ),
+                    or_(
+                        WorkOrder.executor_id.in_(person_ids),
+                        WorkOrderParticipant.employee_id.in_(person_ids),
                     ),
                 )
             )
         ).all()
+        jobs_by_person: dict[UUID, dict[UUID, WorkOrder]] = {person.id: {} for person in people}
+        for job, participant_id in job_rows:
+            for employee_id in {job.executor_id, participant_id} & set(person_ids):
+                jobs_by_person[employee_id][job.id] = job
         result = []
         memberships: dict[UUID, list[UUID]] = {person.id: [] for person in people}
         for employee_id, permitted_area in (
@@ -697,7 +972,7 @@ async def workload(
         ).all():
             memberships[employee_id].append(permitted_area)
         for person in people:
-            own = [o for o in jobs if o.executor_id == person.id]
+            own = list(jobs_by_person[person.id].values())
             running = next((o for o in own if o.status == WorkOrderStatus.IN_PROGRESS), None)
             visible = [o for o in own if o.area_id in scopes]
             waiting = sum(o.status != WorkOrderStatus.IN_PROGRESS for o in visible)
