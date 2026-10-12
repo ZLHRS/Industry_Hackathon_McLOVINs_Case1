@@ -1,7 +1,8 @@
 """Read models scoped to the authenticated employee; no workflow mutations."""
 
+from collections import defaultdict
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from math import isfinite
 from typing import Any, Literal
@@ -11,17 +12,22 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import case, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from naryadai.analytics.data import Snapshot
+from naryadai.analytics.history import group_events
+from naryadai.analytics.ratings import final_submission_actor, latest_score
 from naryadai.auth.dependencies import Principal
 from naryadai.domain.lifecycle import LifecycleState, WorkOrderStatus, is_overdue
 from naryadai.infrastructure.database import Database
 from naryadai.infrastructure.models import (
     AIReview,
     AIReviewJob,
+    Area,
     Brigade,
     Employee,
     EmployeeArea,
     EmployeeRole,
     Equipment,
+    FaultCode,
     Material,
     MaterialUsage,
     Photo,
@@ -33,6 +39,7 @@ from naryadai.infrastructure.models import (
 )
 
 from .common import OperationError, ensure_role, get_order, visible_orders
+from .suggestions import _fault_match
 
 # Automated assessments and master-only factual observations are operationally
 # useful, but are not part of an executor's repair history. Keep this list
@@ -187,6 +194,13 @@ class BrigadeOptionParticipant(BaseModel):
     employee_id: UUID
     display_name: str
     availability: Literal["free", "busy", "queued", "paused"]
+    specialty: str | None = None
+    grade: int = 0
+    running_count: int = 0
+    queue_length: int = 0
+    paused_count: int = 0
+    quality_score: float | None = None
+    quality_sample_count: int = 0
 
 
 class BrigadeOptionItem(BaseModel):
@@ -195,10 +209,26 @@ class BrigadeOptionItem(BaseModel):
     participants: list[BrigadeOptionParticipant]
     excluded_count: int
     suggested_responsible_id: UUID
+    specialty_match: bool | None = None
+    matching_specialists: int = 0
+    quality_score: float | None = None
+    quality_sample_count: int = 0
+    reasons: list[str] = Field(default_factory=list)
+    responsible_reasons: list[str] = Field(default_factory=list)
+    recommended: bool = False
+
+
+class BrigadeOptionsContext(BaseModel):
+    specialty: str | None = None
+    specialty_source: Literal["confirmed", "inferred", "unknown"] = "unknown"
+    quality_history_days: int = 180
+    quality_minimum: int = 3
 
 
 class BrigadeOptionsView(BaseModel):
     items: list[BrigadeOptionItem]
+    context: BrigadeOptionsContext = Field(default_factory=BrigadeOptionsContext)
+    notes: list[str] = Field(default_factory=list)
 
 
 class EventView(BaseModel):
@@ -557,91 +587,166 @@ async def master_options(database: Database, principal: Principal) -> list[Maste
         ]
 
 
+_BRIGADE_HISTORY_DAYS = 180
+_BRIGADE_QUALITY_MINIMUM = 3
+_BRIGADE_MAX_HISTORY = 1_000
+_ACTIVE_ASSIGNMENT_STATUSES = (
+    WorkOrderStatus.ISSUED,
+    WorkOrderStatus.ACCEPTED,
+    WorkOrderStatus.QUEUED,
+    WorkOrderStatus.IN_PROGRESS,
+    WorkOrderStatus.PAUSED,
+    WorkOrderStatus.REWORK,
+)
+
+
+def _specialty_key(value: str | None) -> str:
+    return "" if value is None else " ".join(value.split()).casefold()
+
+
+def _load_key(item: BrigadeOptionParticipant) -> tuple[int, int, int]:
+    return item.running_count, item.paused_count, item.queue_length
+
+
+async def _recommendation_context(
+    session: AsyncSession,
+    *,
+    area_id: UUID,
+    equipment_id: UUID | None,
+    description: str | None,
+    fault_code_id: UUID | None,
+) -> tuple[BrigadeOptionsContext, Equipment | None, list[str]]:
+    context = BrigadeOptionsContext()
+    notes: list[str] = []
+    if equipment_id is None:
+        return context, None, notes
+    equipment = await session.scalar(
+        select(Equipment).where(Equipment.id == equipment_id, Equipment.area_id == area_id)
+    )
+    if equipment is None:
+        raise OperationError(404, "equipment_not_found")
+    if not equipment.is_active:
+        raise OperationError(409, "equipment_inactive")
+    if fault_code_id is not None:
+        fault = await session.get(FaultCode, fault_code_id)
+        if fault is None:
+            raise OperationError(404, "fault_code_not_found")
+        return (
+            context.model_copy(
+                update={"specialty": fault.specialty, "specialty_source": "confirmed"}
+            ),
+            equipment,
+            notes,
+        )
+    if not description:
+        return context, equipment, notes
+    matches: list[tuple[int, FaultCode]] = []
+    for fault in await session.scalars(select(FaultCode).order_by(FaultCode.code, FaultCode.id)):
+        score, _ = _fault_match(fault, description)
+        if score:
+            matches.append((score, fault))
+    if not matches:
+        notes.append("По описанию не удалось определить специальность: выберите шифр вручную.")
+        return context, equipment, notes
+    top_score = max(score for score, _ in matches)
+    top = [fault for score, fault in matches if score == top_score]
+    if len(top) != 1:
+        notes.append("Описание неоднозначно: специальность не выбрана автоматически.")
+        return context, equipment, notes
+    return (
+        context.model_copy(update={"specialty": top[0].specialty, "specialty_source": "inferred"}),
+        equipment,
+        notes,
+    )
+
+
 async def brigade_options(
-    database: Database, principal: Principal, area_id: UUID
+    database: Database,
+    principal: Principal,
+    area_id: UUID,
+    *,
+    equipment_id: UUID | None = None,
+    description: str | None = None,
+    fault_code_id: UUID | None = None,
 ) -> BrigadeOptionsView:
-    """Return a deliberately small, scope-safe brigade snapshot for issuance."""
+    """Return eligible brigades with deterministic, explainable planning evidence."""
 
     ensure_role(principal, "master")
     if area_id not in principal.area_ids:
         raise OperationError(404, "area_not_found")
-    async with database.sessions() as session:
+    now = datetime.now(UTC)
+    history_after = now - timedelta(days=_BRIGADE_HISTORY_DAYS)
+    async with database.sessions.begin() as session:
+        await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
+        area = await session.get(Area, area_id)
+        if area is None:
+            raise OperationError(404, "area_not_found")
+        if not area.is_active:
+            raise OperationError(409, "area_inactive")
+        context, equipment, notes = await _recommendation_context(
+            session,
+            area_id=area_id,
+            equipment_id=equipment_id,
+            description=description,
+            fault_code_id=fault_code_id,
+        )
         eligible = list(
-            (
-                await session.scalars(
-                    select(Employee)
-                    .join(EmployeeArea, EmployeeArea.employee_id == Employee.id)
-                    .where(
-                        Employee.role == EmployeeRole.EXECUTOR,
-                        Employee.is_active.is_(True),
-                        Employee.is_on_shift.is_(True),
-                        Employee.brigade_id.is_not(None),
-                        EmployeeArea.area_id == area_id,
-                    )
-                    .order_by(Employee.brigade_id, Employee.display_name, Employee.id)
+            await session.scalars(
+                select(Employee)
+                .join(EmployeeArea, EmployeeArea.employee_id == Employee.id)
+                .where(
+                    Employee.role == EmployeeRole.EXECUTOR,
+                    Employee.is_active.is_(True),
+                    Employee.is_on_shift.is_(True),
+                    Employee.brigade_id.is_not(None),
+                    EmployeeArea.area_id == area_id,
                 )
-            ).all()
+                .order_by(Employee.brigade_id, Employee.display_name, Employee.id)
+            )
         )
         eligible_ids = {employee.id for employee in eligible}
-        loads: dict[UUID, str] = {}
+        loads: dict[UUID, list[int]] = defaultdict(lambda: [0, 0, 0])
         if eligible_ids:
-            orders = list(
-                (
-                    await session.execute(
-                        select(WorkOrder.executor_id, WorkOrder.status).where(
-                            WorkOrder.executor_id.in_(eligible_ids),
-                            WorkOrder.status.not_in(
-                                [
-                                    WorkOrderStatus.REJECTED,
-                                    WorkOrderStatus.COMPLETED,
-                                    WorkOrderStatus.AI_REVIEW,
-                                    WorkOrderStatus.CLOSED,
-                                    WorkOrderStatus.CANCELLED,
-                                ]
-                            ),
-                        )
-                    )
-                ).all()
-            )
-            participant_rows = list(
-                (
-                    await session.execute(
-                        select(WorkOrderParticipant.employee_id, WorkOrder.status)
-                        .join(WorkOrder, WorkOrder.id == WorkOrderParticipant.work_order_id)
-                        .where(
-                            WorkOrderParticipant.employee_id.in_(eligible_ids),
-                            WorkOrder.status.not_in(
-                                [
-                                    WorkOrderStatus.REJECTED,
-                                    WorkOrderStatus.COMPLETED,
-                                    WorkOrderStatus.AI_REVIEW,
-                                    WorkOrderStatus.CLOSED,
-                                    WorkOrderStatus.CANCELLED,
-                                ]
-                            ),
-                        )
-                    )
-                ).all()
-            )
-            for employee_id, status in orders + participant_rows:
-                candidate = (
-                    "busy"
-                    if status is WorkOrderStatus.IN_PROGRESS
-                    else "paused"
-                    if status is WorkOrderStatus.PAUSED
-                    else "queued"
+            workload_rows = await session.execute(
+                select(
+                    WorkOrder.id,
+                    WorkOrder.executor_id,
+                    WorkOrder.status,
+                    WorkOrderParticipant.employee_id,
                 )
-                rank = {"free": 0, "queued": 1, "paused": 2, "busy": 3}
-                if rank[candidate] > rank.get(loads.get(employee_id, "free"), 0):
-                    loads[employee_id] = candidate
-        groups: dict[UUID, list[Employee]] = {}
+                .outerjoin(
+                    WorkOrderParticipant,
+                    WorkOrderParticipant.work_order_id == WorkOrder.id,
+                )
+                .where(
+                    WorkOrder.status.in_(_ACTIVE_ASSIGNMENT_STATUSES),
+                    (WorkOrder.executor_id.in_(eligible_ids))
+                    | (WorkOrderParticipant.employee_id.in_(eligible_ids)),
+                )
+            )
+            seen: set[tuple[UUID, UUID]] = set()
+            for order_id, executor_id, status, participant_id in workload_rows:
+                for employee_id in {executor_id, participant_id} & eligible_ids:
+                    marker = (employee_id, order_id)
+                    if marker in seen:
+                        continue
+                    seen.add(marker)
+                    values = loads[employee_id]
+                    if status is WorkOrderStatus.IN_PROGRESS:
+                        values[0] += 1
+                    elif status is WorkOrderStatus.PAUSED:
+                        values[2] += 1
+                    else:
+                        values[1] += 1
+
+        groups: dict[UUID, list[Employee]] = defaultdict(list)
         for employee in eligible:
             assert employee.brigade_id is not None
-            groups.setdefault(employee.brigade_id, []).append(employee)
+            groups[employee.brigade_id].append(employee)
         brigades = {
             brigade.id: brigade
             for brigade in await session.scalars(
-                select(Brigade).where(Brigade.id.in_(groups)).order_by(Brigade.code)
+                select(Brigade).where(Brigade.id.in_(groups)).order_by(Brigade.code, Brigade.id)
             )
         }
         all_members = {
@@ -654,48 +759,245 @@ async def brigade_options(
                 )
             ).all()
         }
+
+        personal_scores: dict[UUID, list[int]] = defaultdict(list)
+        brigade_scores: dict[UUID, list[int]] = defaultdict(list)
+        if equipment is not None and groups:
+            history_rows = list(
+                await session.scalars(
+                    select(WorkOrder)
+                    .join(Equipment, Equipment.id == WorkOrder.equipment_id)
+                    .where(
+                        WorkOrder.area_id.in_(principal.area_ids),
+                        WorkOrder.status == WorkOrderStatus.CLOSED,
+                        WorkOrder.closed_at.is_not(None),
+                        WorkOrder.closed_at >= history_after,
+                        WorkOrder.closed_at <= now,
+                        Equipment.equipment_type == equipment.equipment_type,
+                    )
+                    .order_by(WorkOrder.closed_at.desc(), WorkOrder.id)
+                    .limit(_BRIGADE_MAX_HISTORY + 1)
+                )
+            )
+            history_truncated = len(history_rows) > _BRIGADE_MAX_HISTORY
+            history_orders = history_rows[:_BRIGADE_MAX_HISTORY]
+            if history_truncated:
+                notes.append(
+                    f"Для качества учтены последние {_BRIGADE_MAX_HISTORY} закрытых работ за "
+                    f"{_BRIGADE_HISTORY_DAYS} дней."
+                )
+            history_ids = [order.id for order in history_orders]
+            events = (
+                list(
+                    await session.scalars(
+                        select(WorkOrderEvent)
+                        .where(WorkOrderEvent.work_order_id.in_(history_ids))
+                        .order_by(WorkOrderEvent.work_order_id, WorkOrderEvent.sequence)
+                    )
+                )
+                if history_ids
+                else []
+            )
+            reviews = (
+                list(
+                    await session.scalars(
+                        select(AIReview)
+                        .where(AIReview.work_order_id.in_(history_ids))
+                        .order_by(
+                            AIReview.work_order_id, AIReview.order_version, AIReview.created_at
+                        )
+                    )
+                )
+                if history_ids
+                else []
+            )
+            history = Snapshot(
+                orders=history_orders,
+                events=group_events(events),
+                reviews=reviews,
+                usages=[],
+                employees={},
+                equipment={},
+                areas={},
+                brigades={},
+                faults={},
+                norms={},
+            )
+            for order in history_orders:
+                score = latest_score(order, history)
+                if score is None:
+                    continue
+                actor = final_submission_actor(order, history)
+                if actor in eligible_ids:
+                    personal_scores[actor].append(score)
+                if order.brigade_id in groups:
+                    brigade_scores[order.brigade_id].append(score)
+
         items: list[BrigadeOptionItem] = []
-        rank = {"free": 0, "queued": 1, "paused": 2, "busy": 3}
+        option_keys: dict[UUID, tuple[object, ...]] = {}
+        required_specialty = _specialty_key(context.specialty)
         for brigade_id, people in groups.items():
             if len(people) < 2 or brigade_id not in brigades:
                 continue
-            members = [
-                BrigadeOptionParticipant(
-                    employee_id=person.id,
-                    display_name=person.display_name,
-                    availability=loads.get(person.id, "free"),
+            members: list[BrigadeOptionParticipant] = []
+            for person in people:
+                running, queued, paused = loads[person.id]
+                availability: Literal["free", "busy", "queued", "paused"] = (
+                    "busy" if running else "paused" if paused else "queued" if queued else "free"
                 )
-                for person in people
+                samples = personal_scores[person.id]
+                members.append(
+                    BrigadeOptionParticipant(
+                        employee_id=person.id,
+                        display_name=person.display_name,
+                        availability=availability,
+                        specialty=person.specialty,
+                        grade=person.grade,
+                        running_count=running,
+                        queue_length=queued,
+                        paused_count=paused,
+                        quality_score=(
+                            round(sum(samples) / len(samples), 2)
+                            if len(samples) >= _BRIGADE_QUALITY_MINIMUM
+                            else None
+                        ),
+                        quality_sample_count=len(samples),
+                    )
+                )
+            matching = [
+                member
+                for member in members
+                if required_specialty and _specialty_key(member.specialty) == required_specialty
             ]
-            suggested = min(
-                members,
-                key=lambda item: (
-                    rank[item.availability],
-                    item.display_name,
-                    str(item.employee_id),
+            specialty_match = None if not required_specialty else bool(matching)
+            ranked_members = matching if matching else members
+            by_load = sorted({_load_key(member) for member in ranked_members})
+            responsible = None
+            quality_skipped = False
+            for candidate_load in by_load:
+                tied = [member for member in ranked_members if _load_key(member) == candidate_load]
+                best_grade = max(member.grade for member in tied)
+                tied = [member for member in tied if member.grade == best_grade]
+                if len(tied) > 1 and all(member.quality_score is not None for member in tied):
+                    tied.sort(
+                        key=lambda member: (
+                            -float(member.quality_score or 0),
+                            member.display_name,
+                            str(member.employee_id),
+                        )
+                    )
+                else:
+                    quality_skipped = quality_skipped or len(tied) > 1
+                    tied.sort(key=lambda member: (member.display_name, str(member.employee_id)))
+                responsible = tied[0]
+                break
+            assert responsible is not None
+            team_samples = brigade_scores[brigade_id]
+            team_quality = (
+                round(sum(team_samples) / len(team_samples), 2)
+                if len(team_samples) >= _BRIGADE_QUALITY_MINIMUM
+                else None
+            )
+            reasons = [
+                (
+                    f"Специалистов по «{context.specialty}»: {len(matching)}."
+                    if required_specialty
+                    else "Специальность не подтверждена: бригада не отфильтрована по профилю."
                 ),
-            )
-            items.append(
-                BrigadeOptionItem(
-                    brigade=BrigadeAssignmentView(
-                        id=brigades[brigade_id].id,
-                        code=brigades[brigade_id].code,
-                        name=brigades[brigade_id].name,
-                    ),
-                    participant_ids=[member.employee_id for member in members],
-                    participants=members,
-                    excluded_count=int(all_members.get(brigade_id, len(members))) - len(members),
-                    suggested_responsible_id=suggested.employee_id,
+                "Текущая нагрузка команды показана без деталей чужих нарядов.",
+            ]
+            if team_quality is None:
+                reasons.append(
+                    f"Оценённых закрытых бригадных работ: {len(team_samples)}; "
+                    f"для качества нужно не менее {_BRIGADE_QUALITY_MINIMUM}."
                 )
+            else:
+                reasons.append(
+                    f"Средняя итоговая оценка бригады: {team_quality:.2f}/5 "
+                    f"по {len(team_samples)} закрытым работам за {_BRIGADE_HISTORY_DAYS} дней."
+                )
+            responsible_reasons = [
+                (
+                    f"Профиль «{responsible.specialty}» соответствует контексту."
+                    if required_specialty and responsible in matching
+                    else (
+                        f"В составе нет специалиста по «{context.specialty}»; "  # noqa: RUF001
+                        "ответственный предложен только для ручного выбора."
+                        if required_specialty
+                        else (
+                            "Контекст специальности не подтверждён; "
+                            "профиль не использован как ограничение."
+                        )
+                    )
+                ),
+                "Выбран по текущей нагрузке, затем по разряду; разряд не является допуском.",
+            ]
+            if responsible.quality_score is None:
+                responsible_reasons.append(
+                    "Качество не меняло порядок: оценённых работ "
+                    f"{responsible.quality_sample_count}, "
+                    f"нужно не менее {_BRIGADE_QUALITY_MINIMUM}."
+                )
+            else:
+                responsible_reasons.append(
+                    f"Средняя итоговая оценка: {responsible.quality_score:.2f}/5 по "
+                    f"{responsible.quality_sample_count} работам."
+                )
+            if quality_skipped:
+                responsible_reasons.append(
+                    "При равных условиях качество не сравнивалось без полной выборки."
+                )
+            item = BrigadeOptionItem(
+                brigade=BrigadeAssignmentView(
+                    id=brigades[brigade_id].id,
+                    code=brigades[brigade_id].code,
+                    name=brigades[brigade_id].name,
+                ),
+                participant_ids=[member.employee_id for member in members],
+                participants=members,
+                excluded_count=int(all_members.get(brigade_id, len(members))) - len(members),
+                suggested_responsible_id=responsible.employee_id,
+                specialty_match=specialty_match,
+                matching_specialists=len(matching),
+                quality_score=team_quality,
+                quality_sample_count=len(team_samples),
+                reasons=reasons,
+                responsible_reasons=responsible_reasons,
             )
-        items.sort(
-            key=lambda item: (
-                sum(member.availability != "free" for member in item.participants),
-                item.brigade.code,
-                str(item.brigade.id),
+            items.append(item)
+            size = len(members)
+            option_keys[brigade_id] = (
+                0 if specialty_match else 1,
+                sum(member.running_count for member in members) / size,
+                sum(member.paused_count for member in members) / size,
+                sum(member.queue_length for member in members) / size,
+                -responsible.grade,
             )
-        )
-        return BrigadeOptionsView(items=items)
+
+        ordered_items: list[BrigadeOptionItem] = []
+        for key in sorted(set(option_keys.values())):
+            tied_options = [item for item in items if option_keys[item.brigade.id] == key]
+            if len(tied_options) > 1 and all(
+                item.quality_score is not None for item in tied_options
+            ):
+                tied_options.sort(
+                    key=lambda item: (
+                        -float(item.quality_score or 0),
+                        item.brigade.code,
+                        str(item.brigade.id),
+                    )
+                )
+            else:
+                tied_options.sort(key=lambda item: (item.brigade.code, str(item.brigade.id)))
+            for item in tied_options:
+                item.reasons.append("Порядок стабилен при одинаковых доступных данных.")
+            ordered_items.extend(tied_options)
+        items = ordered_items
+        if required_specialty and items and items[0].specialty_match:
+            items[0].recommended = True
+        elif required_specialty:
+            notes.append("Нет бригад с подтверждённым профильным специалистом на смене.")  # noqa: RUF001
+        return BrigadeOptionsView(items=items, context=context, notes=notes)
 
 
 async def order_detail(database: Database, principal: Principal, order_id: UUID) -> OrderDetail:

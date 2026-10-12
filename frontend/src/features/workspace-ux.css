@@ -389,6 +389,21 @@
 .brigade-members {
   color: #49625d !important;
 }
+.brigade-rationale {
+  border-left: 2px solid #cadbd5;
+  color: #49625d;
+  font-size: 0.86rem;
+  line-height: 1.4;
+  padding-left: 0.7rem;
+}
+.brigade-rationale summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.brigade-rationale p {
+  margin: 0.4rem 0 0;
+  overflow-wrap: anywhere;
+}
 .brigade-selection {
   display: grid;
   gap: 0.2rem;
@@ -399,6 +414,10 @@
   color: #2e5149;
   font-size: 0.86rem;
   line-height: 1.4;
+}
+.brigade-selection-warning {
+  color: #8a4e18;
+  font-weight: 700;
 }
 .order-brigade {
   color: #315f55;

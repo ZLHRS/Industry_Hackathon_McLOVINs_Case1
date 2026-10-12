@@ -21,6 +21,7 @@ import type {
   Catalog,
   BrigadeAssignmentOption,
   BrigadeAssignmentOptions,
+  BrigadeOptionsRequest,
   CreateOrder,
   MasterOption,
   Order,
@@ -71,6 +72,40 @@ function brigadeAvailabilityLabel(value: BrigadeAssignmentOption["participants"]
   return t("Пауза");
 }
 
+function crewAvailability(option: BrigadeAssignmentOption) {
+  const free = option.participants.filter((person) => person.availability === "free").length;
+  return t("Свободны {0} из {1}", [free, option.participants.length]);
+}
+
+function brigadeSpecialtySummary(
+  option: BrigadeAssignmentOption,
+  context: BrigadeAssignmentOptions["context"],
+) {
+  if (context.specialty && option.specialty_match) {
+    return t("Специалист по {0}: {1}", [context.specialty, option.matching_specialists]);
+  }
+  if (context.specialty && option.specialty_match === false) {
+    return t("Нет подтверждённого специалиста по {0}", [context.specialty]);
+  }
+  if (context.specialty_source === "inferred" && context.specialty) {
+    return t("Специальность определена по описанию: {0}", [context.specialty]);
+  }
+  return t("Специальность не определена");
+}
+
+function brigadeQualitySummary(option: BrigadeAssignmentOption) {
+  if (option.quality_score === null || option.quality_sample_count <= 0) {
+    return t("Недостаточно данных о качестве");
+  }
+  return t("Качество: {0}/5 по {1} нарядам", [option.quality_score.toFixed(1), option.quality_sample_count]);
+}
+
+function responsibleSummary(person: BrigadeAssignmentOption["participants"][number] | undefined) {
+  if (!person) return "—";
+  const availability = brigadeAvailabilityLabel(person.availability);
+  return `${person.display_name} · ${person.grade} ${t("разряд")} · ${availability}`;
+}
+
 export function OrdersView({
   role,
   page,
@@ -114,7 +149,7 @@ export function OrdersView({
   }) => Promise<OrderSuggestions>;
   onSimilar: (input: SimilarRepairsRequest) => Promise<import("../types").SimilarRepairs>;
   onViewEvidence: (id: string) => Promise<OrderDetail>;
-  onBrigadeOptions: (areaId: string) => Promise<BrigadeAssignmentOptions>;
+  onBrigadeOptions: (input: BrigadeOptionsRequest) => Promise<BrigadeAssignmentOptions>;
   loading: boolean;
 }) {
   const [creating, setCreating] = useState(false);
@@ -736,7 +771,7 @@ export function CreateOrderDialog({
     "id" | "area_id" | "equipment_id" | "description"
   >;
   onViewEvidence?: (id: string) => Promise<OrderDetail>;
-  onBrigadeOptions: (areaId: string) => Promise<BrigadeAssignmentOptions>;
+  onBrigadeOptions: (input: BrigadeOptionsRequest) => Promise<BrigadeAssignmentOptions>;
 }) {
   const initialEquipment = catalog.equipment.find(
     (item) =>
@@ -808,7 +843,7 @@ export function CreateOrderDialog({
     input.description.trim(),
     input.fault_code_id,
   ].join("|");
-  const canSuggest = Boolean(input.area_id && input.equipment_id && input.description.trim());
+  const canSuggest = Boolean(input.area_id && input.equipment_id && input.description.trim().length >= 3);
   const [receivedKey, setReceivedKey] = useState("");
   const selectedEquipment = activeEquipment.find((item) => item.id === input.equipment_id);
   const selectedNorm = catalog.time_norms.find(
@@ -859,8 +894,14 @@ export function CreateOrderDialog({
     const timer = window.setTimeout(() => {
       setBrigadesLoading(true);
       setBrigadesError("");
+      const context: BrigadeOptionsRequest = {
+        area_id: input.area_id,
+        equipment_id: input.equipment_id,
+        description: input.description.trim(),
+        ...(input.fault_code_id ? { fault_code_id: input.fault_code_id } : {}),
+      };
       void brigadeOptionsRef
-        .current(input.area_id)
+        .current(context)
         .then((result) => {
           if (request !== brigadeRequestId.current) return;
           setBrigadeOptions(result);
@@ -875,7 +916,7 @@ export function CreateOrderDialog({
         });
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [brigadeRefresh, canSuggest, input.area_id]);
+  }, [brigadeRefresh, canSuggest, input.area_id, input.description, input.equipment_id, input.fault_code_id]);
 
   useEffect(() => {
     const description = input.description.trim();
@@ -997,6 +1038,8 @@ export function CreateOrderDialog({
     selectedSuggestedExecutor ??
     workers.find((person) => person.employee_id === input.executor_id);
   const selectedBrigade = brigadeOptions?.items.find((item) => item.brigade.id === input.brigade_id) ?? null;
+  const recommendedBrigade = brigadeOptions?.items.find((item) => item.recommended) ?? null;
+  const featuredBrigade = selectedBrigade ?? recommendedBrigade ?? brigadeOptions?.items[0] ?? null;
   const selectedBrigadeResponsible = selectedBrigade?.participants.find(
     (person) => person.employee_id === input.executor_id,
   );
@@ -1187,15 +1230,24 @@ export function CreateOrderDialog({
           )}
           {(activeSuggestions || brigadeOptions) && (
             <div className="suggestion-results">
-              {brigadeOptions?.items[0] &&
+              {featuredBrigade &&
                 (() => {
-                  const option = brigadeOptions.items[0];
+                  const result = brigadeOptions;
+                  if (!result) return null;
+                  const option = featuredBrigade;
                   const responsible = option.participants.find(
-                    (person) => person.employee_id === option.suggested_responsible_id,
+                    (person) =>
+                      person.employee_id ===
+                      (input.brigade_id === option.brigade.id
+                        ? input.executor_id
+                        : option.suggested_responsible_id),
                   );
+                  const responsibleChosenManually =
+                    input.brigade_id === option.brigade.id &&
+                    input.executor_id !== option.suggested_responsible_id;
                   return (
                     <section className="brigade-suggestion" aria-label={t("Бригада")}>
-                      <h4>{t("Бригада")}</h4>
+                      <h4>{option.recommended ? t("Рекомендуемая бригада") : t("Доступная бригада")}</h4>
                       <button
                         className="suggestion-card quick-choice quick-executor-choice quick-brigade-choice"
                         type="button"
@@ -1216,25 +1268,56 @@ export function CreateOrderDialog({
                             {option.brigade.code} · {option.brigade.name}
                           </strong>
                           <small>
-                            {t("Участников: {0}", [option.participants.length])} · {t("Ответственный:")}{" "}
-                            {responsible?.display_name ?? "—"}
+                            {brigadeSpecialtySummary(option, result.context)} · {crewAvailability(option)} ·{" "}
+                            {brigadeQualitySummary(option)}
                           </small>
-                          <small className="brigade-members">
-                            {option.participants
-                              .map(
-                                (person) =>
-                                  `${person.display_name} · ${brigadeAvailabilityLabel(person.availability)}`,
-                              )
-                              .join("; ")}
+                          <small
+                            className="brigade-members"
+                            data-testid={`brigade-responsible-summary-${option.brigade.id}`}
+                          >
+                            {t("Ответственный:")} {responsibleSummary(responsible)}
                           </small>
                         </div>
                         <span className="quick-choice-action">
                           {input.brigade_id === option.brigade.id ? t("Выбрано") : t("Выбрать")}
                         </span>
                       </button>
+                      <details className="brigade-rationale" data-testid={`brigade-why-${option.brigade.id}`}>
+                        <summary>{t("Почему этот состав")}</summary>
+                        <div data-testid={`brigade-reasons-${option.brigade.id}`}>
+                          <p>{option.reasons.map(message).join(" · ") || t("Причины не указаны.")}</p>
+                          <p>
+                            {responsibleChosenManually
+                              ? t("Ответственный выбран мастером.")
+                              : `${t("Ответственный:")} ${option.responsible_reasons.map(message).join(" · ") || "—"}`}
+                          </p>
+                          {result.notes.map((note, index) => (
+                            <p className="muted" key={index}>
+                              {message(note)}
+                            </p>
+                          ))}
+                        </div>
+                      </details>
                     </section>
                   );
                 })()}
+              {brigadeOptions &&
+                brigadeOptions.items.length > 0 &&
+                (brigadeOptions.context.specialty_source !== "confirmed" ||
+                  !brigadeOptions.items.some((item) => item.recommended)) && (
+                  <p className="muted suggestion-note" data-testid="brigade-context-note">
+                    {brigadeOptions.notes.map(message).join(" · ") ||
+                      (brigadeOptions.context.specialty_source === "inferred"
+                        ? t("Специальность определена по описанию: {0}", [
+                            brigadeOptions.context.specialty ?? "—",
+                          ])
+                        : brigadeOptions.context.specialty_source === "unknown"
+                          ? t("Специальность не определена")
+                          : brigadeOptions.context.specialty
+                            ? t("Нет подтверждённого специалиста по {0}", [brigadeOptions.context.specialty])
+                            : t("Подтверждённой рекомендации по бригаде нет."))}
+                  </p>
+                )}
               {activeSuggestions && activeSuggestions.executors.length > 0 && (
                 <section>
                   <h4>{t("Исполнители")}</h4>
@@ -1513,14 +1596,31 @@ export function CreateOrderDialog({
                   {selectedBrigade.brigade.code} · {selectedBrigade.brigade.name}
                 </strong>
                 <span>
-                  {t("Участники:")}{" "}
-                  {selectedBrigade.participants.map((person) => person.display_name).join(", ")}
+                  {brigadeSpecialtySummary(
+                    selectedBrigade,
+                    brigadeOptions?.context ?? {
+                      specialty: null,
+                      specialty_source: "unknown",
+                      quality_history_days: 180,
+                      quality_minimum: 3,
+                    },
+                  )}{" "}
+                  · {crewAvailability(selectedBrigade)} · {brigadeQualitySummary(selectedBrigade)}
                 </span>
+                <span>
+                  {t("Ответственный:")} {responsibleSummary(selectedBrigadeResponsible)}
+                </span>
+                {selectedBrigade.specialty_match === false && (
+                  <span className="brigade-selection-warning">
+                    {t("В бригаде нет подходящего специалиста")}
+                  </span>
+                )}
               </p>
             )}
             <label>
-              {t("Исполнитель")}
+              {selectedBrigade ? t("Ответственный") : t("Исполнитель")}
               <select
+                aria-label={selectedBrigade ? t("Ответственный") : t("Исполнитель")}
                 value={input.executor_id}
                 onChange={(event) => {
                   setSelectedSuggestedExecutor(null);

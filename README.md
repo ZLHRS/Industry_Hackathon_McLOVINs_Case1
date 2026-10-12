@@ -170,6 +170,7 @@ chmod 600 var/docker/industrial-credentials.txt
 - [Импорт справочников из Excel](docs/excel-import.md)
 - [Помощник мастера: ответы со ссылками на наряды](docs/master-assistant.md)
 - [Наряд бригаде: ответственный и участники](docs/brigade-assignment.md)
+- [Как подбираются бригада и ответственный](docs/brigade-recommendations.md)
 - [Локальная разработка и тесты фронтенда](docs/stage-04.md)
 - [Настройка проверки ремонта](docs/stage-06.md)
 - [Архитектура](docs/architecture.md)

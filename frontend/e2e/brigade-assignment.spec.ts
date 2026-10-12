@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 const state = JSON.parse(readFileSync(resolve(import.meta.dirname, "../../tmp/e2e-server.json"), "utf8"));
 const marker = crypto.randomUUID().slice(0, 8);
+const faultCode = `BG-${marker}`;
 const headers = (token: string) => ({
   Authorization: `Bearer ${token}`,
   "Idempotency-Key": crypto.randomUUID(),
@@ -65,6 +66,11 @@ test.beforeAll(async ({ request }) => {
   master = await authenticate(request, state.master_login);
   const admin = await authenticate(request, state.admin_login);
   const me = await (await request.get("/api/v1/auth/me", { headers: headers(master) })).json();
+  const fault = await request.post("/api/v1/catalog/fault-codes", {
+    headers: headers(admin),
+    data: { code: faultCode, name: "Контроль привода", specialty: "mechanic" },
+  });
+  expect(fault.status()).toBe(201);
   const brigade = await request.post("/api/v1/catalog/brigades", {
     headers: headers(admin),
     data: { code: `000-${9999999999999 - Date.now()}-${marker}`, name: "Бригада обслуживания привода" },
@@ -113,7 +119,7 @@ for (const width of [390, 1440]) {
     const dialog = page.getByRole("dialog");
     await dialog.locator('[data-testid^="quick-equipment-"]').first().tap();
     await dialog.getByLabel("Описание", { exact: true }).tap();
-    await page.keyboard.insertText(`Проверить привод и затяжку креплений ${marker}`);
+    await page.keyboard.insertText(`Проверить привод и затяжку креплений ${marker}, шифр ${faultCode}`);
     const choice = dialog.getByTestId(`quick-brigade-${brigadeId}`);
     await expect(choice).toContainText("Бригада обслуживания привода");
     await expect(choice).toContainText("Алексей Петров");
@@ -291,7 +297,7 @@ test("reassignment revokes former participants and preserves the single-worker p
 
 test("unavailable brigade options do not block individual issuance", async ({ page, request }) => {
   await login(page, state.master_login);
-  await page.route("**/api/v1/work-orders/brigade-options?*", (route) =>
+  await page.route("**/api/v1/work-orders/brigade-options", (route) =>
     route.fulfill({
       status: 503,
       contentType: "application/json",
@@ -322,7 +328,9 @@ test("changed brigade roster requires an explicit new selection", async ({ page,
   await page.getByRole("button", { name: "Выдать наряд", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.locator('[data-testid^="quick-equipment-"]').first().click();
-  await dialog.getByLabel("Описание", { exact: true }).fill("Проверить привод после изменения состава смены");
+  await dialog
+    .getByLabel("Описание", { exact: true })
+    .fill(`Проверить привод после изменения состава смены, шифр ${faultCode}`);
   const choice = dialog.getByTestId(`quick-brigade-${brigadeId}`);
   await choice.click();
   await dialog.getByTestId("quick-deadline-2h").click();
@@ -349,7 +357,7 @@ test("changed brigade roster requires an explicit new selection", async ({ page,
   expect((await changed).status()).toBe(409);
   await expect(choice).toHaveAttribute("aria-pressed", "false");
   await expect(dialog.getByLabel("Описание", { exact: true })).toHaveValue(
-    "Проверить привод после изменения состава смены",
+    `Проверить привод после изменения состава смены, шифр ${faultCode}`,
   );
   await choice.click();
   const issued = page.waitForResponse(
@@ -374,7 +382,7 @@ test("brigade choices survive real typing and refresh after editing within the s
   const dialog = page.getByRole("dialog");
   await dialog.locator('[data-testid^="quick-equipment-"]').first().click();
   const description = dialog.getByLabel("Описание", { exact: true });
-  await description.pressSequentially("Проверить привод после остановки", { delay: 30 });
+  await description.pressSequentially(`Проверить привод после остановки, шифр ${faultCode}`, { delay: 30 });
   const choice = dialog.getByTestId(`quick-brigade-${brigadeId}`);
   await expect(choice).toBeVisible();
   await choice.click();
@@ -403,19 +411,32 @@ test("brigade choices survive real typing and refresh after editing within the s
 
 test("brigade lookup explains an empty roster and lets a failed request retry", async ({ page }) => {
   let mode: "empty" | "failed" | "live" = "empty";
-  await page.route("**/api/v1/work-orders/brigade-options?*", async (route) => {
+  await page.route("**/api/v1/work-orders/brigade-options", async (route) => {
     if (mode === "live") return route.continue();
     return route.fulfill({
       status: mode === "empty" ? 200 : 503,
       contentType: "application/json",
-      body: JSON.stringify(mode === "empty" ? { items: [] } : { detail: "unavailable" }),
+      body: JSON.stringify(
+        mode === "empty"
+          ? {
+              items: [],
+              context: {
+                specialty: null,
+                specialty_source: "unknown",
+                quality_history_days: 180,
+                quality_minimum: 3,
+              },
+              notes: [],
+            }
+          : { detail: "unavailable" },
+      ),
     });
   });
   await login(page, state.master_login);
   await page.getByRole("button", { name: "Выдать наряд", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.locator('[data-testid^="quick-equipment-"]').first().click();
-  await dialog.getByLabel("Описание", { exact: true }).fill("Проверить крепления привода");
+  await dialog.getByLabel("Описание", { exact: true }).fill(`Проверить крепления привода, шифр ${faultCode}`);
   await expect(dialog.getByTestId("brigade-empty")).toContainText("не менее двух");
   mode = "failed";
   await dialog.getByLabel("Описание", { exact: true }).pressSequentially(" и кожух");

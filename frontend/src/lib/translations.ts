@@ -1158,6 +1158,45 @@ export const translations: Record<string, { kk: string; en: string }> = {
     en: "Team",
   },
   "Исполнитель или бригада": { kk: "Орындаушы немесе бригада", en: "Technician or team" },
+  "Рекомендуемая бригада": { kk: "Ұсынылған бригада", en: "Recommended team" },
+  "Доступная бригада": { kk: "Қолжетімді бригада", en: "Available team" },
+  "Почему этот состав": { kk: "Неліктен осы құрам", en: "Why this team" },
+  "Причины не указаны.": { kk: "Себептер көрсетілмеген.", en: "No reasons provided." },
+  "Свободны {0} из {1}": { kk: "Бос: {1} ішінен {0}", en: "Available: {0} of {1}" },
+  "Специалист по {0}: {1}": { kk: "{0} бойынша маман: {1}", en: "{0} specialists: {1}" },
+  "Нет подтверждённого специалиста по {0}": {
+    kk: "{0} бойынша расталған маман жоқ",
+    en: "No confirmed specialist for {0}",
+  },
+  "Специальность определена по описанию: {0}": {
+    kk: "Мамандық сипаттамадан анықталды: {0}",
+    en: "Specialty inferred from the description: {0}",
+  },
+  "Специальность не определена": { kk: "Мамандық анықталмады", en: "Specialty is not determined" },
+  "Качество: {0}/5 по {1} нарядам": {
+    kk: "Сапа: {1} наряд бойынша {0}/5",
+    en: "Quality: {0}/5 from {1} work orders",
+  },
+  "Недостаточно данных о качестве": {
+    kk: "Сапа туралы дерек жеткіліксіз",
+    en: "Not enough quality data",
+  },
+  "Подтверждённой рекомендации по бригаде нет.": {
+    kk: "Бригада бойынша расталған ұсыныс жоқ.",
+    en: "There is no confirmed team recommendation.",
+  },
+  "Специальность бригады не подтверждена": {
+    kk: "Бригада мамандығы расталмаған",
+    en: "The team specialty is not confirmed",
+  },
+  "Ответственный выбран мастером.": {
+    kk: "Жауаптыны шебер таңдады.",
+    en: "The responsible technician was chosen by the supervisor.",
+  },
+  "В бригаде нет подходящего специалиста": {
+    kk: "Бригадада сәйкес маман жоқ",
+    en: "The team has no matching specialist",
+  },
   "Индивидуальное назначение": { kk: "Жеке тағайындау", en: "Individual assignment" },
   "Участников: {0}": { kk: "Қатысушылар: {0}", en: "Members: {0}" },
   "Ответственный:": { kk: "Жауапты:", en: "Responsible:" },

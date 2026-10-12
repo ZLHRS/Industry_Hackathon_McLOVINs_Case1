@@ -502,9 +502,16 @@ export class Api {
   workload(areaId?: string) {
     return this.request<Workload[]>(`/workload${areaId ? `?area_id=${areaId}` : ""}`);
   }
-  brigadeOptions(areaId: string) {
+  brigadeOptions(input: import("./types").BrigadeOptionsRequest | string) {
+    if (typeof input !== "string") {
+      return this.request<import("./types").BrigadeAssignmentOptions>("/work-orders/brigade-options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+    }
     return this.request<import("./types").BrigadeAssignmentOptions>(
-      `/work-orders/brigade-options?area_id=${encodeURIComponent(areaId)}`,
+      `/work-orders/brigade-options?area_id=${encodeURIComponent(input)}`,
     );
   }
   equipmentHistory(id: string, offset = 0) {

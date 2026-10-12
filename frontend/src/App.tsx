@@ -903,7 +903,7 @@ export default function App() {
               setFaultReportDialog({ mode: user.role === "master" ? "master" : "executor" })
             }
             onSuggest={(input) => api.suggestions(input)}
-            onBrigadeOptions={(areaId) => api.brigadeOptions(areaId)}
+            onBrigadeOptions={(input) => api.brigadeOptions(input)}
             onSimilar={(input) => api.similarRepairs(input)}
             onViewEvidence={(id) => api.order(id)}
             onHistory={async (equipmentId) =>
@@ -1026,7 +1026,7 @@ export default function App() {
               await refresh();
             }}
             onSuggest={(input) => api.suggestions(input)}
-            onBrigadeOptions={(areaId) => api.brigadeOptions(areaId)}
+            onBrigadeOptions={(input) => api.brigadeOptions(input)}
             onSimilar={(input) => api.similarRepairs(input)}
             onViewEvidence={(id) => api.order(id)}
           />
@@ -1045,7 +1045,7 @@ export default function App() {
             setNotice(t("Наряд выдан"));
           }}
           onSuggest={(input) => api.suggestions(input)}
-          onBrigadeOptions={(areaId) => api.brigadeOptions(areaId)}
+          onBrigadeOptions={(input) => api.brigadeOptions(input)}
           onSimilar={(input) => api.similarRepairs(input)}
           onViewEvidence={(id) => api.order(id)}
         />
@@ -1065,7 +1065,7 @@ export default function App() {
             setFaultReportRevision((value) => value + 1);
           }}
           onSuggest={(input) => api.suggestions(input)}
-          onBrigadeOptions={(areaId) => api.brigadeOptions(areaId)}
+          onBrigadeOptions={(input) => api.brigadeOptions(input)}
           onSimilar={(input) => api.similarRepairs(input)}
           onViewEvidence={(id) => api.order(id)}
         />
@@ -1099,7 +1099,7 @@ export default function App() {
           load={loadOrderDetail}
           revision={liveRevision}
           onAction={directAction}
-          onBrigadeOptions={(areaId) => api.brigadeOptions(areaId)}
+          onBrigadeOptions={(input) => api.brigadeOptions(input)}
           photoUrl={(path) => api.photoBlob(path)}
           onReport={(id) => api.orderReport(id)}
           onDowntime={(id, input) => api.downtime(id, input)}

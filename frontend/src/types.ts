@@ -95,6 +95,13 @@ export interface BrigadeAssignmentMember {
   employee_id: string;
   display_name: string;
   availability: "free" | "busy" | "queued" | "paused";
+  specialty: string | null;
+  grade: number;
+  running_count: number;
+  queue_length: number;
+  paused_count: number;
+  quality_score: number | null;
+  quality_sample_count: number;
 }
 export interface BrigadeAssignmentOption {
   brigade: OrderBrigade;
@@ -102,9 +109,30 @@ export interface BrigadeAssignmentOption {
   participants: BrigadeAssignmentMember[];
   excluded_count: number;
   suggested_responsible_id: string;
+  specialty_match: boolean | null;
+  matching_specialists: number;
+  quality_score: number | null;
+  quality_sample_count: number;
+  reasons: string[];
+  responsible_reasons: string[];
+  recommended: boolean;
+}
+export interface BrigadeAssignmentContext {
+  specialty: string | null;
+  specialty_source: "confirmed" | "inferred" | "unknown";
+  quality_history_days: number;
+  quality_minimum: number;
+}
+export interface BrigadeOptionsRequest {
+  area_id: string;
+  equipment_id: string;
+  description: string;
+  fault_code_id?: string;
 }
 export interface BrigadeAssignmentOptions {
   items: BrigadeAssignmentOption[];
+  context: BrigadeAssignmentContext;
+  notes: string[];
 }
 export interface Material {
   id: string;

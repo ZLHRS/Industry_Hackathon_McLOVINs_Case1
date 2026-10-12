@@ -297,6 +297,37 @@ describe("similar repairs", () => {
   });
 });
 
+describe("brigade recommendations", () => {
+  it("sends the complete issue context when ranking brigades", async () => {
+    const input = {
+      area_id: "area",
+      equipment_id: "equipment",
+      description: "Проверить электрический привод",
+      fault_code_id: "fault",
+    };
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ items: [], context: {}, notes: [] })));
+    vi.stubGlobal("fetch", fetcher);
+
+    await new Api(() => "session").brigadeOptions(input);
+
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/v1/work-orders/brigade-options");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual(input);
+  });
+
+  it("keeps the area-only request for a contextless reassign fallback", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ items: [], context: {}, notes: [] })));
+    vi.stubGlobal("fetch", fetcher);
+
+    await new Api(() => "session").brigadeOptions("area");
+
+    expect((fetcher.mock.calls[0] as unknown as [string])[0]).toBe(
+      "/api/v1/work-orders/brigade-options?area_id=area",
+    );
+  });
+});
+
 describe("central authentication and private photo boundaries", () => {
   it("invalidates on every authenticated 401, including image downloads", async () => {
     const onUnauthorized = vi.fn(async () => undefined);

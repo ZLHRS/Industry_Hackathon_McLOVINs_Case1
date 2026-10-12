@@ -4,7 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Header, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from naryadai.application.contracts import CreateOrder, OrderAction
 from naryadai.application.orders import create_order, execute_action
@@ -50,6 +50,24 @@ class MutationView(BaseModel):
     order_id: UUID
     version: int
     status: WorkOrderStatus
+
+
+class BrigadeOptionsRequest(BaseModel):
+    """Context used only to explain and rank already eligible brigade options."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    area_id: UUID
+    equipment_id: UUID
+    description: str = Field(min_length=3, max_length=10_000)
+    fault_code_id: UUID | None = None
+
+    @field_validator("description")
+    @classmethod
+    def require_plain_text(cls, value: str) -> str:
+        if "\x00" in value:
+            raise ValueError("description_must_not_contain_null")
+        return value
 
 
 @router.post("/work-orders", response_model=MutationView, status_code=201)
@@ -124,6 +142,20 @@ async def order_brigade_options(
     area_id: UUID, principal: PrincipalDep, database: DatabaseDep
 ) -> BrigadeOptionsView:
     return await brigade_options(database, principal, area_id)
+
+
+@router.post("/work-orders/brigade-options", response_model=BrigadeOptionsView)
+async def order_brigade_recommendations(
+    body: BrigadeOptionsRequest, principal: PrincipalDep, database: DatabaseDep
+) -> BrigadeOptionsView:
+    return await brigade_options(
+        database,
+        principal,
+        body.area_id,
+        equipment_id=body.equipment_id,
+        description=body.description,
+        fault_code_id=body.fault_code_id,
+    )
 
 
 @router.post("/work-orders/suggestions", response_model=SuggestionsView)

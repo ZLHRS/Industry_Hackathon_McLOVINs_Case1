@@ -17,6 +17,7 @@ import {
 import type {
   ActionRequest,
   BrigadeAssignmentOptions,
+  BrigadeOptionsRequest,
   Catalog,
   EventItem,
   OrderDetail,
@@ -215,7 +216,7 @@ type Props = {
     rejectionEventId: string,
     input: { expected_version: number; justified: boolean; reason: string },
   ) => Promise<unknown>;
-  onBrigadeOptions: (areaId: string) => Promise<BrigadeAssignmentOptions>;
+  onBrigadeOptions: (input: BrigadeOptionsRequest | string) => Promise<BrigadeAssignmentOptions>;
   revision: number;
   onClose: () => void;
 };
@@ -374,7 +375,14 @@ export function OrderDetailDialog({
     if (!detail || (!force && (reassignBrigades || reassignBrigadesLoading))) return;
     setReassignBrigadesLoading(true);
     try {
-      setReassignBrigades(await onBrigadeOptions(detail.area_id));
+      setReassignBrigades(
+        await onBrigadeOptions({
+          area_id: detail.area_id,
+          equipment_id: detail.equipment_id,
+          description: detail.description,
+          ...(detail.fault_code_id ? { fault_code_id: detail.fault_code_id } : {}),
+        }),
+      );
     } catch {
       setError(t("Не удалось загрузить доступные бригады."));
     } finally {
