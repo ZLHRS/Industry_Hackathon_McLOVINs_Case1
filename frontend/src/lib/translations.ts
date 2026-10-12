@@ -1165,6 +1165,11 @@ export const translations: Record<string, { kk: string; en: string }> = {
   "Участники:": { kk: "Қатысушылар:", en: "Members:" },
   "Бригада:": { kk: "Бригада:", en: "Team:" },
   "Состав бригады": { kk: "Бригада құрамы", en: "Team members" },
+  "Нет доступных бригад: нужны не менее двух сотрудников одной бригады на смене с доступом к этому участку.":
+    {
+      kk: "Қолжетімді бригада жоқ: осы учаскеге рұқсаты бар, ауысымдағы бір бригаданың кемінде екі қызметкері қажет.",
+      en: "No eligible brigades: at least two on-shift members of the same brigade must have access to this area.",
+    },
   "Не удалось подобрать бригаду. Выберите исполнителя или повторите попытку.": {
     kk: "Бригаданы таңдау мүмкін болмады. Орындаушыны таңдаңыз немесе қайталап көріңіз.",
     en: "Could not choose a team. Select a technician or try again.",

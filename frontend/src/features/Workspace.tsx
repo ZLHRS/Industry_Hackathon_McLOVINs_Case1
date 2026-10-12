@@ -829,8 +829,18 @@ export function CreateOrderDialog({
       setBrigadesError("");
       setReceivedKey("");
       setBrigadeOptions(null);
+      setBrigadeRefresh((value) => value + 1);
     }
-    setInput(invalidatesSuggestions ? { ...next, brigade_id: "", participant_ids: [] } : next);
+    setInput(
+      invalidatesSuggestions
+        ? {
+            ...next,
+            brigade_id: "",
+            participant_ids: [],
+            executor_id: input.brigade_id ? "" : next.executor_id,
+          }
+        : next,
+    );
   };
   useEffect(
     () => () => {
@@ -1155,8 +1165,24 @@ export function CreateOrderDialog({
             </p>
           )}
           {brigadesError && (
-            <p className="muted suggestion-note" role="status">
-              {brigadesError}
+            <div className="suggestion-note" role="status">
+              <p className="muted">{brigadesError}</p>
+              <button
+                type="button"
+                className="secondary"
+                data-testid="brigade-retry"
+                disabled={brigadesLoading}
+                onClick={() => setBrigadeRefresh((value) => value + 1)}
+              >
+                {t("Повторить")}
+              </button>
+            </div>
+          )}
+          {canSuggest && !brigadesLoading && !brigadesError && brigadeOptions?.items.length === 0 && (
+            <p className="muted suggestion-note" data-testid="brigade-empty">
+              {t(
+                "Нет доступных бригад: нужны не менее двух сотрудников одной бригады на смене с доступом к этому участку.",
+              )}
             </p>
           )}
           {(activeSuggestions || brigadeOptions) && (

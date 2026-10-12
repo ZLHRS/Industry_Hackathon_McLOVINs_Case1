@@ -364,3 +364,65 @@ test("changed brigade roster requires an explicit new selection", async ({ page,
     (await action(request, id, { action: "cancel", reason: "Проверка нового состава завершена" })).status(),
   ).toBe(200);
 });
+
+test("brigade choices survive real typing and refresh after editing within the same area", async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page, state.master_login);
+  await page.getByRole("button", { name: "Выдать наряд", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator('[data-testid^="quick-equipment-"]').first().click();
+  const description = dialog.getByLabel("Описание", { exact: true });
+  await description.pressSequentially("Проверить привод после остановки", { delay: 30 });
+  const choice = dialog.getByTestId(`quick-brigade-${brigadeId}`);
+  await expect(choice).toBeVisible();
+  await choice.click();
+  await description.press("End");
+  await description.pressSequentially(" ");
+  await expect(choice).toBeVisible();
+  await expect(choice).toHaveAttribute("aria-pressed", "false");
+  await description.pressSequentially("и крепление", { delay: 30 });
+  await expect(choice).toBeVisible();
+  await dialog.getByText("Дополнительные параметры", { exact: true }).click();
+  await expect(dialog.getByRole("combobox", { name: "Исполнитель", exact: true })).toHaveValue("");
+  const equipment = dialog.getByRole("combobox", { name: "Оборудование", exact: true });
+  const options = await equipment
+    .locator("option")
+    .evaluateAll((nodes) => nodes.map((node) => (node as HTMLOptionElement).value).filter(Boolean));
+  const previous = await equipment.inputValue();
+  const other = options.find((id) => id !== previous);
+  expect(other).toBeTruthy();
+  await equipment.selectOption(other!);
+  await expect(choice).toBeVisible();
+  await choice.click();
+  await expect(choice).toHaveAttribute("aria-pressed", "true");
+  await choice.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath("brigade-after-typing-390.png") });
+});
+
+test("brigade lookup explains an empty roster and lets a failed request retry", async ({ page }) => {
+  let mode: "empty" | "failed" | "live" = "empty";
+  await page.route("**/api/v1/work-orders/brigade-options?*", async (route) => {
+    if (mode === "live") return route.continue();
+    return route.fulfill({
+      status: mode === "empty" ? 200 : 503,
+      contentType: "application/json",
+      body: JSON.stringify(mode === "empty" ? { items: [] } : { detail: "unavailable" }),
+    });
+  });
+  await login(page, state.master_login);
+  await page.getByRole("button", { name: "Выдать наряд", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator('[data-testid^="quick-equipment-"]').first().click();
+  await dialog.getByLabel("Описание", { exact: true }).fill("Проверить крепления привода");
+  await expect(dialog.getByTestId("brigade-empty")).toContainText("не менее двух");
+  mode = "failed";
+  await dialog.getByLabel("Описание", { exact: true }).pressSequentially(" и кожух");
+  const retry = dialog.getByTestId("brigade-retry");
+  await expect(retry).toBeVisible();
+  await expect(dialog.getByTestId("brigade-empty")).toHaveCount(0);
+  mode = "live";
+  await retry.click();
+  await expect(dialog.getByTestId(`quick-brigade-${brigadeId}`)).toBeVisible();
+});
