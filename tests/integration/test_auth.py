@@ -465,3 +465,26 @@ async def test_invalid_secret_not_echoed_in_validation_error(database):
         assert response.status_code == 422
         assert secret not in response.text
         assert "input" not in response.json()["detail"][0]
+
+
+async def test_default_login_budget_allows_corrections_but_still_blocks_abuse(database):
+    await people(database)
+    app = app_for(database)
+    assert app.state.settings.login_account_limit == 30
+    assert app.state.settings.login_peer_limit == 300
+    async with (
+        app.router.lifespan_context(app),
+        AsyncClient(transport=ASGITransport(app), base_url="http://testserver") as client,
+    ):
+        for _ in range(29):
+            response = await client.post(
+                "/api/v1/auth/login", json={"login": "executor", "secret": "wrong-password"}
+            )
+            assert response.status_code == 401
+        await token(client)
+        blocked = await client.post(
+            "/api/v1/auth/login", json={"login": "executor", "secret": SECRET}
+        )
+        assert blocked.status_code == 429
+        assert "retry-after" in blocked.headers
+        await token(client, "master")

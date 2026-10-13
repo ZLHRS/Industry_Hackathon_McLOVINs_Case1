@@ -46,6 +46,7 @@ export class ApiError extends Error {
 const prefix = "/api/v1";
 const keyPrefix = "naryadai.mutation.";
 const pendingKeys = new Map<string, string>();
+const catalogTtlMs = 15_000;
 
 /** Only request fingerprints and UUIDs are stored here, never payloads or credentials. */
 export function clearMutationKeys(): void {
@@ -244,10 +245,40 @@ function forgetMutation(fingerprint: string): void {
 
 export class Api {
   private inFlight = new Map<string, Promise<unknown>>();
+  // This stays on the Api instance: instances are recreated for each access token.
+  // Catalog data is intentionally never persisted outside this short-lived memory cache.
+  private catalogCache: { value: Catalog; expiresAt: number } | undefined;
+  private catalogInFlight: { generation: number; task: Promise<Catalog> } | undefined;
+  private catalogGeneration = 0;
+  private principalScope: string | undefined;
   constructor(
     private getToken: () => string | null,
     private onUnauthorized?: (invalidToken: string) => void | Promise<void>,
   ) {}
+
+  invalidateCatalog(): void {
+    this.catalogGeneration += 1;
+    this.catalogCache = undefined;
+  }
+
+  private catalogMutation(path: string, init: RequestInit): boolean {
+    const method = (init.method ?? "GET").toUpperCase();
+    return (
+      path.startsWith("/catalog") &&
+      method !== "GET" &&
+      method !== "HEAD" &&
+      path !== "/catalog/import/preview"
+    );
+  }
+
+  private updatePrincipalScope(user: User): void {
+    const next = `${user.id}\n${user.role}\n${[...user.area_ids].sort().join("\n")}`;
+    if (next === this.principalScope) return;
+    // A catalog loaded before /auth/me is not known to belong to this principal either.
+    if (this.principalScope !== undefined || this.catalogCache || this.catalogInFlight)
+      this.invalidateCatalog();
+    this.principalScope = next;
+  }
 
   private async response(path: string, init: RequestInit = {}): Promise<Response> {
     const token = this.getToken();
@@ -256,6 +287,7 @@ export class Api {
     if (token) headers.set("Authorization", `Bearer ${token}`);
     const response = await fetch(`${prefix}${path}`, { ...init, headers, cache: "no-store" });
     if (!response.ok) {
+      if (response.status === 401 || response.status === 403) this.invalidateCatalog();
       if (response.status === 401 && token) await this.onUnauthorized?.(token);
       let detail = `HTTP ${response.status}`;
       try {
@@ -269,8 +301,16 @@ export class Api {
     return response;
   }
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const response = await this.response(path, init);
-    return response.status === 204 ? (undefined as T) : (response.json() as Promise<T>);
+    // Clear before sending, including a request whose result is ambiguous after a network loss.
+    const invalidatesCatalog = this.catalogMutation(path, init);
+    if (invalidatesCatalog) this.invalidateCatalog();
+    try {
+      const response = await this.response(path, init);
+      return response.status === 204 ? (undefined as T) : (response.json() as Promise<T>);
+    } finally {
+      // A catalog load started while the mutation was pending may have read the prior server state.
+      if (invalidatesCatalog) this.invalidateCatalog();
+    }
   }
 
   private async mutate<T = Mutation>(
@@ -318,13 +358,37 @@ export class Api {
     });
   }
   me() {
-    return this.request<User>("/auth/me");
+    return this.request<User>("/auth/me").then((user) => {
+      this.updatePrincipalScope(user);
+      return user;
+    });
   }
   logout() {
+    this.invalidateCatalog();
+    this.principalScope = undefined;
     return this.request<void>("/auth/logout", { method: "POST" });
   }
   catalog() {
-    return this.request<Catalog>("/catalog");
+    const now = Date.now();
+    if (this.catalogCache && this.catalogCache.expiresAt > now)
+      return Promise.resolve(this.catalogCache.value);
+
+    const generation = this.catalogGeneration;
+    if (this.catalogInFlight?.generation === generation) return this.catalogInFlight.task;
+
+    const task = this.request<Catalog>("/catalog").then((catalog) => {
+      // Invalidation does not cancel a network request, so never let a stale response refill the cache.
+      if (this.catalogGeneration === generation)
+        this.catalogCache = { value: catalog, expiresAt: Date.now() + catalogTtlMs };
+      return catalog;
+    });
+    this.catalogInFlight = { generation, task };
+    void task
+      .finally(() => {
+        if (this.catalogInFlight?.task === task) this.catalogInFlight = undefined;
+      })
+      .catch(() => undefined);
+    return task;
   }
   async catalogImportTemplate() {
     const response = await this.response("/catalog/import-template.xlsx");

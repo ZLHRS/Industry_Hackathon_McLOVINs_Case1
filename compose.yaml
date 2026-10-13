@@ -19,6 +19,8 @@ x-runtime: &runtime
     - photos:/app/var/photos
   environment: &app-environment
     NARYADAI_ENVIRONMENT: production
+    NARYADAI_LOGIN_ACCOUNT_LIMIT: ${NARYADAI_LOGIN_ACCOUNT_LIMIT:-30}
+    NARYADAI_LOGIN_PEER_LIMIT: ${NARYADAI_LOGIN_PEER_LIMIT:-300}
     NARYADAI_ALLOWED_HOSTS: '${NARYADAI_ALLOWED_HOSTS:-["localhost","127.0.0.1"]}'
     NARYADAI_CORS_ORIGINS: '${NARYADAI_CORS_ORIGINS:-[]}'
     NARYADAI_PHOTO_ROOT: /app/var/photos

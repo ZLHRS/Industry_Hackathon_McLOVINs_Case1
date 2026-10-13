@@ -517,6 +517,7 @@ export default function App() {
         if (revision < latestRevision) return;
         latestRevision = revision;
         setLiveRevision(revision);
+        api.invalidateCatalog();
         void refreshRef.current(user);
         updateCount();
       },
@@ -1058,7 +1059,10 @@ export default function App() {
               catalog={data?.catalog ?? null}
               employees={data?.employees ?? []}
               api={api}
-              onCatalogChange={refresh}
+              onCatalogChange={() => {
+                api.invalidateCatalog();
+                return refresh();
+              }}
               onEmployees={() => setView("employees")}
               onEmployeeOrders={openEmployeeOrders}
               onEquipmentQr={(equipmentId) => navigate("/equipment/" + equipmentId)}

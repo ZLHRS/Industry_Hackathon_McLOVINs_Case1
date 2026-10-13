@@ -42,7 +42,7 @@ def test_browser_login_budget_is_local_to_guarded_test_settings(monkeypatch) -> 
     monkeypatch.setattr(_MODULE, "Settings", lambda: original)
     browser = _MODULE._browser_settings()
     assert browser.login_account_limit == 500
-    assert original.login_account_limit <= 20
+    assert original.login_account_limit <= 200
     with pytest.raises(ValidationError):
         Settings(login_account_limit=500)
     unsafe = original.model_copy(

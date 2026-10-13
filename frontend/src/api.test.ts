@@ -81,9 +81,197 @@ beforeEach(() => {
   clearMutationKeys();
 });
 afterEach(() => {
+  vi.useRealTimers();
   clearMutationKeys();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+const catalogResponse = (marker: string) =>
+  new Response(
+    JSON.stringify({
+      marker,
+      areas: [],
+      equipment: [],
+      brigades: [],
+      fault_codes: [],
+      materials: [],
+      time_norms: [],
+    }),
+  );
+
+describe("per-instance catalog cache", () => {
+  it("coalesces concurrent catalog loads and uses the value for only 15 seconds", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetcher = vi.fn(async () => {
+      await gate;
+      return catalogResponse("first");
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const api = new Api(() => "session");
+
+    const first = api.catalog();
+    const second = api.catalog();
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    release();
+    expect(await first).toMatchObject({ marker: "first" });
+    expect(await second).toMatchObject({ marker: "first" });
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-13T00:00:00Z"));
+    const ttlFetcher = vi
+      .fn()
+      .mockResolvedValueOnce(catalogResponse("cached"))
+      .mockResolvedValueOnce(catalogResponse("fresh"));
+    vi.stubGlobal("fetch", ttlFetcher);
+    const ttlApi = new Api(() => "session");
+    await ttlApi.catalog();
+    await ttlApi.catalog();
+    vi.advanceTimersByTime(14_999);
+    await ttlApi.catalog();
+    expect(ttlFetcher).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(await ttlApi.catalog()).toMatchObject({ marker: "fresh" });
+    expect(ttlFetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not let an invalidated in-flight response repopulate the cache", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetcher = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        await gate;
+        return catalogResponse("stale");
+      })
+      .mockResolvedValueOnce(catalogResponse("fresh"));
+    vi.stubGlobal("fetch", fetcher);
+    const api = new Api(() => "session");
+
+    const stale = api.catalog();
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    api.invalidateCatalog();
+    expect(await api.catalog()).toMatchObject({ marker: "fresh" });
+    release();
+    expect(await stale).toMatchObject({ marker: "stale" });
+    expect(await api.catalog()).toMatchObject({ marker: "fresh" });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("invalidates before catalog mutations, including an ambiguous failed request", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(catalogResponse("before"))
+      .mockRejectedValueOnce(new TypeError("connection lost after submit"))
+      .mockResolvedValueOnce(catalogResponse("after"));
+    vi.stubGlobal("fetch", fetcher);
+    const api = new Api(() => "admin-token");
+
+    expect(await api.catalog()).toMatchObject({ marker: "before" });
+    await expect(api.createArea({ code: "A-1", name: "Участок" })).rejects.toThrow("connection lost");
+    expect(await api.catalog()).toMatchObject({ marker: "after" });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("drops a catalog value loaded while an ambiguous catalog mutation is settling", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetcher = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        await gate;
+        throw new TypeError("connection lost after submit");
+      })
+      .mockResolvedValueOnce(catalogResponse("during-mutation"))
+      .mockResolvedValueOnce(catalogResponse("after-settlement"));
+    vi.stubGlobal("fetch", fetcher);
+    const api = new Api(() => "admin-token");
+
+    const mutation = api.createArea({ code: "A-1", name: "Участок" });
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    expect(await api.catalog()).toMatchObject({ marker: "during-mutation" });
+    release();
+    await expect(mutation).rejects.toThrow("connection lost");
+    expect(await api.catalog()).toMatchObject({ marker: "after-settlement" });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([401, 403])("drops cached catalog data after a %s response", async (status) => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(catalogResponse("before"))
+      .mockResolvedValueOnce(new Response('{"detail":"access changed"}', { status }))
+      .mockResolvedValueOnce(catalogResponse("after"));
+    vi.stubGlobal("fetch", fetcher);
+    const api = new Api(() => "session");
+
+    await api.catalog();
+    await expect(api.orders()).rejects.toBeInstanceOf(ApiError);
+    expect(await api.catalog()).toMatchObject({ marker: "after" });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("drops cached catalog data on logout", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(catalogResponse("before"))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(catalogResponse("after"));
+    vi.stubGlobal("fetch", fetcher);
+    const api = new Api(() => "session");
+
+    await api.catalog();
+    await api.logout();
+    expect(await api.catalog()).toMatchObject({ marker: "after" });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("drops cache when /auth/me reports a changed role or area scope", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ id: "user", login: "u", display_name: "User", role: "master", area_ids: ["a"] }),
+        ),
+      )
+      .mockResolvedValueOnce(catalogResponse("master"))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ id: "user", login: "u", display_name: "User", role: "executor", area_ids: ["b"] }),
+        ),
+      )
+      .mockResolvedValueOnce(catalogResponse("executor"));
+    vi.stubGlobal("fetch", fetcher);
+    const api = new Api(() => "unchanged-token");
+
+    await api.me();
+    expect(await api.catalog()).toMatchObject({ marker: "master" });
+    await api.me();
+    expect(await api.catalog()).toMatchObject({ marker: "executor" });
+    expect(fetcher).toHaveBeenCalledTimes(4);
+  });
+
+  it("keeps catalog values isolated between Api instances for different tokens", async () => {
+    const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
+      const token = new Headers(init.headers).get("Authorization")?.replace("Bearer ", "") ?? "none";
+      return catalogResponse(token);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const alice = new Api(() => "alice-token");
+    const bob = new Api(() => "bob-token");
+
+    expect(await alice.catalog()).toMatchObject({ marker: "alice-token" });
+    expect(await alice.catalog()).toMatchObject({ marker: "alice-token" });
+    expect(await bob.catalog()).toMatchObject({ marker: "bob-token" });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("mutation recovery after a committed response is lost", () => {

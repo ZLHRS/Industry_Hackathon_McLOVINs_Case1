@@ -33,8 +33,8 @@ class Settings(BaseSettings):
     database_url: SecretStr | None = None
     session_ttl_seconds: int = Field(default=28800, ge=60, le=86400)
     login_window_seconds: int = Field(default=900, ge=60, le=3600)
-    login_account_limit: int = Field(default=5, ge=1, le=20)
-    login_peer_limit: int = Field(default=50, ge=1, le=200)
+    login_account_limit: int = Field(default=30, ge=1, le=200)
+    login_peer_limit: int = Field(default=300, ge=1, le=2000)
 
     worker_interval_seconds: float = Field(default=2.0, ge=0.1, le=60)
     reminder_minutes: int = Field(default=30, ge=1, le=1440)
