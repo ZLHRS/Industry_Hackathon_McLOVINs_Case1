@@ -166,8 +166,9 @@ async def scenario(database, data, settings, store, name: str) -> dict:
         feedback = await order_detail(database, data["first"], order_id)
         assert feedback.executor_feedback[0].score == original_score, "Executor cannot see AI score"
         if negative:
-            assert verdict is AiAssessment.REWORK_REQUIRED and status is WorkOrderStatus.REWORK
-            master_decision = "not_closed_rework_required"
+            assert verdict is AiAssessment.REWORK_REQUIRED and status is WorkOrderStatus.AI_REVIEW
+            assert manual is True
+            master_decision = "awaiting_master_with_rework_recommendation"
         else:
             assert verdict in {AiAssessment.ACCEPTED, AiAssessment.ACCEPTED_WITH_REMARKS}, (
                 "Positive repair unexpectedly requires rework"
@@ -178,7 +179,7 @@ async def scenario(database, data, settings, store, name: str) -> dict:
                 data["master"],
                 order_id,
                 OrderAction(
-                    action="override_close" if manual else "close",
+                    action="close",
                     expected_version=version,
                     reason="Synthetic verification: master inspected the repair and limitations.",
                     master_score=4,

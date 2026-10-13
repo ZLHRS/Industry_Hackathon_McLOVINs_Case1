@@ -9,15 +9,15 @@ const local = (value: string) =>
     timeZone: "Asia/Almaty",
   }).format(new Date(value));
 
-const verdictLabels: Record<string, string> = {
+const recommendationLabels: Record<string, string> = {
   get accepted() {
-    return t("Принято");
+    return t("ИИ рекомендует принять работу");
   },
   get accepted_with_remarks() {
-    return t("Принято с замечаниями");
+    return t("ИИ рекомендует принять с замечаниями");
   },
   get rework_required() {
-    return t("Нужна доработка");
+    return t("ИИ рекомендует вернуть на доработку");
   },
 };
 const sourceLabels: Record<NonNullable<ReviewReport["source"]>, string> = {
@@ -90,7 +90,7 @@ function ReviewSummary({ review }: { review: Review }) {
   const source = review.report?.source;
   return (
     <div className="review-summary">
-      <strong>{verdictLabels[review.verdict ?? ""] || t("Предварительный вывод не сформирован")}</strong>
+      <strong>{recommendationLabels[review.verdict ?? ""] || t("ИИ не дал рекомендации")}</strong>
       <span>{source ? sourceLabels[source] : t("Архивная проверка")}</span>
       <small>{local(review.created_at)}</small>
     </div>
@@ -117,7 +117,7 @@ export function AIReviewReport({
   aiJob?: AiJob | null;
   attempt?: number;
   audience?: "executor" | "reviewer";
-  decisionResolved?: false | "closed" | "cancelled";
+  decisionResolved?: false | "closed" | "cancelled" | "rework";
 }) {
   if (!review) {
     return (
@@ -156,13 +156,15 @@ export function AIReviewReport({
             {t("Автоматическая проверка")}
             {attempt ? t(" · попытка ремонта {0}", [attempt]) : ""}
           </p>
-          <h3>{verdictLabels[review.verdict ?? ""] || t("Предварительный вывод не сформирован")}</h3>
+          <h3>{recommendationLabels[review.verdict ?? ""] || t("ИИ не дал рекомендации")}</h3>
         </div>
         <span className={`review-badge ${!decisionResolved && needsAttention ? "warning" : "pass"}`}>
           {decisionResolved
             ? decisionResolved === "cancelled"
               ? t("Наряд отменён")
-              : t("Решение мастера принято")
+              : decisionResolved === "rework"
+                ? t("Мастер вернул на доработку")
+                : t("Решение мастера принято")
             : review.needs_master_review
               ? t("Ожидает решения мастера")
               : t("Рекомендация готова")}
@@ -170,7 +172,11 @@ export function AIReviewReport({
       </div>
       {decisionResolved && (
         <p className="muted">
-          {decisionResolved === "cancelled" ? t("Наряд отменён.") : t("Наряд закрыт.")}{" "}
+          {decisionResolved === "cancelled"
+            ? t("Наряд отменён.")
+            : decisionResolved === "rework"
+              ? t("Наряд возвращён на доработку.")
+              : t("Наряд закрыт.")}{" "}
           {t("Ниже сохранён предварительный вывод проверки на момент сдачи.")}
         </p>
       )}
@@ -301,7 +307,7 @@ function ExecutorFeedbackEntry({
           <p className="eyebrow">
             {t("РЕЗУЛЬТАТ ВАШЕЙ СДАЧИ · ПОПЫТКА")} {feedback.attempt ?? "—"}
           </p>
-          <h3>{verdictLabels[feedback.verdict ?? ""] || t("Итог проверки")}</h3>
+          <h3>{recommendationLabels[feedback.verdict ?? ""] || t("ИИ не дал рекомендации")}</h3>
         </div>
         <span className={`review-badge ${decided || historical ? "pass" : "warning"}`}>{badge}</span>
       </div>

@@ -139,6 +139,7 @@ def test_planted_patterns_match_operational_rows(dataset) -> None:
     ]
     assert rework_orders
     assert {item["executor_id"] for item in rework_orders} == {rework_orders[0]["executor_id"]}
+    # The fixture represents historical, pre-policy rework orders.
     assert all(item["status"] == "rework" for item in rework_orders)
     assert all(reviews[item["id"]]["verdict"] == "rework_required" for item in rework_orders)
 

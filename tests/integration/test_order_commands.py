@@ -165,6 +165,7 @@ async def test_order_completion_review_rework_and_new_submission(database) -> No
         )
         assert original_review is not None
         assert original_review.verdict is AiAssessment.ACCEPTED
+        assert original_review.needs_master_review is True
     rework = await execute_action(
         database,
         data["master"],
@@ -236,6 +237,31 @@ async def test_order_completion_review_rework_and_new_submission(database) -> No
         )
         assert len(reviews) == 1
         assert order.status is WorkOrderStatus.COMPLETED
+
+    second_review = await apply_review(
+        database,
+        UUID(created["order_id"]),
+        expected_order_version=resubmitted["version"],
+        submission_version=resubmitted["version"],
+        verdict=AiAssessment.ACCEPTED,
+        needs_master_review=False,
+        score=5,
+        explanation="The revised submission includes the requested reading.",
+        model_name="test-model",
+    )
+    assert second_review["status"] == WorkOrderStatus.AI_REVIEW.value
+    accepted_by_master = await execute_action(
+        database,
+        data["master"],
+        UUID(created["order_id"]),
+        OrderAction(
+            action="close",
+            expected_version=second_review["version"],
+            reason="Master verified the revised reading and repair evidence.",
+        ),
+        "master-accept-resubmission-0001",
+    )
+    assert accepted_by_master["status"] == WorkOrderStatus.CLOSED.value
 
 
 async def test_idempotency_version_scope_and_reassignment_reset(database) -> None:
@@ -622,11 +648,16 @@ async def test_review_close_and_override_close_paths(database) -> None:
         explanation="Accepted.",
         model_name="test-model",
     )
+    assert reviewed["status"] == WorkOrderStatus.AI_REVIEW.value
     closed = await execute_action(
         database,
         data["master"],
         approved_id,
-        OrderAction(action="close", expected_version=reviewed["version"]),
+        OrderAction(
+            action="close",
+            expected_version=reviewed["version"],
+            reason="Master accepted the submitted completion evidence.",
+        ),
         "close-key-000001",
     )
     assert closed["status"] == WorkOrderStatus.CLOSED.value
@@ -648,12 +679,12 @@ async def test_review_close_and_override_close_paths(database) -> None:
         data["master"],
         uncertain_id,
         OrderAction(
-            action="override_close",
+            action="close",
             expected_version=uncertain["version"],
             reason="Master validated the physical repair.",
             master_score=4,
         ),
-        "override-key-001",
+        "close-uncertain-key-001",
     )
     assert overridden["status"] == WorkOrderStatus.CLOSED.value
     async with database.sessions() as session:

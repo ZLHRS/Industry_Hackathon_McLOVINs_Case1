@@ -225,7 +225,11 @@ async def _close_with_material(database, data, material_id, *, group):
         database,
         data["master"],
         order_id,
-        OrderAction(action="close", expected_version=result["version"]),
+        OrderAction(
+            action="close",
+            expected_version=result["version"],
+            reason="Master accepted the completion evidence.",
+        ),
         f"report-close-{group}",
     )
     return order_id, result["version"]

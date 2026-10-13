@@ -96,7 +96,7 @@ async function noOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
 }
 
-test("master audits fallback AI review with a score and manual close", async ({ page, request }, info) => {
+test("master accepts an AI recommendation with a recorded decision", async ({ page, request }, info) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const candidate = await createManualReviewCandidate(request);
@@ -106,24 +106,24 @@ test("master audits fallback AI review with a score and manual close", async ({ 
   await expect(page.getByText(candidate.description, { exact: true })).toBeVisible();
   await page.getByText(candidate.description, { exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await expect(
-    dialog.getByRole("heading", { name: "Предварительный вывод не сформирован", exact: true }),
-  ).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "ИИ не дал рекомендации", exact: true })).toBeVisible();
   await expect(dialog.getByText(/Автоматическая проверка/).first()).toBeVisible();
-  await expect(dialog.getByLabel("Оценка мастера (необязательно)", { exact: true })).toBeVisible();
-  await dialog.getByLabel("Оценка мастера (необязательно)", { exact: true }).fill("4");
-  await expect(dialog.getByRole("button", { name: "Закрыть вручную", exact: true })).toBeDisabled();
-  await dialog.getByRole("region", { name: "Автоматическая проверка", exact: true }).scrollIntoViewIfNeeded();
-  await page.screenshot({ path: info.outputPath("ai-review-master-desktop.png"), fullPage: false });
-  await page.setViewportSize({ width: 390, height: 844 });
-  await noOverflow(page);
-  await dialog.getByRole("region", { name: "Автоматическая проверка", exact: true }).scrollIntoViewIfNeeded();
-  await page.screenshot({ path: info.outputPath("ai-review-master-mobile.png"), fullPage: false });
+  await expect(dialog.getByLabel("Оценка мастера (обязательно при принятии)", { exact: true })).toBeVisible();
+  await dialog.getByLabel("Оценка мастера (обязательно при принятии)", { exact: true }).fill("4");
+  const acceptWork = dialog.getByRole("button", { name: "Принять работу", exact: true });
+  await expect(acceptWork).toBeDisabled();
   await dialog
     .getByLabel("Причина решения", { exact: true })
     .fill("Мастер проверил доказательства и подтверждает закрытие.");
-  await expect(dialog.getByRole("button", { name: "Закрыть вручную", exact: true })).toBeEnabled();
-  await dialog.getByRole("button", { name: "Закрыть вручную", exact: true }).click();
+  await expect(acceptWork).toBeEnabled();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await acceptWork.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath("ai-review-master-desktop.png"), fullPage: false });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await noOverflow(page);
+  await acceptWork.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath("ai-review-master-mobile.png"), fullPage: false });
+  await acceptWork.click();
   await expect
     .poll(async () => (await readOrder(request, candidate.master, candidate.id)).status)
     .toBe("closed");
@@ -135,7 +135,7 @@ test("master audits fallback AI review with a score and manual close", async ({ 
     headers: { Authorization: `Bearer ${candidate.master}` },
   });
   expect(
-    (await events.json()).items.find((item: { action: string }) => item.action === "override_close").reason,
+    (await events.json()).items.find((item: { action: string }) => item.action === "close").reason,
   ).toMatch(/подтверждает закрытие/);
   expect(errors).toEqual([]);
 });
@@ -152,7 +152,7 @@ test("cancelled reviewed order no longer asks for a master decision", async ({ p
     expected_version: current.version,
     reason: "Отмена после проверки для регрессионного сценария.",
   });
-  await expect(detail.getByRole("heading", { name: /· Отменён$/ })).toBeVisible();
+  await expect(detail.locator(".dialog-head small").filter({ hasText: /· Отменён$/ })).toBeVisible();
   await expect(detail.getByText("Ожидает решения мастера", { exact: true })).toHaveCount(0);
   await expect(
     detail
@@ -183,7 +183,9 @@ test("master returns current review to rework and executor starts a clean attemp
     await login(page, state.executor_login);
     await page.getByText(candidate.description, { exact: true }).click();
     const executorDetail = page.getByRole("dialog");
-    await expect(executorDetail.getByText(candidate.description, { exact: true })).toBeVisible();
+    await expect(
+      executorDetail.getByRole("heading", { name: candidate.description, exact: true }),
+    ).toBeVisible();
     await expect(executorDetail.getByRole("heading", { name: "Что исправить", exact: true })).toBeVisible();
     await expect(
       executorDetail
@@ -200,6 +202,36 @@ test("master returns current review to rework and executor starts a clean attemp
     await expect(executorDetail.getByRole("region", { name: "Автоматическая проверка" })).toHaveCount(0);
     await expect(executorDetail.getByRole("heading", { name: "Что исправить", exact: true })).toHaveCount(0);
     await expect(executorDetail.getByRole("heading", { name: "Сдать работу", exact: true })).toBeVisible();
+    const executor = await token(request, state.executor_login);
+    await action(request, executor, candidate.id, {
+      action: "complete",
+      expected_version: restarted.version,
+      completion: {
+        work_description: "После доработки добавлены подтверждающие сведения и фото результата.",
+        fault_code_id: state.fault_code_id,
+        materials: [],
+        no_materials_reason: "Для повторной учебной проверки материалы не потребовались.",
+      },
+    });
+    await expect
+      .poll(async () => (await readOrder(request, candidate.master, candidate.id)).status, {
+        timeout: 15_000,
+      })
+      .toBe("ai_review");
+    await page.getByRole("button", { name: "Закрыть", exact: true }).click();
+    await page.getByRole("button", { name: /Выйти/ }).click();
+    await login(page, state.master_login);
+    await page.getByText(candidate.description, { exact: true }).click();
+    const masterDetail = page.getByRole("dialog");
+    await expect(masterDetail.getByRole("button", { name: "Принять работу", exact: true })).toBeVisible();
+    await masterDetail
+      .getByLabel("Причина решения", { exact: true })
+      .fill("Мастер принял повторно сданную работу.");
+    await masterDetail.getByLabel("Оценка мастера (обязательно при принятии)", { exact: true }).fill("4");
+    await masterDetail.getByRole("button", { name: "Принять работу", exact: true }).click();
+    await expect
+      .poll(async () => (await readOrder(request, candidate.master, candidate.id)).status)
+      .toBe("closed");
   } finally {
     const current = await readOrder(request, candidate.master, candidate.id);
     if (!["closed", "cancelled"].includes(current.status)) {

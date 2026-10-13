@@ -142,12 +142,11 @@ class OrderAction(BaseModel):
             "pause",
             "reassign",
             "cancel",
+            "close",
             "override_close",
             "request_rework",
             "change_priority",
         }
-        if self.master_score is not None and self.action == "close":
-            required_reason.add("close")
         if self.action in required_reason and self.reason is None:
             raise ValueError(f"reason is required for {self.action}")
         if self.action not in required_reason and self.reason is not None:

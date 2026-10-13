@@ -222,7 +222,7 @@ test("full lifecycle: issue, before/after photos, mobile materials, master close
     expect((await request.get(saved.photos[0].content_url)).status()).toBe(401);
     await worker.screenshot({ path: info.outputPath("executor-mobile-completed.png"), fullPage: true });
     await expect(detail.getByRole("button", { name: "Сдать наряд", exact: true })).toHaveCount(0);
-    await expect(masterDetail.getByRole("button", { name: "Закрыть вручную", exact: true })).toBeVisible({
+    await expect(masterDetail.getByRole("button", { name: "Принять работу", exact: true })).toBeVisible({
       timeout: 15000,
     });
     await expect(
@@ -235,8 +235,8 @@ test("full lifecycle: issue, before/after photos, mobile materials, master close
     await masterDetail
       .getByLabel("Причина решения", { exact: true })
       .fill("Мастер проверил фотографии и материалы, результат принят.");
-    await masterDetail.getByLabel("Оценка мастера (необязательно)", { exact: true }).fill("4");
-    await masterDetail.getByRole("button", { name: "Закрыть вручную", exact: true }).click();
+    await masterDetail.getByLabel("Оценка мастера (обязательно при принятии)", { exact: true }).fill("4");
+    await masterDetail.getByRole("button", { name: "Принять работу", exact: true }).click();
     await expect(masterDetail.locator(".dialog-head small").filter({ hasText: /· Закрыт$/ })).toBeVisible();
     await expect(masterDetail.getByText("Решение мастера принято", { exact: true })).toBeVisible();
     await expect(masterDetail.getByText("Ожидает решения мастера", { exact: true })).toHaveCount(0);

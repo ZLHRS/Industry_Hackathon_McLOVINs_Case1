@@ -63,7 +63,8 @@ describe("language preferences and translation boundaries", () => {
         master_score: 4,
       });
       expect(validateMasterDecision({ action: "close", reason: "OK", score: "9" })).toBeTruthy();
-      expect(validateMasterDecision({ action: "close", reason: "OK", score: "" })).toBeNull();
+      expect(validateMasterDecision({ action: "close", reason: "Проверено", score: "" })).toBeNull();
+      expect(masterDecisionPayload("close", " Проверено ", "")).toEqual({ reason: "Проверено" });
     },
   );
 });

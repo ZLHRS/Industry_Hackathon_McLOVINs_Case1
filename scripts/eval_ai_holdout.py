@@ -266,7 +266,7 @@ def grade_case(case: HoldoutCase, result: ReviewResult, model: str) -> dict[str,
     elif actual == "accepted_with_remarks":
         score_ok = result.score in {3, 4} and result.needs_master_review
     elif actual == "rework_required":
-        score_ok = result.score in {1, 2} and not result.needs_master_review
+        score_ok = result.score in {1, 2} and result.needs_master_review
     else:
         score_ok = result.score is None and result.needs_master_review
     source_ok = result.report.get("source") == "openai"

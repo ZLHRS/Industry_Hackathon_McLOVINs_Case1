@@ -150,7 +150,7 @@ async def test_deterministic_evidence_failure_still_runs_semantic_review(
     assert called is True
     assert result.verdict is AiAssessment.REWORK_REQUIRED
     assert result.score == 1
-    assert result.needs_master_review is False
+    assert result.needs_master_review is True
     assert result.report["source"] == "openai"
     reuse = next(item for item in result.report["checks"] if item["code"] == "exact_photo_reuse")
     assert reuse["status"] == "fail"
@@ -374,7 +374,7 @@ def test_substantive_device_object_remains_available_for_a_real_conflict() -> No
     assert facts["task"] == "Заменить iPhone на конвейере"
     assert facts["task_context"] is None
     assert result.verdict is AiAssessment.REWORK_REQUIRED
-    assert result.needs_master_review is False
+    assert result.needs_master_review is True
 
 
 def test_old_photo_evidence_remains_rework_when_task_is_only_a_test_label() -> None:
@@ -392,13 +392,13 @@ def test_old_photo_evidence_remains_rework_when_task_is_only_a_test_label() -> N
     )
 
     assert result.verdict is AiAssessment.REWORK_REQUIRED
-    assert result.needs_master_review is False
+    assert result.needs_master_review is True
 
 
 @pytest.mark.parametrize(
     "review,expected_verdict,expected_score,needs_master_review",
     [
-        (_input(photos=()), AiAssessment.REWORK_REQUIRED, 1, False),
+        (_input(photos=()), AiAssessment.REWORK_REQUIRED, 1, True),
         (
             _input(
                 photos=(
@@ -408,7 +408,7 @@ def test_old_photo_evidence_remains_rework_when_task_is_only_a_test_label() -> N
             ),
             AiAssessment.REWORK_REQUIRED,
             1,
-            False,
+            True,
         ),
         (_input(norm_minutes=None), AiAssessment.ACCEPTED_WITH_REMARKS, 4, True),
     ],
@@ -462,7 +462,7 @@ def test_critical_model_finding_cannot_become_an_automatic_verdict() -> None:
 
     assert result.verdict is AiAssessment.REWORK_REQUIRED
     assert result.score == 2
-    assert result.needs_master_review is False
+    assert result.needs_master_review is True
     assert "критическое несоответствие" in " ".join(result.report["limitations"])
 
 
@@ -556,7 +556,7 @@ def test_unplanned_missing_after_with_excessive_materials_requires_rework() -> N
 
     assert result.verdict is AiAssessment.REWORK_REQUIRED
     assert result.score == 1
-    assert result.needs_master_review is False
+    assert result.needs_master_review is True
     assert (
         next(item for item in result.report["checks"] if item["code"] == "materials")["status"]
         == "warning"
@@ -584,7 +584,7 @@ def test_excessive_trusted_historical_consumption_cannot_be_cleanly_accepted() -
 
     assert result.verdict is AiAssessment.REWORK_REQUIRED
     assert result.score == 1
-    assert result.needs_master_review is False
+    assert result.needs_master_review is True
 
 
 def test_prompt_distinguishes_low_risk_visible_work_from_safety_critical_evidence() -> None:

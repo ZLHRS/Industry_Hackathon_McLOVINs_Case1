@@ -50,11 +50,24 @@ def test_manifest_is_versioned_hashed_and_covers_required_semantics() -> None:
     assert all(case.rationale for case in cases)
 
 
-def test_freeze_covers_manifest_grader_and_runtime_sources() -> None:
-    observed = holdout.verify_freeze()
-
+def test_historical_freeze_rejects_changed_advisory_runtime() -> None:
+    observed = holdout._freeze_hashes()
+    frozen = json.loads(holdout.FREEZE_PATH.read_text(encoding="utf-8"))
     assert set(observed) == {"manifest_sha256", "grader_sha256", "runtime_sha256"}
     assert all(len(value) == 64 for value in observed.values())
+    # Keep the original evaluation evidence intact after changing review policy.
+    assert frozen["manifest_sha256"] == observed["manifest_sha256"]
+    assert frozen["runtime_sha256"] != observed["runtime_sha256"]
+    with pytest.raises(ValueError, match="holdout freeze mismatch"):
+        holdout.verify_freeze()
+
+
+def test_freeze_accepts_exactly_matching_sources(tmp_path: Path, monkeypatch) -> None:
+    observed = holdout._freeze_hashes()
+    isolated_freeze = tmp_path / "freeze.json"
+    isolated_freeze.write_text(json.dumps(observed), encoding="utf-8")
+    monkeypatch.setattr(holdout, "FREEZE_PATH", isolated_freeze)
+    assert holdout.verify_freeze() == observed
 
 
 def test_grader_rejects_unsafe_acceptance_for_known_nonrepair() -> None:

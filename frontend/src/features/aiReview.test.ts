@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { masterCloseOptions, masterDecisionPayload, validateMasterDecision } from "./aiReview";
+import { masterDecisionPayload, masterReviewActions, validateMasterDecision } from "./aiReview";
 import type { Review } from "../types";
 
-describe("master closing availability", () => {
+describe("master review actions", () => {
   const review: Review = {
     id: "review",
     order_version: 10,
@@ -15,32 +15,52 @@ describe("master closing availability", () => {
     master_score: null,
     is_current: true,
   };
-  it("requires manual acceptance even when a provisional AI score is positive", () => {
-    expect(masterCloseOptions("ai_review", review)).toEqual({ canClose: false, canOverride: true });
-  });
-  it("allows ordinary acceptance when AI does not require manual review", () => {
-    expect(masterCloseOptions("ai_review", { ...review, needs_master_review: false })).toEqual({
-      canClose: true,
-      canOverride: false,
+  it("lets the master accept or request rework for any ready AI recommendation", () => {
+    expect(masterReviewActions("ai_review", review)).toEqual({
+      canAccept: true,
+      canRequestRework: true,
+      acceptAction: "close",
+    });
+    expect(masterReviewActions("ai_review", { ...review, verdict: "rework_required" })).toEqual({
+      canAccept: true,
+      canRequestRework: true,
+      acceptAction: "close",
     });
   });
-  it("allows manual acceptance for rework and for a missing AI score", () => {
-    expect(masterCloseOptions("rework", { ...review, verdict: "rework_required" }).canOverride).toBe(true);
-    expect(masterCloseOptions("ai_review", { ...review, score: null })).toEqual({
-      canClose: false,
-      canOverride: true,
+  it("keeps an older rework review actionable without opening new decisions", () => {
+    expect(masterReviewActions("rework", { ...review, verdict: "rework_required" })).toEqual({
+      canAccept: true,
+      canRequestRework: false,
+      acceptAction: "override_close",
+    });
+  });
+  it("offers decisions when the AI has no recommendation or score", () => {
+    expect(masterReviewActions("ai_review", { ...review, verdict: null, score: null })).toEqual({
+      canAccept: true,
+      canRequestRework: true,
+      acceptAction: "close",
     });
   });
   it("does not offer closing without a review or for completed orders", () => {
-    expect(masterCloseOptions("ai_review")).toEqual({ canClose: false, canOverride: false });
-    expect(masterCloseOptions("closed", review)).toEqual({ canClose: false, canOverride: false });
+    expect(masterReviewActions("ai_review")).toEqual({
+      canAccept: false,
+      canRequestRework: false,
+      acceptAction: null,
+    });
+    expect(masterReviewActions("closed", review)).toEqual({
+      canAccept: false,
+      canRequestRework: false,
+      acceptAction: null,
+    });
   });
 });
 
 describe("master AI review decision validation", () => {
-  it("allows an ordinary close without a score or reason", () => {
-    expect(validateMasterDecision({ action: "close", reason: "", score: "" })).toBeNull();
-    expect(masterDecisionPayload("close", "", "")).toEqual({});
+  it("requires a recorded reason for master acceptance and rework", () => {
+    expect(validateMasterDecision({ action: "close", reason: "", score: "" })).toMatch(/обоснование/i);
+    expect(validateMasterDecision({ action: "request_rework", reason: "ок", score: "" })).toMatch(
+      /обоснование/i,
+    );
   });
 
   it("requires an audited reason when a master score is supplied", () => {
@@ -71,5 +91,15 @@ describe("master AI review decision validation", () => {
   it("rejects an out-of-range or fractional master score", () => {
     expect(validateMasterDecision({ action: "close", reason: "достаточно", score: "6" })).toMatch(/1 до 5/);
     expect(validateMasterDecision({ action: "close", reason: "достаточно", score: "3.5" })).toMatch(/целое/);
+  });
+  it("requires the master score when the AI had none", () => {
+    expect(
+      validateMasterDecision({
+        action: "close",
+        reason: "Мастер проверил работу",
+        score: "",
+        requiresMasterScore: true,
+      }),
+    ).toMatch(/оценку мастера/i);
   });
 });

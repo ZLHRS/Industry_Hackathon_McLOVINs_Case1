@@ -233,14 +233,14 @@ test("shared assignment: participant sees work, responsible submits, master acce
     await leadDialog.getByLabel("Количество", { exact: true }).fill("1");
     await lead.screenshot({ path: info.outputPath("responsible-report-390.png"), fullPage: true });
     await leadDialog.getByRole("button", { name: "Сдать наряд", exact: true }).click();
-    await expect(masterDialog.getByRole("button", { name: "Закрыть вручную", exact: true })).toBeVisible({
+    await expect(masterDialog.getByRole("button", { name: "Принять работу", exact: true })).toBeVisible({
       timeout: 20000,
     });
     await masterDialog
       .getByLabel("Причина решения", { exact: true })
       .fill("Совместный осмотр и контрольный пуск проверены мастером.");
-    await masterDialog.getByLabel("Оценка мастера (необязательно)", { exact: true }).fill("4");
-    await masterDialog.getByRole("button", { name: "Закрыть вручную", exact: true }).click();
+    await masterDialog.getByLabel("Оценка мастера (обязательно при принятии)", { exact: true }).fill("4");
+    await masterDialog.getByRole("button", { name: "Принять работу", exact: true }).click();
     await expect(masterDialog.locator(".dialog-head small").filter({ hasText: /· Закрыт$/ })).toBeVisible();
     await expect(
       participantDialog.locator(".dialog-head small").filter({ hasText: /· Закрыт$/ }),

@@ -789,7 +789,7 @@ async def test_executor_feedback_keeps_rework_history_and_master_override_curren
     closed = await action(
         api,
         second_review,
-        "override_close",
+        "close",
         "master",
         reason="Master inspected the completed repair.",
         master_score=5,

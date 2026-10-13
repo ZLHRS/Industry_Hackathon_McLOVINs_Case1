@@ -53,23 +53,27 @@ def ai_review_order() -> LifecycleState:
 
 
 def rework_order() -> LifecycleState:
-    return apply(
-        ai_review_order(),
-        Action.MARK_REWORK,
-        ActorRole.SYSTEM,
-        assessment=AiAssessment.REWORK_REQUIRED,
-    )
+    """A pre-policy rework record remains manageable by the master."""
+    return LifecycleState(WorkOrderStatus.REWORK, AiAssessment.REWORK_REQUIRED)
 
 
-def test_happy_path_closes_after_accepted_ai_assessment() -> None:
+def test_master_reasoned_close_is_required_after_positive_ai_advice() -> None:
     state = apply(
         ai_review_order(),
         Action.RECORD_AI_ASSESSMENT,
         ActorRole.SYSTEM,
         assessment=AiAssessment.ACCEPTED_WITH_REMARKS,
+        needs_master_review=True,
     )
 
-    closed = apply(state, Action.CLOSE, ActorRole.MASTER)
+    with pytest.raises(LifecycleTransitionError, match="meaningful reason"):
+        apply(state, Action.CLOSE, ActorRole.MASTER)
+    closed = apply(
+        state,
+        Action.CLOSE,
+        ActorRole.MASTER,
+        reason="Master verified the completion evidence.",
+    )
 
     assert closed.status is WorkOrderStatus.CLOSED
     assert closed.ai_assessment is AiAssessment.ACCEPTED_WITH_REMARKS
@@ -119,7 +123,7 @@ def test_rework_start_clears_prior_assessment_before_resubmission() -> None:
         )
 
 
-def test_needs_master_review_has_no_fourth_ai_verdict_and_needs_override() -> None:
+def test_unavailable_ai_result_stays_for_master_decision() -> None:
     review_needed = apply(
         ai_review_order(),
         Action.RECORD_AI_ASSESSMENT,
@@ -129,22 +133,29 @@ def test_needs_master_review_has_no_fourth_ai_verdict_and_needs_override() -> No
 
     assert review_needed.ai_assessment is None
     assert review_needed.needs_master_review
-    with pytest.raises(LifecycleTransitionError, match="close requires"):
-        apply(review_needed, Action.CLOSE, ActorRole.MASTER)
+    assert (
+        apply(
+            review_needed,
+            Action.CLOSE,
+            ActorRole.MASTER,
+            reason="Master completed visual inspection",
+        ).status
+        is WorkOrderStatus.CLOSED
+    )
     assert (
         apply(
             review_needed,
             Action.OVERRIDE_CLOSE,
             ActorRole.MASTER,
-            reason="Master completed visual inspection",
+            reason="Acceptance from a previously installed client.",
         ).status
         is WorkOrderStatus.CLOSED
     )
 
 
 @pytest.mark.parametrize("needs_master_review", [None, False])
-def test_recording_no_verdict_requires_review_flag(needs_master_review: bool | None) -> None:
-    with pytest.raises(LifecycleTransitionError, match="assessment or needs_master_review"):
+def test_every_ai_assessment_requires_master_review(needs_master_review: bool | None) -> None:
+    with pytest.raises(LifecycleTransitionError, match="must require master review"):
         apply(
             ai_review_order(),
             Action.RECORD_AI_ASSESSMENT,
@@ -194,14 +205,14 @@ def test_privileged_commands_reject_wrong_roles(
             ai_review_order(),
             AiAssessment.ACCEPTED,
             None,
-            "mark_rework requires",
+            "mark_rework is retired",
         ),
         (
             Action.RECORD_AI_ASSESSMENT,
             ai_review_order(),
             AiAssessment.REWORK_REQUIRED,
-            True,
-            "cannot need master review",
+            False,
+            "must require master review",
         ),
     ],
 )
@@ -250,6 +261,7 @@ def test_terminal_states_reject_every_lifecycle_command(action: Action, role: Ac
         (Action.REJECT, new_lifecycle(), ActorRole.EXECUTOR, None),
         (Action.PAUSE, in_progress_order(), ActorRole.EXECUTOR, " "),
         (Action.CANCEL, new_lifecycle(), ActorRole.MASTER, "no"),
+        (Action.CLOSE, ai_review_order(), ActorRole.MASTER, None),
         (Action.OVERRIDE_CLOSE, ai_review_order(), ActorRole.MASTER, None),
     ],
 )
@@ -350,6 +362,7 @@ def test_master_requests_rework_from_accepted_ai_review_without_overwriting_verd
         Action.RECORD_AI_ASSESSMENT,
         ActorRole.SYSTEM,
         assessment=AiAssessment.ACCEPTED,
+        needs_master_review=True,
     )
 
     rework = apply(
@@ -361,7 +374,7 @@ def test_master_requests_rework_from_accepted_ai_review_without_overwriting_verd
 
     assert rework.status is WorkOrderStatus.REWORK
     assert rework.ai_assessment is AiAssessment.ACCEPTED
-    assert not rework.needs_master_review
+    assert rework.needs_master_review
 
 
 def test_master_requests_rework_from_low_confidence_ai_review_without_overwriting_flag() -> None:

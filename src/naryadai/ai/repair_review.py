@@ -505,7 +505,7 @@ def _model_result(
     if deterministic_rework is not None:
         verdict = AiAssessment.REWORK_REQUIRED
         score = 1
-        needs_master_review = False
+        needs_master_review = True
         recommendation = _LABELS[verdict.value]
     elif task_clarification is not None or abstention_reason is not None:
         verdict = None
@@ -515,7 +515,7 @@ def _model_result(
     elif model_critical:
         verdict = AiAssessment.REWORK_REQUIRED
         score = min(output.score or 2, 2)
-        needs_master_review = False
+        needs_master_review = True
         recommendation = _LABELS[verdict.value]
     else:
         assert output.verdict is not None
@@ -529,7 +529,7 @@ def _model_result(
             score = min(max(score, 3), 4)
         elif verdict is AiAssessment.ACCEPTED_WITH_REMARKS:
             score = min(max(score, 3), 4)
-        needs_master_review = verdict is not AiAssessment.REWORK_REQUIRED
+        needs_master_review = True
         recommendation = _LABELS[verdict.value]
     advisory = f"Рекомендация модели: {recommendation}."
     if score is not None:
@@ -570,14 +570,7 @@ def _model_result(
         verdict,
         score,
         needs_master_review,
-        (
-            "Предварительная оценка; финальное решение принимает мастер. "
-            if needs_master_review
-            else ""
-        )
-        + advisory
-        + " "
-        + summary,
+        ("Предварительная оценка; финальное решение принимает мастер. ") + advisory + " " + summary,
         config.model,
         _report(review, "openai", output.confidence, all_checks, limitations, summary),
     )

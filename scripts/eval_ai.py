@@ -324,7 +324,7 @@ def grade_case(case: EvalCase, result: ReviewResult, model: str) -> dict[str, ob
     elif actual_outcome == "accepted_with_remarks":
         score_and_gate_ok = result.score in {3, 4} and result.needs_master_review
     elif actual_outcome == "rework_required":
-        score_and_gate_ok = result.score in {1, 2} and not result.needs_master_review
+        score_and_gate_ok = result.score in {1, 2} and result.needs_master_review
     else:
         score_and_gate_ok = result.score is None and result.needs_master_review
     return {

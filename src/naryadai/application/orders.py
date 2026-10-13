@@ -795,10 +795,11 @@ async def apply_review_in_session(
         raise OperationError(422, "review_explanation_and_model_name_are_required")
     if score is not None and not 1 <= score <= 5:
         raise OperationError(422, "review_score_out_of_range")
-    if verdict is None and not needs_master_review:
-        raise OperationError(422, "review_requires_verdict_or_master_review")
-    if verdict is AiAssessment.REWORK_REQUIRED and needs_master_review:
-        raise OperationError(422, "rework_verdict_cannot_need_master_review")
+    # AI output is evidence only.  Persisting an assessment always leaves the
+    # order for a master to accept or return for rework, including a negative
+    # verdict or an unavailable provider.
+    if not needs_master_review:
+        needs_master_review = True
 
     order = await session.scalar(
         select(WorkOrder).where(WorkOrder.id == order_id).with_for_update()
@@ -849,20 +850,14 @@ async def apply_review_in_session(
     )
     await session.flush()
 
-    review_action = (
-        Action.MARK_REWORK
-        if verdict is AiAssessment.REWORK_REQUIRED
-        else Action.RECORD_AI_ASSESSMENT
-    )
+    review_action = Action.RECORD_AI_ASSESSMENT
     reviewed = _apply_transition(
         await _lifecycle_state(session, order),
         review_action,
         ActorRole.SYSTEM,
         at=at,
         assessment=verdict,
-        needs_master_review=needs_master_review
-        if review_action is Action.RECORD_AI_ASSESSMENT
-        else None,
+        needs_master_review=needs_master_review,
     )
     before_review: WorkOrderStatus = order.status
     order.status = reviewed.after.status

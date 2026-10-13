@@ -12,7 +12,7 @@ import { Icon } from "../components/Icon";
 import { OrderReference } from "../components/OrderReference";
 import { AIReviewReport, ExecutorFeedbackReport, ReviewHistory } from "./AIReviewReport";
 import {
-  masterCloseOptions,
+  masterReviewActions,
   masterDecisionPayload,
   validateMasterDecision,
   type MasterDecision,
@@ -123,7 +123,7 @@ const actionLabels: Record<string, string> = {
     return t("Наряд закрыт");
   },
   get override_close() {
-    return t("Наряд закрыт вручную");
+    return t("Работа принята мастером");
   },
   get cancel() {
     return t("Наряд отменён");
@@ -399,7 +399,12 @@ export function OrderDetailDialog({
     }
   }
   async function decideMaster(action: MasterDecision) {
-    const validation = validateMasterDecision({ action, reason, score: masterScore });
+    const validation = validateMasterDecision({
+      action,
+      reason,
+      score: masterScore,
+      requiresMasterScore: action !== "request_rework" && masterScoreRequired,
+    });
     if (validation) {
       setError(validation);
       return;
@@ -551,8 +556,9 @@ export function OrderDetailDialog({
   const currentMaterials = detail.materials.filter(
     (item) => item.submission_version === detail.last_submission_version,
   );
-  const { canClose, canOverride } = masterCloseOptions(detail.status, currentReview);
-  const masterScoreRequiresReason = masterScore.trim().length > 0 && reason.trim().length < 3;
+  const { canAccept, canRequestRework, acceptAction } = masterReviewActions(detail.status, currentReview);
+  const masterScoreRequired = canAccept && currentReview?.score == null;
+  const masterDecisionRequiresReason = reason.trim().length < 3;
   const executorNext: Partial<Record<OrderDetail["status"], string>> = {
     issued: t("Ознакомьтесь с заданием и примите наряд. Если заняты, поставьте его в очередь."),
     accepted: t("Когда будете готовы приступить, нажмите «Начать работу»."),
@@ -757,7 +763,9 @@ export function OrderDetailDialog({
               attempt={detail.attempt}
               audience={canExecutor ? "executor" : "reviewer"}
               decisionResolved={
-                detail.status === "closed" || detail.status === "cancelled" ? detail.status : false
+                detail.status === "closed" || detail.status === "cancelled" || detail.status === "rework"
+                  ? detail.status
+                  : false
               }
             />
           )
@@ -1156,12 +1164,12 @@ export function OrderDetailDialog({
             <p className="muted">
               {t("Каждое действие оформляется отдельно: причина относится только к выбранному изменению.")}
             </p>
-            {(detail.status === "ai_review" || canOverride) && (
+            {(canRequestRework || canAccept) && (
               <section className="master-action-panel">
                 <h4>{t("Решение мастера")}</h4>
                 <p className="muted">
                   {t(
-                    "Вывод и оценка ИИ предварительные. Закрытие или возврат — решение мастера; итоговая оценка берётся из вашей оценки либо из действительной рекомендации ИИ.",
+                    "Рекомендация ИИ не меняет статус наряда. Примите работу или верните её на доработку: решение и причина будут записаны от вашего имени.",
                   )}
                 </p>
                 <label>
@@ -1175,7 +1183,9 @@ export function OrderDetailDialog({
                 </label>
                 {["ai_review", "rework"].includes(detail.status) && (
                   <label>
-                    {t("Оценка мастера (необязательно)")}
+                    {masterScoreRequired
+                      ? t("Оценка мастера (обязательно при принятии)")
+                      : t("Оценка мастера (необязательно)")}
                     <input
                       type="number"
                       min="1"
@@ -1190,40 +1200,26 @@ export function OrderDetailDialog({
                   </label>
                 )}
                 <div className="master-panel-actions">
-                  {detail.status === "ai_review" && (
-                    <>
-                      <button
-                        type="button"
-                        className="secondary"
-                        disabled={busy || reason.trim().length < 3}
-                        onClick={() => void decideMaster("request_rework")}
-                      >
-                        {t("Вернуть на доработку")}
-                      </button>
-                      {canClose && (
-                        <button
-                          type="button"
-                          className="primary"
-                          disabled={busy || masterScoreRequiresReason}
-                          onClick={() => void decideMaster("close")}
-                        >
-                          {masterScore.trim() ? t("Закрыть вручную") : t("Подтвердить оценку ИИ и закрыть")}
-                        </button>
-                      )}
-                    </>
-                  )}
-                  {canOverride && (
+                  {canRequestRework && (
                     <button
                       type="button"
                       className="secondary"
-                      disabled={busy || reason.trim().length < 3}
-                      onClick={() => void decideMaster("override_close")}
+                      disabled={busy || masterDecisionRequiresReason}
+                      onClick={() => void decideMaster("request_rework")}
                     >
-                      {!masterScore.trim() &&
-                      currentReview?.score != null &&
-                      ["accepted", "accepted_with_remarks"].includes(currentReview.verdict ?? "")
-                        ? t("Подтвердить оценку ИИ и закрыть")
-                        : t("Закрыть вручную")}
+                      {t("Вернуть на доработку")}
+                    </button>
+                  )}
+                  {canAccept && acceptAction && (
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={
+                        busy || masterDecisionRequiresReason || (masterScoreRequired && !masterScore.trim())
+                      }
+                      onClick={() => void decideMaster(acceptAction)}
+                    >
+                      {t("Принять работу")}
                     </button>
                   )}
                 </div>

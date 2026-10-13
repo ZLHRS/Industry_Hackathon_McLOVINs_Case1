@@ -15,6 +15,7 @@ import naryadai.ai.repair_review as repair_review
 from naryadai.ai import OpenAIReviewConfig, ProviderError, ReviewResult
 from naryadai.application.common import OperationError
 from naryadai.application.contracts import Completion, MaterialLine, OrderAction
+from naryadai.application.notification_engine import process_outbox
 from naryadai.application.orders import apply_review, create_order, execute_action
 from naryadai.domain.lifecycle import AiAssessment, WorkOrderStatus
 from naryadai.infrastructure.models import (
@@ -22,6 +23,7 @@ from naryadai.infrastructure.models import (
     AIReviewJob,
     Material,
     MaterialUsage,
+    Notification,
     Photo,
     PhotoKind,
     Priority,
@@ -186,6 +188,79 @@ def _accepted_result() -> ReviewResult:
             "model_assessment": "accepted",
         },
     )
+
+
+async def test_negative_ai_advice_waits_for_master_before_rework_and_notifies_only_master(database):
+    """A rework recommendation is evidence, not an executor command."""
+
+    from naryadai.application.ai_reviews import process_ai_review_jobs
+
+    data, order_id, _completed_result = await _completed(database)
+    now = datetime.now(UTC) + timedelta(minutes=1)
+
+    async def negative(_evidence, _config):
+        return ReviewResult(
+            AiAssessment.REWORK_REQUIRED,
+            1,
+            False,
+            "Model found an incomplete guard installation.",
+            "fake-negative",
+            {
+                "schema_version": 1,
+                "source": "rules",
+                "confidence": 1.0,
+                "checks": [],
+                "timing": {},
+                "limitations": [],
+                "model_assessment": "rework_required",
+            },
+        )
+
+    assert (
+        await process_ai_review_jobs(
+            database, config=OpenAIReviewConfig(api_key=None), now=now, analyzer=negative
+        )
+        == 1
+    )
+    async with database.sessions() as session:
+        order = await session.get(WorkOrder, order_id)
+        review = await session.scalar(select(AIReview).where(AIReview.work_order_id == order_id))
+        assert order is not None and order.status is WorkOrderStatus.AI_REVIEW
+        assert review is not None and review.needs_master_review is True
+        reviewed_version = order.version
+
+    await process_outbox(database, now=now)
+    async with database.sessions() as session:
+        notifications = list(
+            await session.scalars(
+                select(Notification).where(Notification.work_order_id == order_id)
+            )
+        )
+        review_ready = [notice for notice in notifications if notice.kind == "review_ready"]
+        assert [notice.employee_id for notice in review_ready] == [data["master"].employee_id]
+        assert not [notice for notice in notifications if notice.kind == "master_decision"]
+
+    rework = await execute_action(
+        database,
+        data["master"],
+        order_id,
+        OrderAction(
+            action="request_rework",
+            expected_version=reviewed_version,
+            reason="Master confirmed that the guard installation is incomplete.",
+        ),
+        "negative-ai-master-rework",
+    )
+    assert rework["status"] == WorkOrderStatus.REWORK.value
+    await process_outbox(database, now=now + timedelta(seconds=1))
+    async with database.sessions() as session:
+        notice = await session.scalar(
+            select(Notification).where(
+                Notification.work_order_id == order_id,
+                Notification.kind == "master_decision",
+            )
+        )
+        assert notice is not None and notice.employee_id == data["first"].employee_id
 
 
 async def test_retrying_provider_failure_exhausts_to_honest_manual_review(database):
@@ -360,13 +435,24 @@ async def test_reassignment_and_new_submission_make_old_claim_stale(database):
             explanation="A new attempt is needed.",
             model_name="controlled",
         )
+        rework = await execute_action(
+            database,
+            data["master"],
+            order_id,
+            OrderAction(
+                action="request_rework",
+                expected_version=reviewed["version"],
+                reason="Master confirmed the repair needs another attempt.",
+            ),
+            "ai-master-request-rework-while-running",
+        )
         reassigned = await execute_action(
             database,
             data["master"],
             order_id,
             OrderAction(
                 action="reassign",
-                expected_version=reviewed["version"],
+                expected_version=rework["version"],
                 executor_id=data["second"].employee_id,
                 reason="Move repair to next shift.",
             ),
@@ -440,11 +526,22 @@ async def test_current_attempt_evidence_excludes_old_photos_and_preserves_cross_
         explanation="Do repair again.",
         model_name="controlled",
     )
+    rework = await execute_action(
+        database,
+        data["master"],
+        order_id,
+        OrderAction(
+            action="request_rework",
+            expected_version=reviewed["version"],
+            reason="Master confirmed the evidence requires another repair attempt.",
+        ),
+        "ai-evidence-request-rework",
+    )
     restarted = await execute_action(
         database,
         data["first"],
         order_id,
-        OrderAction(action="start", expected_version=reviewed["version"]),
+        OrderAction(action="start", expected_version=rework["version"]),
         "ai-evidence-restart",
     )
     paused = await execute_action(
@@ -852,7 +949,8 @@ async def test_material_baseline_uses_bounded_even_and_odd_historical_medians(da
     assert "исторической медианы" in check["detail"]
 
 
-async def test_master_override_score_is_reasoned_idempotent_and_audited(database):
+@pytest.mark.parametrize("accept_action", ["close", "override_close"])
+async def test_master_acceptance_score_is_reasoned_idempotent_and_audited(database, accept_action):
     from naryadai.application.ai_reviews import process_ai_review_jobs
 
     data, order_id, _completed_result = await _completed(database)
@@ -893,29 +991,23 @@ async def test_master_override_score_is_reasoned_idempotent_and_audited(database
             database,
             data["first"],
             order_id,
-            OrderAction(
-                action="override_close", expected_version=version, reason="Master decision."
-            ),
+            OrderAction(action=accept_action, expected_version=version, reason="Master decision."),
             "ai-unauthorized-override",
         )
     decision = OrderAction(
-        action="override_close",
+        action=accept_action,
         expected_version=version,
         reason="Evidence reviewed by the responsible master.",
         master_score=5,
     )
-    closed = await execute_action(
-        database, data["master"], order_id, decision, "ai-master-override"
-    )
-    replay = await execute_action(
-        database, data["master"], order_id, decision, "ai-master-override"
-    )
+    closed = await execute_action(database, data["master"], order_id, decision, "ai-master-accept")
+    replay = await execute_action(database, data["master"], order_id, decision, "ai-master-accept")
     assert replay == closed
     async with database.sessions() as session:
         review = await session.scalar(select(AIReview).where(AIReview.work_order_id == order_id))
         event = await session.scalar(
             select(WorkOrderEvent).where(
-                WorkOrderEvent.work_order_id == order_id, WorkOrderEvent.action == "override_close"
+                WorkOrderEvent.work_order_id == order_id, WorkOrderEvent.action == accept_action
             )
         )
         assert review is not None and review.score == original_score and review.master_score == 5
@@ -988,7 +1080,7 @@ async def test_master_can_return_uncertain_review_without_inventing_a_score(data
             data["master"],
             order_id,
             OrderAction(
-                action="override_close",
+                action="close",
                 expected_version=reviewed["version"],
                 reason="Inspected the available evidence.",
             ),
@@ -1028,13 +1120,24 @@ async def test_reassigned_executor_does_not_inherit_previous_repair_authors_feed
     )
     first_view = await order_detail(database, data["first"], order_id)
     assert len(first_view.executor_feedback) == 1
+    returned = await execute_action(
+        database,
+        data["master"],
+        order_id,
+        OrderAction(
+            action="request_rework",
+            expected_version=reviewed["version"],
+            reason="Master confirmed the prior repair is incomplete.",
+        ),
+        "reassign-feedback-request-rework",
+    )
     reassigned = await execute_action(
         database,
         data["master"],
         order_id,
         OrderAction(
             action="reassign",
-            expected_version=reviewed["version"],
+            expected_version=returned["version"],
             executor_id=data["second"].employee_id,
             reason="A second specialist will repair it.",
         ),

@@ -809,6 +809,10 @@ const baseTranslations: Record<string, { kk: string; en: string }> = {
     kk: "Шебер бағасы 1 мен 5 аралығындағы бүтін сан болуы керек.",
     en: "The supervisor's score must be an integer from 1 to 5.",
   },
+  "Укажите оценку мастера от 1 до 5.": {
+    kk: "Шебер бағасын 1 мен 5 аралығында көрсетіңіз.",
+    en: "Enter a supervisor score from 1 to 5.",
+  },
   "Для оценки мастера укажите обоснование не короче 3 символов.": {
     kk: "Шебер бағасын кемінде 3 таңбамен негіздеңіз.",
     en: "Explain the supervisor's score using at least 3 characters.",
@@ -905,6 +909,22 @@ const baseTranslations: Record<string, { kk: string; en: string }> = {
     kk: "Алдын ала қорытынды жасалмаған",
     en: "No preliminary assessment",
   },
+  "ИИ не дал рекомендации": {
+    kk: "ЖИ ұсыным бермеді",
+    en: "AI did not provide a recommendation",
+  },
+  "ИИ рекомендует принять работу": {
+    kk: "ЖИ жұмысты қабылдауды ұсынады",
+    en: "AI recommends accepting the work",
+  },
+  "ИИ рекомендует принять с замечаниями": {
+    kk: "ЖИ ескертулермен қабылдауды ұсынады",
+    en: "AI recommends accepting with remarks",
+  },
+  "ИИ рекомендует вернуть на доработку": {
+    kk: "ЖИ пысықтауға қайтаруды ұсынады",
+    en: "AI recommends returning for rework",
+  },
   "Архивная проверка": {
     kk: "Мұрағаттағы тексеру",
     en: "Archived review",
@@ -950,6 +970,10 @@ const baseTranslations: Record<string, { kk: string; en: string }> = {
     kk: "Шебер шешім қабылдады",
     en: "Supervisor decision recorded",
   },
+  "Мастер вернул на доработку": {
+    kk: "Шебер пысықтауға қайтарды",
+    en: "Supervisor returned it for rework",
+  },
   "Ожидает решения мастера": {
     kk: "Шебер шешімін күтуде",
     en: "Awaiting supervisor decision",
@@ -961,6 +985,10 @@ const baseTranslations: Record<string, { kk: string; en: string }> = {
   "Наряд отменён.": {
     kk: "Наряд тоқтатылды.",
     en: "Work order cancelled.",
+  },
+  "Наряд возвращён на доработку.": {
+    kk: "Наряд пысықтауға қайтарылды.",
+    en: "Work order returned for rework.",
   },
   "Наряд закрыт.": {
     kk: "Наряд жабылды.",
@@ -2763,6 +2791,11 @@ const baseTranslations: Record<string, { kk: string; en: string }> = {
       kk: "ЖИ қорытындысы мен бағасы алдын ала берілген. Жабу не қайтару шешімін шебер қабылдайды; қорытынды баға сіздің бағаңыздан немесе жарамды ЖИ ұсынымынан алынады.",
       en: "AI findings and scores are preliminary. The supervisor decides whether to close or return the order; the final score uses your assessment or a valid AI recommendation.",
     },
+  "Рекомендация ИИ не меняет статус наряда. Примите работу или верните её на доработку: решение и причина будут записаны от вашего имени.":
+    {
+      kk: "ЖИ ұсынымы нарядтың күйін өзгертпейді. Жұмысты қабылдаңыз немесе пысықтауға қайтарыңыз: шешім мен себеп сіздің атыңыздан жазылады.",
+      en: "The AI recommendation does not change the work order status. Accept the work or return it for rework; your decision and reason will be recorded.",
+    },
   "Причина решения": {
     kk: "Шешім себебі",
     en: "Decision reason",
@@ -2770,6 +2803,10 @@ const baseTranslations: Record<string, { kk: string; en: string }> = {
   "Оценка мастера (необязательно)": {
     kk: "Шебер бағасы (міндетті емес)",
     en: "Supervisor score (optional)",
+  },
+  "Оценка мастера (обязательно при принятии)": {
+    kk: "Шебер бағасы (қабылдағанда міндетті)",
+    en: "Supervisor score (required to accept)",
   },
   "Вернуть на доработку": {
     kk: "Қайта өңдеуге қайтару",
@@ -2786,6 +2823,10 @@ const baseTranslations: Record<string, { kk: string; en: string }> = {
   "Закрыть вручную": {
     kk: "Қолмен жабу",
     en: "Close manually",
+  },
+  "Принять работу": {
+    kk: "Жұмысты қабылдау",
+    en: "Accept work",
   },
   "Фото до ремонта": {
     kk: "Жөндеуге дейінгі фото",

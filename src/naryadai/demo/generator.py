@@ -378,7 +378,10 @@ def _orders(
         orders.append(item)
         _events_for_order(events, ident, item, executor, master, completed, status)
         if status in {"closed", "ai_review", "rework"}:
-            needs_review = status == "ai_review" and index % 3 == 0
+            # Every generated AI result is advisory.  A rework row records a
+            # later master decision below, while an ai_review row is awaiting
+            # one; neither is a system-driven lifecycle outcome.
+            needs_review = True
             verdict: str | None
             if status == "rework":
                 verdict = "rework_required"
@@ -497,11 +500,22 @@ def _events_for_order(
             (
                 None,
                 "system",
-                "mark_rework",
+                "record_ai_assessment",
+                "ai_review",
+                "ai_review",
+                completed + timedelta(minutes=6),
+                None,
+            )
+        )
+        timeline.append(
+            (
+                master,
+                "master",
+                "request_rework",
                 "ai_review",
                 "rework",
-                completed + timedelta(minutes=6),
-                "ДЕМО: требуется доработка",
+                completed + timedelta(minutes=20),
+                "ДЕМО: мастер запросил доработку после проверки результата",
             )
         )
         return _append_events(events, ident, order, timeline)
@@ -517,7 +531,15 @@ def _events_for_order(
         )
     )
     timeline.append(
-        (master, "master", "close", "ai_review", "closed", completed + timedelta(minutes=20), None)
+        (
+            master,
+            "master",
+            "close",
+            "ai_review",
+            "closed",
+            completed + timedelta(minutes=20),
+            "ДЕМО: мастер проверил результат и принял работу",
+        )
     )
     return _append_events(events, ident, order, timeline)
 

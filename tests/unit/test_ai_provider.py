@@ -285,7 +285,7 @@ async def test_wrong_equipment_assessment_requires_rework(monkeypatch: pytest.Mo
 
     assert result.verdict is AiAssessment.REWORK_REQUIRED
     assert result.score == 1
-    assert result.needs_master_review is False
+    assert result.needs_master_review is True
 
 
 @pytest.mark.asyncio

@@ -181,7 +181,11 @@ async def test_brigade_full_cycle_freezes_roster_and_allows_participant_read(dat
         database,
         data["master"],
         order_id,
-        OrderAction(action="close", expected_version=reviewed["version"]),
+        OrderAction(
+            action="close",
+            expected_version=reviewed["version"],
+            reason="Master accepted the completed brigade work.",
+        ),
         "brigade-close-001",
     )
     assert closed["status"] == WorkOrderStatus.CLOSED.value

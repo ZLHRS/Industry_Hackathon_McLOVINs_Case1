@@ -74,10 +74,11 @@ class LifecycleTransitionError(ValueError):
 class LifecycleState:
     """Persisted lifecycle state for one work order.
 
-    ``needs_master_review`` represents a low-confidence AI result without
-    inventing a fourth verdict. It prevents ordinary close and requires a
-    reasoned human override. An assessment can remain in terminal history; a
-    new rework attempt clears both fields before its next completion.
+    AI verdicts and scores are advisory evidence. Every newly recorded AI
+    result requires a master's explicit, reasoned decision; it never advances
+    an order to rework or closure on its own. An assessment can remain in
+    terminal history; a new rework attempt clears both fields before its next
+    completion.
     """
 
     status: WorkOrderStatus
@@ -159,10 +160,10 @@ def transition(
 ) -> LifecycleTransition:
     """Apply one lifecycle command and return its immutable audit event.
 
-    Rejection, pause, cancellation, and human overrides require a meaningful
-    reason. A normal close needs an accepted AI verdict and no review flag.
-    ``needs_master_review`` is only accepted by the system assessment command;
-    all unrelated payloads fail closed.
+    Rejection, pause, cancellation, and master decisions require a meaningful
+    reason. A close is the master's explicit acceptance of any completed AI
+    review result. ``needs_master_review`` is only accepted by the system
+    assessment command; all unrelated payloads fail closed.
     """
 
     if not isinstance(state, LifecycleState):
@@ -238,43 +239,19 @@ def transition(
         next_status = WorkOrderStatus.AI_REVIEW
     elif action is Action.RECORD_AI_ASSESSMENT:
         _guard(action, state, actor_role, ActorRole.SYSTEM, WorkOrderStatus.AI_REVIEW)
-        if assessment is None:
-            if needs_master_review is not True:
-                raise LifecycleTransitionError(
-                    "an assessment or needs_master_review=True is required"
-                )
-            next_status = WorkOrderStatus.AI_REVIEW
-            next_assessment = None
-            next_needs_master_review = True
-        elif assessment is AiAssessment.REWORK_REQUIRED:
-            if needs_master_review:
-                raise LifecycleTransitionError(
-                    "rework_required assessment cannot need master review"
-                )
-            raise LifecycleTransitionError(
-                "rework_required assessment must use the mark_rework action"
-            )
-        else:
-            next_status = WorkOrderStatus.AI_REVIEW
-            next_assessment = assessment
-            next_needs_master_review = needs_master_review is True
-    elif action is Action.MARK_REWORK:
-        _guard(action, state, actor_role, ActorRole.SYSTEM, WorkOrderStatus.AI_REVIEW)
-        _forbid_assessment_not_rework(assessment)
-        if state.needs_master_review:
-            raise LifecycleTransitionError("cannot mark rework while master review is needed")
-        next_status = WorkOrderStatus.REWORK
+        if needs_master_review is not True:
+            raise LifecycleTransitionError("AI assessment must require master review")
+        next_status = WorkOrderStatus.AI_REVIEW
         next_assessment = assessment
+        next_needs_master_review = True
+    elif action is Action.MARK_REWORK:
+        raise LifecycleTransitionError("mark_rework is retired; master must request rework")
     elif action is Action.CLOSE:
         _guard(action, state, actor_role, ActorRole.MASTER, WorkOrderStatus.AI_REVIEW)
+        _require_reason(action, normalized_reason)
         _forbid_assessment(action, assessment)
-        if state.needs_master_review or state.ai_assessment not in {
-            AiAssessment.ACCEPTED,
-            AiAssessment.ACCEPTED_WITH_REMARKS,
-        }:
-            raise LifecycleTransitionError(
-                "close requires an accepted AI assessment without master review"
-            )
+        if state.ai_assessment is None and not state.needs_master_review:
+            raise LifecycleTransitionError("close requires a completed AI review result")
         next_status = WorkOrderStatus.CLOSED
     elif action is Action.OVERRIDE_CLOSE:
         _guard(
@@ -291,9 +268,13 @@ def transition(
             state.status is WorkOrderStatus.REWORK
             and state.ai_assessment is AiAssessment.REWORK_REQUIRED
         )
-        if not (is_rework or state.needs_master_review):
+        review_ready = state.status is WorkOrderStatus.AI_REVIEW and (
+            state.ai_assessment is not None or state.needs_master_review
+        )
+        # Older installed clients still send this explicit master-accept command.
+        if not (is_rework or review_ready):
             raise LifecycleTransitionError(
-                "override_close requires rework_required or master review"
+                "override_close requires a completed review or legacy rework"
             )
         next_status = WorkOrderStatus.CLOSED
     elif action is Action.REQUEST_REWORK:
