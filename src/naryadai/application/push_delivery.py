@@ -61,6 +61,18 @@ def _device_body(kind: str, body: str) -> str:
     return concise.get(kind, body)
 
 
+def _device_copy(target: _Target) -> tuple[str, str]:
+    """Use the current authorized order label, never mutable notification payload."""
+
+    body = _device_body(target.kind, target.body)
+    if target.work_order_id is None or not target.order_description:
+        return target.title, body
+    context = target.title.strip()
+    if target.order_number and target.order_number not in context:
+        context = f"{context} · № {target.order_number}"
+    return target.order_description, f"{context}. {body}"
+
+
 @dataclass(frozen=True, slots=True)
 class _Claim:
     delivery_id: UUID
@@ -89,6 +101,8 @@ class _Target:
     order_issued_at: datetime | None
     order_deadline: datetime | None
     order_attempt: int | None
+    order_number: str | None
+    order_description: str | None
 
 
 async def deliver_push(
@@ -171,6 +185,7 @@ async def _deliver_claim(
     if suppression is not None:
         await _finish(database, claim, now, error=suppression)
         return 0
+    title, body = _device_copy(target)
     try:
         outcome = await send_web_push(
             settings,
@@ -179,8 +194,8 @@ async def _deliver_claim(
             auth=target.auth,
             payload=build_payload(
                 str(target.notification_id),
-                title=target.title,
-                body=_device_body(target.kind, target.body),
+                title=title,
+                body=body,
                 urgent=target.urgent,
             ),
         )
@@ -354,6 +369,8 @@ async def _target(database: Database, now: datetime, claim: _Claim) -> _Target |
             WorkOrder.issued_at,
             WorkOrder.deadline,
             WorkOrder.attempt,
+            WorkOrder.number,
+            WorkOrder.description,
         )
         .select_from(PushDelivery)
         .join(Notification, Notification.id == PushDelivery.notification_id)

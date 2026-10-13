@@ -1,4 +1,5 @@
 import { Dialog } from "../components/Dialog";
+import { OrderReference } from "../components/OrderReference";
 import { Api, ApiError } from "../api";
 import { getLanguage, message, t } from "../lib/i18n";
 import { local, ruStatus } from "./OrderDetail";
@@ -232,8 +233,12 @@ function Answer({
           <h3>{t("Наряды-основания")}</h3>
           {answer.citations.map((citation) => (
             <article className="master-assistant-citation" key={citation.order_id}>
-              <button type="button" onClick={() => onOpenOrder(citation.order_id)}>
-                {t("Открыть наряд {0}", [citation.number])}
+              <button
+                type="button"
+                aria-label={`${citation.description ?? ""} · ${t("Открыть наряд {0}", [citation.number])}`}
+                onClick={() => onOpenOrder(citation.order_id)}
+              >
+                <OrderReference description={citation.description} number={citation.number} />
               </button>
               <strong>
                 {citation.equipment_inventory_number} · {citation.equipment_name}

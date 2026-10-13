@@ -467,6 +467,7 @@ async def test_workload_completion_materials_and_history_paging(api, database):
     assert len(view) == 1 and view[0]["availability"] == "busy"
     assert view[0]["area_ids"] == [str(api["areas"][0].id)]
     assert view[0]["current_order_id"] == item["order_id"]
+    assert view[0]["current_order_description"] == "Repair pump leak"
     shift = await client.patch(
         f"/api/v1/catalog/employees/{api['users']['executor']}/access",
         json={"is_on_shift": False},

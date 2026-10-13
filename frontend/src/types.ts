@@ -348,6 +348,7 @@ export interface Workload {
   availability: "free" | "busy" | "queued" | "off_shift";
   current_order_id: string | null;
   current_order_number: string | null;
+  current_order_description: string | null;
   current_started_at: string | null;
   queue_length: number;
   paused_count: number;
@@ -410,6 +411,7 @@ export interface MasterAssistantRequest {
 export interface MasterAssistantCitation {
   order_id: string;
   number: string;
+  description: string;
   equipment_id: string;
   equipment_name: string;
   equipment_inventory_number: string;
@@ -579,7 +581,7 @@ export interface PreventiveDraft {
   fault_code_id: string | null;
   title: string;
   source: PreventionSource;
-  evidence_orders: Array<{ id: string; number: string }>;
+  evidence_orders: Array<{ id: string; number: string; description: string }>;
 }
 export interface AnalyticsOption {
   id: string;
@@ -715,12 +717,14 @@ export interface AnalyticsSummary {
 export interface PreventionOutcomeRepeat {
   id: string;
   number: string;
+  description: string;
   issued_at: string;
   fault_code_id: string | null;
 }
 export interface PreventionOutcome {
   order_id: string;
   number: string;
+  description: string;
   issued_at: string;
   area_id: string;
   equipment_id: string;
@@ -733,7 +737,7 @@ export interface PreventionOutcome {
     recommendation: string;
     formula: string;
     order_ids: string[];
-    evidence_orders: Array<{ id: string; number: string }>;
+    evidence_orders: Array<{ id: string; number: string; description: string }>;
     comparison_kind: "same_fault" | "any_unplanned";
   } | null;
   closure: { closed_at: string; master_event_id: string } | null;

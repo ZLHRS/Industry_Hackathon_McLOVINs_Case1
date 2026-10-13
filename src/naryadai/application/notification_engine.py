@@ -166,7 +166,11 @@ async def _new_notification(
         body=body,
         urgent=urgent,
         action_required=action_required,
-        payload=payload,
+        payload={
+            **payload,
+            "order_number": order.number,
+            "order_description": order.description,
+        },
         created_at=now,
     )
     notification_id = await session.scalar(

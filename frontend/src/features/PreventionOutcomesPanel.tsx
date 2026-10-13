@@ -1,4 +1,5 @@
 import { Api } from "../api";
+import { OrderReference } from "../components/OrderReference";
 import { message, t } from "../lib/i18n";
 import { local, ruStatus } from "./OrderDetail";
 import { useEffect, useRef, useState } from "react";
@@ -173,7 +174,9 @@ function OutcomeCard({ item }: { item: PreventionOutcome }) {
     <article className="prevention-outcome" data-testid={`prevention-outcome-${item.order_id}`}>
       <details>
         <summary>
-          <a href={orderHref(item.order_id)}>{item.number}</a>
+          <a href={orderHref(item.order_id)}>
+            <OrderReference description={item.description} number={item.number} />
+          </a>
           <span>
             {item.equipment_inventory_number} · {item.equipment_name}
           </span>
@@ -225,7 +228,9 @@ function OutcomeCard({ item }: { item: PreventionOutcome }) {
                   {observation.repeat_orders.map((order, index) => (
                     <span key={order.id}>
                       {index > 0 ? ", " : ""}
-                      <a href={orderHref(order.id)}>{order.number}</a>
+                      <a href={orderHref(order.id)}>
+                        <OrderReference description={order.description} number={order.number} />
+                      </a>
                     </span>
                   ))}
                 </p>
@@ -251,7 +256,9 @@ function OutcomeCard({ item }: { item: PreventionOutcome }) {
                       {source.evidence_orders.map((order, index) => (
                         <span key={order.id}>
                           {index > 0 ? ", " : ""}
-                          <a href={orderHref(order.id)}>{order.number}</a>
+                          <a href={orderHref(order.id)}>
+                            <OrderReference description={order.description} number={order.number} />
+                          </a>
                         </span>
                       ))}
                     </p>

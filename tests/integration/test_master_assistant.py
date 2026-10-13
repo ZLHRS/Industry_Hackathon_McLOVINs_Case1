@@ -118,6 +118,7 @@ async def test_master_assistant_scoped_attention_repeat_and_history(api, databas
         str(second.id),
         str(accepted.id),
     }
+    assert {item["description"] for item in body["citations"]} == {"Seal leak repair"}
     history = await api["client"].post(
         "/api/v1/master-assistant/answer",
         json={
@@ -129,6 +130,7 @@ async def test_master_assistant_scoped_attention_repeat_and_history(api, databas
     )
     assert history.status_code == 200
     assert history.json()["citations"][0]["order_id"] == str(accepted.id)
+    assert history.json()["citations"][0]["description"] == "Seal leak repair"
     attention = await api["client"].post(
         "/api/v1/master-assistant/answer",
         json={"question": "attention", "topic": "attention"},

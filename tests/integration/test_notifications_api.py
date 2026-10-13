@@ -63,9 +63,13 @@ async def test_inbox_scope_read_ack_and_lifecycle_unchanged(api, database):
     inbox = (await client.get(path, headers=headers["executor"])).json()
     assert inbox["total"] == inbox["unread_count"] == 1
     assert inbox["items"][0]["order_id"] == order_id
-    assert (await client.get(f"{path}/{note_id}", headers=headers["executor"])).json()[
-        "order_id"
-    ] == order_id
+    assert inbox["items"][0]["payload"] == {
+        "order_number": inbox["items"][0]["payload"]["order_number"],
+        "order_description": "Repair pump leak",
+    }
+    detail = (await client.get(f"{path}/{note_id}", headers=headers["executor"])).json()
+    assert detail["order_id"] == order_id
+    assert detail["payload"]["order_description"] == "Repair pump leak"
     assert (await client.get(f"{path}/{note_id}", headers=headers["coworker"])).status_code == 404
     read = await client.post(f"{path}/{note_id}/read", headers=headers["executor"])
     assert read.status_code == 200

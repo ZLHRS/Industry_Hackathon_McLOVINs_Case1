@@ -30,7 +30,7 @@ for (const width of [390, 700, 1440]) {
       created_at: "2026-10-12T10:00:00Z",
       read_at: null,
       acknowledged_at: null,
-      payload: { number: order.number },
+      payload: { number: order.number, order_description: order.description },
     };
     let items: NotificationItem[] = [
       base,
@@ -76,6 +76,7 @@ for (const width of [390, 700, 1440]) {
     await expect(inbox.locator(".notification-item")).toHaveCount(2);
     const group = inbox.locator(".notification-group");
     const toggle = group.locator("summary");
+    await expect(toggle).toContainText(order.description);
     await expect(group).not.toHaveAttribute("open");
     await expect(inbox.locator(".notification-item").first()).toBeHidden();
     await expect(inbox.getByText("Событий: 2 · непрочитано: 2", { exact: true })).toBeVisible();
@@ -148,7 +149,7 @@ for (const width of [390, 700, 1440]) {
       .getByRole("button", { name: "Открыть наряд", exact: true })
       .click();
     await expect(
-      page.getByRole("dialog").getByRole("heading", { name: new RegExp(order.number) }),
+      page.getByRole("dialog").locator(".dialog-head small").filter({ hasText: order.number }),
     ).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);

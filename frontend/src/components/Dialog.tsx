@@ -5,11 +5,13 @@ import { Icon } from "./Icon";
 
 export function Dialog({
   title,
+  subtitle,
   onClose,
   children,
   size = "default",
 }: {
   title: string;
+  subtitle?: string;
   onClose: () => void;
   children: ReactNode;
   size?: "default" | "wide";
@@ -41,7 +43,10 @@ export function Dialog({
       }}
     >
       <div className="dialog-head">
-        <h2 id={titleId}>{title}</h2>
+        <div className="dialog-title">
+          <h2 id={titleId}>{title}</h2>
+          {subtitle && <small>{subtitle}</small>}
+        </div>
         <button
           className="icon-button"
           type="button"

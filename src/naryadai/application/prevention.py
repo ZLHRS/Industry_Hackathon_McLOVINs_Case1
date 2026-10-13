@@ -22,6 +22,7 @@ class EvidenceOrder(BaseModel):
 
     id: UUID
     number: str
+    description: str
 
 
 class PreventiveDraft(BaseModel):
@@ -143,7 +144,9 @@ async def validate_prevention_source(
         fault_code_id=fault_code_id,
         title=anomaly.title,
         source=source,
-        evidence_orders=[EvidenceOrder(id=row.id, number=row.number) for row in rows],
+        evidence_orders=[
+            EvidenceOrder(id=row.id, number=row.number, description=row.description) for row in rows
+        ],
     )
     return ValidatedPrevention(
         draft=draft, recommendation=recommendation, report=report, formula=anomaly.formula

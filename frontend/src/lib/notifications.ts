@@ -8,6 +8,7 @@ export type NotificationGroup = {
   orderId: string | null;
   faultReportId: string | null;
   orderReference: string | null;
+  orderDescription: string | null;
   items: NotificationItem[];
   unreadCount: number;
   urgentCount: number;
@@ -34,6 +35,11 @@ function orderReference(item: NotificationItem) {
   return text.match(/\b[\p{L}]{1,6}[-–]\d[\p{L}\d_-]*\b/iu)?.[0] ?? null;
 }
 
+function orderDescription(item: NotificationItem) {
+  const value = item.payload.order_description;
+  return typeof value === "string" && cleanNotificationText(value) ? cleanNotificationText(value) : null;
+}
+
 /**
  * Group only the notifications received in this loaded server page.
  * The API paginates individual events, therefore this deliberately does not
@@ -50,12 +56,14 @@ export function groupNotifications(items: readonly NotificationItem[]): Notifica
           ? `fault:${item.fault_report_id}`
           : "system";
     const reference = type === "order" ? orderReference(item) : null;
+    const description = type === "order" ? orderDescription(item) : null;
     const existing = groups.get(key);
     if (existing) {
       existing.items.push(item);
       existing.unreadCount += item.read_at ? 0 : 1;
       existing.urgentCount += item.urgent ? 1 : 0;
       existing.orderReference ||= reference;
+      existing.orderDescription ||= description;
       continue;
     }
     groups.set(key, {
@@ -64,6 +72,7 @@ export function groupNotifications(items: readonly NotificationItem[]): Notifica
       orderId: item.order_id,
       faultReportId: item.fault_report_id,
       orderReference: reference,
+      orderDescription: description,
       items: [item],
       unreadCount: item.read_at ? 0 : 1,
       urgentCount: item.urgent ? 1 : 0,

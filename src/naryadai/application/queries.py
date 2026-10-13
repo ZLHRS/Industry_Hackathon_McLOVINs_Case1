@@ -282,6 +282,7 @@ class WorkloadView(BaseModel):
     availability: Literal["free", "busy", "queued", "off_shift"]
     current_order_id: UUID | None
     current_order_number: str | None
+    current_order_description: str | None
     current_started_at: datetime | None
     queue_length: int
     paused_count: int
@@ -1300,6 +1301,7 @@ async def workload(
                     availability=availability,
                     current_order_id=current.id if current else None,
                     current_order_number=current.number if current else None,
+                    current_order_description=current.description if current else None,
                     current_started_at=current.started_at if current else None,
                     queue_length=waiting,
                     paused_count=sum(o.status == WorkOrderStatus.PAUSED for o in visible),

@@ -293,8 +293,11 @@ async def test_prevention_outcomes_trace_source_closure_and_repeat_rules(databas
     assert by_id[repeat_hit.id].observation is not None
     assert by_id[repeat_hit.id].observation.repeat_count == 1
     assert by_id[repeat_hit.id].observation.repeat_orders[0].number == "OUTCOME-REPEAT"
+    assert by_id[repeat_hit.id].observation.repeat_orders[0].description
     assert by_id[ppr_hit.id].source is not None
     assert by_id[ppr_hit.id].source.comparison_kind == "any_unplanned"
+    assert by_id[ppr_hit.id].description == ppr_hit.description
+    assert all(item.description for item in by_id[ppr_hit.id].source.evidence_orders)
     assert by_id[ppr_hit.id].outcome == "repeat_detected"
     assert by_id[ppr_hit.id].observation is not None
     assert by_id[ppr_hit.id].observation.repeat_count == 21

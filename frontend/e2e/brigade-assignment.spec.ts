@@ -217,7 +217,9 @@ test("shared assignment: participant sees work, responsible submits, master acce
     const leadDialog = lead.getByRole("dialog");
     await leadDialog.getByRole("button", { name: "Принять", exact: true }).click();
     await leadDialog.getByRole("button", { name: "Начать работу", exact: true }).click();
-    await expect(participantDialog.getByRole("heading", { name: /· В работе$/ })).toBeVisible();
+    await expect(
+      participantDialog.locator(".dialog-head small").filter({ hasText: /· В работе$/ }),
+    ).toBeVisible();
     await leadDialog.getByRole("button", { name: "Заполнить отчёт", exact: true }).click();
     await leadDialog
       .getByLabel("Что выполнено", { exact: true })
@@ -239,8 +241,10 @@ test("shared assignment: participant sees work, responsible submits, master acce
       .fill("Совместный осмотр и контрольный пуск проверены мастером.");
     await masterDialog.getByLabel("Оценка мастера (необязательно)", { exact: true }).fill("4");
     await masterDialog.getByRole("button", { name: "Закрыть вручную", exact: true }).click();
-    await expect(masterDialog.getByRole("heading", { name: /· Закрыт$/ })).toBeVisible();
-    await expect(participantDialog.getByRole("heading", { name: /· Закрыт$/ })).toBeVisible();
+    await expect(masterDialog.locator(".dialog-head small").filter({ hasText: /· Закрыт$/ })).toBeVisible();
+    await expect(
+      participantDialog.locator(".dialog-head small").filter({ hasText: /· Закрыт$/ }),
+    ).toBeVisible();
     const saved = await order(request, id);
     expect(saved.materials).toHaveLength(1);
     expect(Number(saved.materials[0].quantity)).toBe(1);

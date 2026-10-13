@@ -237,10 +237,10 @@ test("full lifecycle: issue, before/after photos, mobile materials, master close
       .fill("Мастер проверил фотографии и материалы, результат принят.");
     await masterDetail.getByLabel("Оценка мастера (необязательно)", { exact: true }).fill("4");
     await masterDetail.getByRole("button", { name: "Закрыть вручную", exact: true }).click();
-    await expect(masterDetail.getByRole("heading", { name: /· Закрыт$/ })).toBeVisible();
+    await expect(masterDetail.locator(".dialog-head small").filter({ hasText: /· Закрыт$/ })).toBeVisible();
     await expect(masterDetail.getByText("Решение мастера принято", { exact: true })).toBeVisible();
     await expect(masterDetail.getByText("Ожидает решения мастера", { exact: true })).toHaveCount(0);
-    await expect(detail.getByRole("heading", { name: /· Закрыт$/ })).toBeVisible();
+    await expect(detail.locator(".dialog-head small").filter({ hasText: /· Закрыт$/ })).toBeVisible();
     const outcome = detail.getByRole("region", { name: "Результат вашей сдачи", exact: true });
     await expect(outcome.getByText("Оценка мастера: 4/5", { exact: true })).toBeVisible();
     await expect(outcome.getByText("Работа принята мастером", { exact: true })).toBeVisible();

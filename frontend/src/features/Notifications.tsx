@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { Api } from "../api";
 import { Dialog } from "../components/Dialog";
 import { Icon } from "../components/Icon";
+import { OrderReference } from "../components/OrderReference";
 import type { NotificationItem, NotificationPage } from "../types";
 import { cleanNotificationText, groupNotifications, type NotificationGroup } from "../lib/notifications";
 import "./notifications.css";
@@ -184,8 +185,7 @@ export function NotificationsDialog({
 
   const groups = page ? groupNotifications(page.items) : [];
   const groupTitle = (group: NotificationGroup) => {
-    if (group.type === "order")
-      return group.orderReference ? t("Наряд {0}", [group.orderReference]) : t("Наряд");
+    if (group.type === "order") return t("Наряд");
     if (group.type === "fault") return t("Сообщение о неисправности");
     return t("Системные уведомления");
   };
@@ -268,7 +268,11 @@ export function NotificationsDialog({
                 </span>
                 <span className="notification-group-title">
                   <span className="notification-group-kind">{groupKind(group)}</span>
-                  <strong>{groupTitle(group)}</strong>
+                  {group.type === "order" && group.orderReference ? (
+                    <OrderReference description={group.orderDescription} number={group.orderReference} />
+                  ) : (
+                    <strong>{groupTitle(group)}</strong>
+                  )}
                   <span className="notification-group-preview">{eventTitle(group.items[0])}</span>
                   <small>
                     {t("Событий: {0} · непрочитано: {1}", [group.items.length, group.unreadCount])}

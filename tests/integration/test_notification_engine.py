@@ -187,8 +187,12 @@ async def test_outbox_fanout_marks_current_event_once_and_bumps_revision(databas
                 )
             ).all()
         )
+        order = await session.get(WorkOrder, order_id)
         assert notification is not None
+        assert order is not None
         assert notification.kind == "assignment"
+        assert notification.payload["order_number"] == order.number
+        assert notification.payload["order_description"] == "Notification policy fixture"
         assert revisions == {executor_id: 1, master_id: 1, manager_id: 1}
 
 

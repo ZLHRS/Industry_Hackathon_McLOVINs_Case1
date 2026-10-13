@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -41,6 +43,23 @@ async def test_device_body_preserves_full_inbox_copy_but_shortens_lock_screen_co
     assert push_delivery._device_body("assignment", "Подтвердите получение.") == (
         "Подтвердите получение."
     )
+
+
+async def test_order_title_retains_reminder_context_in_device_body() -> None:
+    target = cast(
+        push_delivery._Target,
+        SimpleNamespace(
+            kind="deadline_reminder",
+            work_order_id=uuid4(),
+            order_description="Осмотреть привод",
+            order_number="NR-123",
+            title="До срока наряда NR-123 — 30 мин",
+            body="Обновите статус до срока.",
+        ),
+    )
+    title, body = push_delivery._device_copy(target)
+    assert title == "Осмотреть привод"
+    assert body == "До срока наряда NR-123 — 30 мин. Обновите статус до срока."
 
 
 async def _delivery(database, *, role: str = "executor") -> tuple[PushDelivery, PushSubscription]:
@@ -214,8 +233,8 @@ async def test_visible_recipient_delivery_is_accepted(database, monkeypatch, rol
     assert payloads == [
         {
             "notification_id": str(delivery.notification_id),
-            "title": "Test",
-            "body": "Internal",
+            "title": "Push test",
+            "body": f"Test · № PUSH-{role}. Internal",
             "urgent": False,
             "url": f"/?notification={delivery.notification_id}",
             "tag": str(delivery.notification_id),

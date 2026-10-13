@@ -252,6 +252,7 @@ async def test_preventive_draft_is_read_only_and_confirmed_order_has_audit_linea
     assert draft.fault_code_id == data["fault"]
     assert draft.title.startswith("Recurring pump:")
     assert len(draft.evidence_orders) == 2
+    assert all(item.description for item in draft.evidence_orders)
 
     async with database.sessions() as session:
         assert await session.scalar(select(func.count()).select_from(WorkOrder)) == before_orders
@@ -286,6 +287,9 @@ async def test_preventive_draft_is_read_only_and_confirmed_order_has_audit_linea
         assert datetime.fromisoformat(lineage["period"]["from"]) == source.query.from_
         assert [item["number"] for item in lineage["evidence_orders"]] == [
             item.number for item in draft.evidence_orders
+        ]
+        assert [item["description"] for item in lineage["evidence_orders"]] == [
+            item.description for item in draft.evidence_orders
         ]
 
     async with database.sessions.begin() as session:

@@ -1,0 +1,20 @@
+.order-reference {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.order-reference-title {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.order-reference-number {
+  color: var(--muted-ink);
+  font-size: 0.8em;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}

@@ -189,7 +189,9 @@ for (const width of [1440, 390]) {
     await panel.locator(":scope > summary").click();
     await panel.locator(":scope > summary").click();
     await expect(card).toContainText("Повтор зарегистрирован");
-    await card.locator(":scope > details > summary").click();
+    // Focus the disclosure itself: its now descriptive order link opens the order.
+    await card.locator(":scope > details > summary").focus();
+    await card.locator(":scope > details > summary").press("Space");
     await expect(card.locator(`a[href="/orders/${repeatId}"]`)).toBeVisible();
     await card.scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath(`repeat-${width}.png`) });

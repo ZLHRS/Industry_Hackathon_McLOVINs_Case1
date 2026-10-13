@@ -53,14 +53,19 @@ for (const width of [1440, 390]) {
     const source = data.citations[0];
     const stored = await page.request.get(`/api/v1/work-orders/${source.order_id}`, { headers });
     expect(stored.status()).toBe(200);
-    expect(await stored.json()).toMatchObject({ number: source.number, status: "closed" });
+    const sourceOrder = await stored.json();
+    expect(sourceOrder).toMatchObject({ number: source.number, status: "closed" });
+    expect(source.description).toBe(sourceOrder.description);
+    await expect(
+      panel.locator(".master-assistant-citation").first().locator(".order-reference-title"),
+    ).toContainText(sourceOrder.description);
     await panel.getByTestId("assistant-answer").evaluate((answer) => {
       const dialog = answer.closest("dialog");
       if (dialog) dialog.scrollTop = (answer as HTMLElement).offsetTop - 90;
     });
     await page.screenshot({ path: info.outputPath(`assistant-${width}.png`) });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-    await panel.getByRole("button", { name: `Открыть наряд ${source.number}`, exact: true }).click();
+    await panel.getByRole("button", { name: new RegExp(`Открыть наряд ${source.number}$`) }).click();
     await expect(page.getByRole("dialog")).toContainText(source.number);
     await expect(panel).toHaveCount(0);
     await page.keyboard.press("Escape");

@@ -54,6 +54,28 @@ class NotificationPage(BaseModel):
     unread_count: int
 
 
+def notification_view(
+    notification: Notification,
+    *,
+    order_number: str | None = None,
+    order_description: str | None = None,
+) -> NotificationView:
+    """Add a label only for the order joined through the recipient's visibility scope."""
+
+    view = NotificationView.model_validate(notification)
+    if notification.work_order_id is None or order_description is None:
+        return view
+    return view.model_copy(
+        update={
+            "payload": view.payload
+            | {
+                "order_number": order_number,
+                "order_description": order_description,
+            }
+        }
+    )
+
+
 def inbox_scope(principal: Principal) -> Any:
     report_live = exists(
         select(Employee.id)
@@ -95,7 +117,7 @@ async def inbox(
     async with database.sessions() as session:
         await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
         query = (
-            select(Notification)
+            select(Notification, WorkOrder.number, WorkOrder.description)
             .outerjoin(WorkOrder, WorkOrder.id == Notification.work_order_id)
             .where(scope)
         )
@@ -111,13 +133,18 @@ async def inbox(
             )
             or 0
         )
-        rows = await session.scalars(
-            query.order_by(Notification.created_at.desc(), Notification.id.desc())
-            .offset(offset)
-            .limit(limit)
-        )
+        rows = (
+            await session.execute(
+                query.order_by(Notification.created_at.desc(), Notification.id.desc())
+                .offset(offset)
+                .limit(limit)
+            )
+        ).all()
         return NotificationPage(
-            items=[NotificationView.model_validate(row) for row in rows],
+            items=[
+                notification_view(item, order_number=number, order_description=description)
+                for item, number, description in rows
+            ],
             total=total,
             unread_count=unread,
         )
@@ -153,7 +180,16 @@ async def _mark(
                 )
             )
         await session.flush()
-        return NotificationView.model_validate(notification)
+        order = (
+            await session.get(WorkOrder, notification.work_order_id)
+            if notification.work_order_id is not None
+            else None
+        )
+        return notification_view(
+            notification,
+            order_number=None if order is None else order.number,
+            order_description=None if order is None else order.description,
+        )
 
 
 @router.post("/{notification_id}/read", response_model=NotificationView)
@@ -283,11 +319,14 @@ async def get_notification(
     notification_id: UUID, database: DatabaseDep, principal: PrincipalDep
 ) -> NotificationView:
     async with database.sessions() as session:
-        item = await session.scalar(
-            select(Notification)
-            .outerjoin(WorkOrder, WorkOrder.id == Notification.work_order_id)
-            .where(Notification.id == notification_id, inbox_scope(principal))
-        )
-        if item is None:
+        row = (
+            await session.execute(
+                select(Notification, WorkOrder.number, WorkOrder.description)
+                .outerjoin(WorkOrder, WorkOrder.id == Notification.work_order_id)
+                .where(Notification.id == notification_id, inbox_scope(principal))
+            )
+        ).one_or_none()
+        if row is None:
             raise OperationError(404, "notification_not_found")
-        return NotificationView.model_validate(item)
+        item, number, description = row
+        return notification_view(item, order_number=number, order_description=description)

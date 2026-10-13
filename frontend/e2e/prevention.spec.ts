@@ -60,7 +60,7 @@ for (const width of [1440, 390]) {
     expect(mutations).toBe(0);
     await dialog.getByTestId("prevention-origin").locator("summary").click();
     const related = dialog.getByTestId("prevention-origin").getByRole("button", {
-      name: draft.evidence_orders[0].number,
+      name: new RegExp(draft.evidence_orders[0].number),
       exact: true,
     });
     await related.click();
@@ -119,7 +119,7 @@ for (const width of [1440, 390]) {
     const historyRelated = page.getByTestId("prevention-origin").getByRole("link").first();
     await expect(historyRelated).toHaveAttribute("href", `/orders/${draft.evidence_orders[0].id}`);
     await historyRelated.click();
-    await expect(page.getByRole("dialog").getByRole("heading").first()).toContainText(
+    await expect(page.getByRole("dialog").locator(".dialog-head small")).toContainText(
       draft.evidence_orders[0].number,
     );
     expect(errors).toEqual([]);

@@ -14,6 +14,7 @@ import "./reference-ux.css";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "../components/Dialog";
 import { Icon, type IconName } from "../components/Icon";
+import { OrderReference } from "../components/OrderReference";
 import { Api, ApiError } from "../api";
 import { local, ruPriority, ruStatus } from "./OrderDetail";
 import { SimilarRepairsPanel } from "./SimilarRepairsPanel";
@@ -711,11 +712,10 @@ function OrderRow({
       <button
         className="order-hit"
         onClick={() => onOpen(order.id)}
-        aria-label={t("Открыть наряд {0}", [order.number])}
+        aria-label={`${order.description} · ${t("Открыть наряд {0}", [order.number])}`}
       >
-        <span className="order-number">{order.number}</span>
         <span className="order-main">
-          <strong>{description}</strong>
+          <OrderReference description={description} number={order.number} className="order-row-reference" />
           <small>{machine ? `${machine.inventory_number} · ${machine.name}` : t("Оборудование")}</small>
           {order.brigade && (
             <small className="order-brigade">
@@ -1085,11 +1085,15 @@ export function CreateOrderDialog({
                       className="text-button prevention-order-link"
                       type="button"
                       onClick={() => void viewEvidence(order.id)}
-                      aria-label={order.number}
+                      aria-label={`${order.description ?? ""} · ${t("Открыть наряд {0}", [order.number])}`}
                       aria-expanded={evidence?.id === order.id}
                       disabled={evidenceLoading === order.id}
                     >
-                      {evidenceLoading === order.id ? t("Загрузка…") : order.number}
+                      {evidenceLoading === order.id ? (
+                        t("Загрузка…")
+                      ) : (
+                        <OrderReference description={order.description} number={order.number} />
+                      )}
                     </button>
                   </li>
                 ))}
@@ -1101,7 +1105,7 @@ export function CreateOrderDialog({
                   data-testid="prevention-evidence-preview"
                   aria-live="polite"
                 >
-                  <strong>{evidence.number}</strong>
+                  <OrderReference description={evidence.description} number={evidence.number} />
                   <span>{ruStatus[evidence.status] ?? evidence.status}</span>
                   <p>{evidence.description}</p>
                   <small>
@@ -1376,10 +1380,13 @@ export function CreateOrderDialog({
                               </>
                             )}
                             {currentOrderNumber && (
-                              <>
-                                {" "}
-                                {t("· текущий наряд:")} {currentOrderNumber}
-                              </>
+                              <span className="suggestion-current-order">
+                                {t("Текущий наряд:")}{" "}
+                                <OrderReference
+                                  description={workloadPerson?.current_order_description}
+                                  number={currentOrderNumber}
+                                />
+                              </span>
                             )}
                           </small>
                         </div>
@@ -1668,7 +1675,7 @@ export function CreateOrderDialog({
                                 ? t("В работе")
                                 : t("Не на смене")}
                           {currentBusyOrderNumber(person)
-                            ? ` · ${t("текущий наряд:")} ${currentBusyOrderNumber(person)}`
+                            ? `${person.current_order_description ? ` · ${person.current_order_description}` : ""} · № ${currentBusyOrderNumber(person)}`
                             : ""}
                         </option>
                       ))}
@@ -1769,7 +1776,10 @@ export function WorkloadView({
                   type="button"
                   onClick={() => onOpen(person.current_order_id!)}
                 >
-                  {person.current_order_number}
+                  <OrderReference
+                    description={person.current_order_description}
+                    number={person.current_order_number}
+                  />
                 </button>
               ) : (
                 <small className="workload-queue" title={t("В очереди:") + " " + person.queue_length}>

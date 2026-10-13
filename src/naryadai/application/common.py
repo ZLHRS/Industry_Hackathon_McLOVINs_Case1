@@ -196,7 +196,13 @@ async def record_event(
             to_status=order.status,
             occurred_at=occurred_at,
             reason=reason,
-            details=(details or {}) | {"version": order.version, "attempt": order.attempt},
+            details=(details or {})
+            | {
+                "order_number": order.number,
+                "order_description": order.description,
+                "version": order.version,
+                "attempt": order.attempt,
+            },
         )
     )
     # Explicit flush establishes the event FK without relying on ORM relationships.
@@ -208,6 +214,8 @@ async def record_event(
             event_type="work_order." + action,
             payload={
                 "order_id": str(order.id),
+                "order_number": order.number,
+                "order_description": order.description,
                 "event_id": str(event_id),
                 "version": order.version,
                 "action": action,

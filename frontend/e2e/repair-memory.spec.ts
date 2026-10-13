@@ -67,10 +67,11 @@ for (const width of [1440, 390]) {
     const first = data.items[0];
     const card = memory.getByTestId(`similar-repair-${first.order_id}`);
     await expect(card).toContainText(first.number);
+    await expect(card.locator(".order-reference-title").first()).toContainText(first.description);
     await card.locator("summary").click();
     await expect(card).toContainText(first.work_description);
     await expect(card).toContainText(first.materials[0].name);
-    await card.getByRole("button", { name: `Открыть наряд ${first.number}`, exact: true }).click();
+    await card.getByRole("button", { name: new RegExp(`Открыть наряд ${first.number}$`) }).click();
     await expect(card.getByTestId("similar-repair-source")).toContainText(first.number);
     await expect(card.getByTestId("similar-repair-source")).toContainText(first.description);
     await expect(dialog.getByLabel("Описание", { exact: true })).toHaveValue(source.description);

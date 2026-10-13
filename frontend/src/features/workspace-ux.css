@@ -438,6 +438,18 @@
   color: #596062;
   line-height: 1.35;
 }
+.suggestion-current-order {
+  align-items: baseline;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+}
+.suggestion-current-order .order-reference {
+  display: inline-grid;
+}
+.suggestion-current-order .order-reference-title {
+  -webkit-line-clamp: 1;
+}
 .suggestion-card .text-button {
   flex-shrink: 0;
 }

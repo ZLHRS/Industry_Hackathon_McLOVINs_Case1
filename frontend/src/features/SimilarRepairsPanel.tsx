@@ -1,5 +1,6 @@
 import { message, t } from "../lib/i18n";
 import { local, ruStatus } from "./OrderDetail";
+import { OrderReference } from "../components/OrderReference";
 import { useEffect, useRef, useState } from "react";
 import type { OrderDetail, SimilarRepair, SimilarRepairs, SimilarRepairsRequest } from "../types";
 
@@ -149,7 +150,7 @@ function SimilarRepairsResults({ input, onLoad, onViewEvidence }: Omit<Props, "r
         >
           <details>
             <summary>
-              <strong>{item.number}</strong>
+              <OrderReference description={item.description} number={item.number} />
               <span>
                 {item.equipment_inventory_number} · {item.equipment_name}
               </span>
@@ -207,7 +208,7 @@ function SimilarRepairsResults({ input, onLoad, onViewEvidence }: Omit<Props, "r
                   data-testid="similar-repair-source"
                   aria-live="polite"
                 >
-                  <strong>{source.number}</strong>
+                  <OrderReference description={source.description} number={source.number} />
                   <span>{ruStatus[source.status] ?? source.status}</span>
                   <p>{source.description}</p>
                 </section>

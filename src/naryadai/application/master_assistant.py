@@ -81,6 +81,7 @@ class AssistantCitation(BaseModel):
 
     order_id: UUID
     number: str
+    description: str
     equipment_id: UUID
     equipment_name: str
     equipment_inventory_number: str
@@ -374,6 +375,7 @@ def _citation(order: WorkOrder, equipment: Equipment, evidence: str) -> Assistan
     return AssistantCitation(
         order_id=order.id,
         number=order.number,
+        description=order.description,
         equipment_id=equipment.id,
         equipment_name=equipment.name,
         equipment_inventory_number=equipment.inventory_number,

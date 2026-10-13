@@ -3,6 +3,7 @@ import { t, getLocale, useLanguage, message } from "./lib/i18n";
 import { AppPreferences } from "./components/AppPreferences";
 import { ProfileMenu } from "./components/ProfileMenu";
 import { Icon, type IconName } from "./components/Icon";
+import { OrderReference } from "./components/OrderReference";
 import { useDeviceInstallation } from "./lib/useDeviceInstallation";
 import { navigation, permittedView, canViewWorkload, type View } from "./lib/roleAccess";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -834,7 +835,12 @@ export default function App() {
                 <div key={entry.id} className="pending-item">
                   <span>
                     {actionLabels[entry.request.action] || t("Действие")} ·{" "}
-                    {data?.orders.items.find((order) => order.id === entry.orderId)?.number || t("наряд")}
+                    <OrderReference
+                      description={
+                        data?.orders.items.find((order) => order.id === entry.orderId)?.description
+                      }
+                      number={data?.orders.items.find((order) => order.id === entry.orderId)?.number}
+                    />
                   </span>
                   <small>{message(entry.error || "") || t("Ожидает подтверждения")}</small>
                   <button

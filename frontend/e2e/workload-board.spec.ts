@@ -35,8 +35,8 @@ test("overdue board partitions real API orders without duplicates and history st
   await expect(overdue.locator(".order-row")).toHaveCount(activeOverdue.length);
   await expect(board.locator(".order-row")).toHaveCount(orders.items.length);
   for (const order of activeOverdue) {
-    await expect(overdue.locator(".order-number").filter({ hasText: order.number })).toHaveCount(1);
-    await expect(board.locator(".order-number").filter({ hasText: order.number })).toHaveCount(1);
+    await expect(overdue.locator(".order-reference-number").filter({ hasText: order.number })).toHaveCount(1);
+    await expect(board.locator(".order-reference-number").filter({ hasText: order.number })).toHaveCount(1);
   }
   await overdue.scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath("overdue-1440.png") });
@@ -83,7 +83,9 @@ test("busy current number appears in both assignment controls and availability c
   await dialog.getByLabel("Описание", { exact: true }).fill("Проверить крепление привода");
   const candidate = dialog.getByTestId(`quick-executor-${busy.employee_id}`);
   await expect(candidate).toContainText(busy.current_order_number!);
-  await expect(candidate).toContainText("текущий наряд:");
+  expect(busy.current_order_description).toBeTruthy();
+  await expect(candidate).toContainText(busy.current_order_description!);
+  await expect(candidate).toContainText("Текущий наряд:");
   await candidate.scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath("busy-number-1440.png") });
   await page.setViewportSize({ width: 390, height: 844 });

@@ -30,6 +30,7 @@ class OutcomeEvidence(BaseModel):
 
     id: UUID
     number: str
+    description: str
 
 
 class RepeatEvidence(OutcomeEvidence):
@@ -73,6 +74,7 @@ class PreventionOutcome(BaseModel):
 
     order_id: UUID
     number: str
+    description: str
     issued_at: datetime
     area_id: UUID
     equipment_id: UUID
@@ -309,6 +311,7 @@ async def prevention_outcomes(
                     PreventionOutcome(
                         order_id=order.id,
                         number=order.number,
+                        description=order.description,
                         issued_at=order.issued_at,
                         area_id=order.area_id,
                         equipment_id=equipment.id,
@@ -336,6 +339,7 @@ async def prevention_outcomes(
                     PreventionOutcome(
                         order_id=order.id,
                         number=order.number,
+                        description=order.description,
                         issued_at=order.issued_at,
                         area_id=order.area_id,
                         equipment_id=equipment.id,
@@ -357,7 +361,8 @@ async def prevention_outcomes(
                 formula=lineage.formula,
                 order_ids=list(lineage.order_ids),
                 evidence_orders=[
-                    OutcomeEvidence(id=item.id, number=item.number) for item in source_orders
+                    OutcomeEvidence(id=item.id, number=item.number, description=item.description)
+                    for item in source_orders
                 ],
                 comparison_kind=comparison_kind,
             )
@@ -444,6 +449,7 @@ async def prevention_outcomes(
                     RepeatEvidence(
                         id=item.id,
                         number=item.number,
+                        description=item.description,
                         issued_at=item.issued_at,
                         fault_code_id=item.fault_code_id,
                     )
@@ -505,6 +511,7 @@ def _outcome_view(
     return PreventionOutcome(
         order_id=order.id,
         number=order.number,
+        description=order.description,
         issued_at=order.issued_at,
         area_id=order.area_id,
         equipment_id=equipment.id,

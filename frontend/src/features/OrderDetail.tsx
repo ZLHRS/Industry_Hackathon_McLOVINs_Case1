@@ -8,6 +8,7 @@ import { OfflineStorageError } from "../lib/offline";
 import { blackenPixels, normalizeRedaction, type RedactionRect } from "../lib/photoRedaction";
 import { Dialog } from "../components/Dialog";
 import { Icon } from "../components/Icon";
+import { OrderReference } from "../components/OrderReference";
 import { AIReviewReport, ExecutorFeedbackReport, ReviewHistory } from "./AIReviewReport";
 import {
   masterCloseOptions,
@@ -158,7 +159,13 @@ const preventionOrigin = (event: EventItem) => {
         if (!item || typeof item !== "object" || Array.isArray(item)) return [];
         const order = item as Record<string, unknown>;
         return typeof order.id === "string" && typeof order.number === "string"
-          ? [{ id: order.id, number: order.number }]
+          ? [
+              {
+                id: order.id,
+                number: order.number,
+                description: typeof order.description === "string" ? order.description : null,
+              },
+            ]
           : [];
       })
     : [];
@@ -586,7 +593,11 @@ export function OrderDetailDialog({
     "rework",
   ].includes(detail.status);
   return (
-    <Dialog title={`${detail.number} · ${ruStatus[detail.status]}`} onClose={onClose}>
+    <Dialog
+      title={detail.description}
+      subtitle={`${t("Наряд")} № ${detail.number} · ${ruStatus[detail.status]}`}
+      onClose={onClose}
+    >
       <div className="order-detail">
         <div className="order-tools">
           <p className="order-description">{detail.description}</p>
@@ -1495,7 +1506,7 @@ export function OrderDetailDialog({
                                       className="prevention-order-link"
                                       href={`/orders/${encodeURIComponent(order.id)}`}
                                     >
-                                      {order.number}
+                                      <OrderReference description={order.description} number={order.number} />
                                     </a>
                                   </li>
                                 ))}
