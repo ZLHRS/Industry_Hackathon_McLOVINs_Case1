@@ -180,6 +180,52 @@ def export_analytics(report: AnalyticsReport) -> bytes:
     )
     sheet.set_column(0, 0, 60, book.text)
     sheet.set_column(2, 3, 75, book.text)
+    if report.forecast is not None:
+        sheet = book.table(
+            "Прогноз отказов",
+            [
+                "Оборудование",
+                f"Внеплановых за {report.forecast.recent_days} дн.",
+                "Обычно за столько же",
+                "Рост, раз",
+                "Риск",
+                "Частый шифр",
+                "Из них по шифру",
+            ],
+            [
+                [
+                    r.equipment_name,
+                    r.recent_count,
+                    r.usual_count,
+                    "Раньше не было" if r.growth is None else r.growth,
+                    "Высокий" if r.level == "high" else "Повышенный",
+                    f"{r.fault_code} · {r.fault_name}" if r.fault_code else "Не выделяется",
+                    r.fault_count,
+                ]
+                for r in report.forecast.items
+            ],
+        )
+        sheet.set_column(0, 0, 40, book.text)
+        sheet.set_column(5, 5, 40, book.text)
+    if report.breakdown_time is not None:
+        timing = report.breakdown_time
+        sheet = book.table(
+            "Поломки по сменам",
+            ["Интервал", "Внеплановые наряды"],
+            [
+                ["Дневная смена 08–20", timing.day_shift],
+                ["Ночная смена 20–08", timing.night_shift],
+                *(
+                    [label, value]
+                    for label, value in zip(
+                        ("00–06", "06–12", "12–18", "18–24"), timing.buckets, strict=True
+                    )
+                ),
+                [f"Всего за {timing.days} дней", timing.total],
+                ["Из них время по началу простоя", timing.from_downtime],
+            ],
+        )
+        sheet.set_column(0, 0, 32, book.text)
     explanations: list[list[object]] = [
         [
             "Границы",
@@ -208,6 +254,10 @@ def export_analytics(report: AnalyticsReport) -> bytes:
     ]
     for key, value in report.meta.formula_descriptions.items():
         explanations.append([key, value])
+    if report.forecast is not None:
+        explanations.append(["Прогноз отказов", report.forecast.formula])
+    if report.breakdown_time is not None:
+        explanations.append(["Поломки по сменам", report.breakdown_time.formula])
     for warning in [*report.meta.warnings, *report.ratings.limitations]:
         explanations.append(["Ограничение", warning])
     sheet = book.table("Методика", ["Условие", "Описание"], explanations)

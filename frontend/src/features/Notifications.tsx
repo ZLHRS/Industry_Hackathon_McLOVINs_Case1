@@ -191,7 +191,9 @@ export function NotificationsDialog({
   };
   const groupKind = (group: NotificationGroup) =>
     group.type === "order"
-      ? t("События по наряду")
+      ? group.equipmentLabel && group.orderReference
+        ? t("Наряд {0}", [group.orderReference])
+        : t("События по наряду")
       : group.type === "fault"
         ? t("Сообщения об оборудовании")
         : t("Служебные сообщения");
@@ -269,7 +271,10 @@ export function NotificationsDialog({
                 <span className="notification-group-title">
                   <span className="notification-group-kind">{groupKind(group)}</span>
                   {group.type === "order" && group.orderReference ? (
-                    <OrderReference description={group.orderDescription} number={group.orderReference} />
+                    <OrderReference
+                      description={group.orderDescription ?? group.equipmentLabel}
+                      number={group.orderReference}
+                    />
                   ) : (
                     <strong>{groupTitle(group)}</strong>
                   )}

@@ -3,8 +3,9 @@ import { t, getLocale, message } from "../lib/i18n";
 import { AnalyticsSummaryPanel } from "./AnalyticsSummaryPanel";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Api, ApiError } from "../api";
-import { Icon } from "../components/Icon";
+import { Icon, type IconName } from "../components/Icon";
 import { PreventionOutcomesPanel } from "./PreventionOutcomesPanel";
+import { HistoryTrends } from "./HistoryTrends";
 import type {
   AnalyticsOptions,
   AnalyticsQuery,
@@ -14,6 +15,8 @@ import type {
   PreventionSource,
   Role,
 } from "../types";
+
+export type AnalyticsMode = "report" | "insights";
 
 const zone = "Asia/Qostanay";
 const names = {
@@ -41,6 +44,7 @@ const duration = (value: number | null | undefined) => {
 };
 const entries = (value: Record<string, unknown>) => Object.entries(value).filter(([, v]) => v != null);
 const shortDate = (value?: string) => value?.slice(0, 10) ?? date();
+const percent = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
 const queryString = (query: Partial<AnalyticsQuery>): AnalyticsQuery => ({
   period: "day",
   date: date(),
@@ -51,18 +55,26 @@ const queryString = (query: Partial<AnalyticsQuery>): AnalyticsQuery => ({
   brigade_id: [],
   ...query,
 });
+// Each tab keeps its own filters for the session, so switching tabs never loses a chosen period.
+const rememberedQueries: Partial<Record<AnalyticsMode, AnalyticsQuery>> = {};
+
 export function AnalyticsView({
   api,
   role,
+  mode = "report",
   revision,
   onPreventiveDraft,
 }: {
   api: Api;
   role: Role;
+  mode?: AnalyticsMode;
   revision: number;
   onPreventiveDraft: (draft: PreventiveDraft) => void;
 }) {
-  const [query, setQuery] = useState<AnalyticsQuery>(queryString({}));
+  const insights = mode === "insights" && role !== "executor";
+  const [query, setQuery] = useState<AnalyticsQuery>(
+    () => rememberedQueries[mode] ?? queryString(insights ? { period: "month" } : {}),
+  );
   const [options, setOptions] = useState<AnalyticsOptions | null>(null);
   const [report, setReport] = useState<AnalyticsReport | null>(null);
   const [appliedQuery, setAppliedQuery] = useState<AnalyticsQuery | null>(null);
@@ -90,6 +102,7 @@ export function AnalyticsView({
       if (!mounted.current || request !== reportRequest.current) return;
       setReport(nextReport);
       setAppliedQuery(next);
+      rememberedQueries[mode] = next;
       setReportRevision(revision);
       setSummary(null);
       setSummaryError("");
@@ -122,6 +135,15 @@ export function AnalyticsView({
       summaryRequest.current += 1;
     };
   }, []);
+  // The first realtime sync after opening the page is a baseline, not a change since the report.
+  const firstRevision = useRef(revision);
+  useEffect(() => {
+    if (firstRevision.current === 0 && revision > 0 && reportRevision === 0) {
+      firstRevision.current = revision;
+      const timer = window.setTimeout(() => setReportRevision(revision), 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, [revision, reportRevision]);
   const stale = report !== null && reportRevision < revision;
   const pendingFilters = appliedQuery !== null && JSON.stringify(query) !== JSON.stringify(appliedQuery);
   const machines = useMemo(() => options?.equipment ?? [], [options]);
@@ -179,30 +201,64 @@ export function AnalyticsView({
       if (mounted.current) setPreparing(false);
     }
   };
+  const heading = insights
+    ? {
+        eyebrow: t("ИИ-КОНТРОЛЁР СМЕНЫ"),
+        title: t("ИИ-анализ"),
+        lead: t(
+          "Закономерности в истории нарядов: проблемное оборудование, повторные отказы и сигналы с рекомендациями.",
+        ),
+      }
+    : {
+        eyebrow: t("РЕЗУЛЬТАТЫ РАБОТЫ"),
+        title: role === "executor" ? t("Мой отчёт") : t("Отчёты смены"),
+        lead:
+          role === "executor"
+            ? t("Ваши наряды, оценка и время работы за выбранный период · время Костаная")
+            : t("Итоги смены по журналу нарядов: выполнение, рейтинг, материалы и простои · время Костаная"),
+      };
   return (
-    <section className="workspace analytics" aria-busy={loading}>
+    <section
+      className={`workspace analytics ${insights ? "analytics-insights" : "analytics-report"}`}
+      aria-busy={loading}
+    >
       <div className="page-head analytics-head">
         <div>
-          <p className="eyebrow">{t("РЕЗУЛЬТАТЫ РАБОТЫ")}</p>
-          <h1>{role === "executor" ? t("Мой отчёт") : t("Отчёты смены")}</h1>
-          <p className="muted">{t("По журналу нарядов · время Костаная")}</p>
+          <p className="eyebrow">{heading.eyebrow}</p>
+          <h1>{heading.title}</h1>
+          <p className="muted analytics-lead">{heading.lead}</p>
         </div>
         <div className="analytics-actions">
-          <button
-            className="secondary with-icon"
-            onClick={() => void download()}
-            disabled={!report || exporting}
-          >
-            <Icon name="download" />
-            {exporting ? t("Готовим Excel…") : t("Скачать Excel")}
-          </button>
+          {!insights && (
+            <button
+              className="secondary with-icon"
+              onClick={() => void download()}
+              disabled={!report || exporting}
+            >
+              <Icon name="download" />
+              {exporting ? t("Готовим Excel…") : t("Скачать Excel")}
+            </button>
+          )}
+          {!insights && (
+            <button
+              className="secondary with-icon analytics-print"
+              type="button"
+              onClick={() => window.print()}
+              disabled={!report}
+              title={t("Сохранить отчёт в PDF или распечатать")}
+              aria-label={t("Сохранить отчёт в PDF или распечатать")}
+            >
+              <Icon name="printer" />
+              PDF
+            </button>
+          )}
           <button
             className="primary with-icon"
             onClick={() => void refresh()}
             disabled={loading || summarizing}
           >
             <Icon name="refresh" />
-            {loading ? t("Считаем…") : t("Обновить отчёт")}
+            {loading ? t("Считаем…") : insights ? t("Обновить анализ") : t("Обновить отчёт")}
           </button>
         </div>
       </div>
@@ -307,23 +363,20 @@ export function AnalyticsView({
             />
           </>
         )}
-        <button className="secondary" disabled={loading || summarizing}>
+        <button className="secondary with-icon analytics-apply" disabled={loading || summarizing}>
+          <Icon name="check" />
           {t("Применить")}
         </button>
       </form>
       {pendingFilters && (
         <p className="muted report-pending">
-          {t("Фильтры изменены. Нажмите «Применить», чтобы обновить показанный отчёт, выгрузку и ИИ-сводку.")}
+          <Icon name="alert" />
+          {insights
+            ? t("Фильтры изменены. Нажмите «Применить», чтобы обновить анализ.")
+            : t(
+                "Фильтры изменены. Нажмите «Применить», чтобы обновить показанный отчёт, выгрузку и ИИ-сводку.",
+              )}
         </p>
-      )}
-      {stale && (
-        <div className="banner">
-          {t("Появились новые изменения.")}{" "}
-          <button className="secondary with-icon banner-action" onClick={() => void refresh()}>
-            <Icon name="refresh" />
-            {t("Обновить данные")}
-          </button>
-        </div>
       )}
       {error && (
         <p className="error" role="alert">
@@ -331,12 +384,21 @@ export function AnalyticsView({
         </p>
       )}
       {loading && !report && (
-        <Skeleton variant="report" count={4} label={t("Формируем отчёт по журналу нарядов…")} />
+        <Skeleton
+          variant="report"
+          count={insights ? 4 : 5}
+          label={
+            insights ? t("Ищем закономерности в истории нарядов…") : t("Формируем отчёт по журналу нарядов…")
+          }
+        />
       )}
       {report && (
         <>
           <div className="report-caption">
-            <strong>{report.period.label}</strong>
+            <span className="report-caption-period">
+              <Icon name="calendar" />
+              <strong>{report.period.label}</strong>
+            </span>
             <span>
               {t("Сформирован:")}{" "}
               {new Intl.DateTimeFormat(getLocale(), {
@@ -348,82 +410,297 @@ export function AnalyticsView({
             <span>
               {t("Нарядов в расчёте:")} {report.meta.row_count}
             </span>
-          </div>
-          <ReportWarnings warnings={report.meta.warnings} />
-          <section className="metric-grid">
-            <Metric label={t("Выдано")} value={report.orders.issued} />
-            <Metric label={t("Завершено")} value={report.orders.completed} />
-            <Metric label={t("Закрыто")} value={report.orders.closed} />
-            <Metric label={t("Отказы")} value={report.orders.rejected} />
-            <Metric label={t("Незакрыто")} value={report.orders.backlog} warn={report.orders.backlog > 0} />
-            <Metric label={t("Просрочено")} value={report.orders.overdue} warn={report.orders.overdue > 0} />
-            <Metric
-              label={t("Реакция")}
-              value={duration(report.durations.response_seconds)}
-              note={t("В среднем до первого ответа")}
-            />
-            <Metric
-              label={t("Работа")}
-              value={duration(report.durations.work_seconds)}
-              note={t("В среднем, без пауз")}
-            />
-            {people && (
-              <Metric
-                label={t("Простой")}
-                value={duration(report.downtime.known_seconds)}
-                note={t("Только записанные интервалы")}
-              />
+            {loading ? (
+              <span className="report-caption-loading" role="status">
+                <span className="spinner-dot" aria-hidden="true" />
+                {t("Обновляем…")}
+              </span>
+            ) : (
+              stale && (
+                <button
+                  type="button"
+                  className="report-stale"
+                  onClick={() => void refresh()}
+                  title={t("Появились новые изменения.")}
+                >
+                  <span className="report-stale-dot" aria-hidden="true" />
+                  {t("Есть новые данные")}
+                  <span className="report-stale-action">
+                    <Icon name="refresh" />
+                    {t("Обновить данные")}
+                  </span>
+                </button>
+              )
             )}
-            <Metric label={t("Активные наряды")} value={report.activity.active_order_count} />
-          </section>
-          <section className="analytics-section">
-            <Heading
-              eye={people ? t("СРАВНЕНИЕ") : t("ЛИЧНЫЕ РЕЗУЛЬТАТЫ")}
-              title={people ? t("Рейтинг исполнения") : t("Моя оценка")}
-              note={t("Оценка показывает только подтверждённые компоненты; малые выборки отмечены.")}
+          </div>
+          <ReportWarnings
+            warnings={
+              insights
+                ? [
+                    ...report.meta.warnings,
+                    ...(report.forecast ? [`${t("Прогноз отказов")}: ${report.forecast.formula}`] : []),
+                    ...(report.breakdown_time
+                      ? [`${t("Поломки по сменам")}: ${report.breakdown_time.formula}`]
+                      : []),
+                  ]
+                : report.meta.warnings
+            }
+          />
+          {insights ? (
+            <InsightsBody
+              report={report}
+              equipment={machines}
+              api={api}
+              role={role}
+              revision={revision}
+              appliedQuery={appliedQuery}
+              preparing={preparing}
+              onPrepare={(source) => void preparePreventive(source)}
             />
-            <Ratings report={report} privateView={role === "executor"} />
-          </section>
-          {people && (
-            <section className="analytics-section analytics-split">
-              <Materials report={report} />
-              <Downtime report={report} />
-            </section>
-          )}
-          <section className="analytics-section">
-            <Activity report={report} />
-          </section>
-          {role !== "executor" && (
-            <section className="analytics-section">
-              <Heading
-                eye={t("СИГНАЛЫ")}
-                title={t("Аномалии с доказательствами")}
-                note={t("Система показывает только наблюдаемые факты.")}
-              />
-              <Anomalies
-                report={report}
-                canPrepare={role === "master"}
-                preparing={preparing}
-                onPrepare={(source) => void preparePreventive(source)}
-              />
-            </section>
-          )}
-          {people && <PreventionOutcomesPanel api={api} query={appliedQuery} revision={revision} />}
-          {people && (
-            <AnalyticsSummaryPanel
-              summary={summary}
-              period={report.period.label}
-              busy={summarizing}
-              disabled={loading}
-              error={summaryError}
-              onGenerate={() => void requestSummary()}
-            />
+          ) : (
+            <>
+              <section className="metric-grid">
+                <Metric icon="orders" label={t("Выдано")} value={report.orders.issued} />
+                <Metric icon="check" label={t("Завершено")} value={report.orders.completed} tone="teal" />
+                <Metric icon="checkCircle" label={t("Закрыто")} value={report.orders.closed} tone="green" />
+                <Metric
+                  icon="close"
+                  label={t("Отказы")}
+                  value={report.orders.rejected}
+                  tone={report.orders.rejected > 0 ? "red" : undefined}
+                />
+                <Metric
+                  icon="inbox"
+                  label={t("Незакрыто")}
+                  value={report.orders.backlog}
+                  warn={report.orders.backlog > 0}
+                />
+                <Metric
+                  icon="alert"
+                  label={t("Просрочено")}
+                  value={report.orders.overdue}
+                  warn={report.orders.overdue > 0}
+                  tone={report.orders.overdue > 0 ? "red" : undefined}
+                />
+                <DurationMetric
+                  icon="zap"
+                  label={t("Реакция")}
+                  value={report.durations.response_seconds}
+                  note={t("В среднем до первого ответа")}
+                />
+                <DurationMetric
+                  icon="wrench"
+                  label={t("Работа")}
+                  value={report.durations.work_seconds}
+                  note={t("В среднем, без пауз")}
+                />
+                {people && (
+                  <DurationMetric
+                    icon="pause"
+                    label={t("Простой")}
+                    value={report.downtime.known_seconds}
+                    note={t("Только записанные интервалы")}
+                  />
+                )}
+                <Metric
+                  icon="activity"
+                  label={t("Активные наряды")}
+                  value={report.activity.active_order_count}
+                />
+              </section>
+              <section className="analytics-section">
+                <Heading
+                  icon="trophy"
+                  eye={people ? t("СРАВНЕНИЕ") : t("ЛИЧНЫЕ РЕЗУЛЬТАТЫ")}
+                  title={people ? t("Рейтинг исполнения") : t("Моя оценка")}
+                  note={t("Оценка показывает только подтверждённые компоненты; малые выборки отмечены.")}
+                />
+                <Ratings report={report} privateView={role === "executor"} />
+              </section>
+              {people && (
+                <section className="analytics-section analytics-split">
+                  <Materials report={report} />
+                  <Downtime report={report} />
+                </section>
+              )}
+              <section className="analytics-section">
+                <Activity report={report} />
+              </section>
+              {people && (
+                <AnalyticsSummaryPanel
+                  summary={summary}
+                  period={report.period.label}
+                  busy={summarizing}
+                  disabled={loading}
+                  error={summaryError}
+                  onGenerate={() => void requestSummary()}
+                />
+              )}
+            </>
           )}
         </>
       )}
     </section>
   );
 }
+
+function InsightsBody({
+  report,
+  equipment,
+  api,
+  role,
+  revision,
+  appliedQuery,
+  preparing,
+  onPrepare,
+}: {
+  report: AnalyticsReport;
+  equipment: AnalyticsOptions["equipment"];
+  api: Api;
+  role: Role;
+  revision: number;
+  appliedQuery: AnalyticsQuery | null;
+  preparing: boolean;
+  onPrepare: (source: PreventionSource) => void;
+}) {
+  const severity = { high: 0, medium: 0, low: 0 };
+  for (const item of report.anomalies) severity[item.severity] += 1;
+  const machines = report.leaders.machines.slice(0, 5);
+  const areas = report.leaders.areas.slice(0, 5);
+  const repeat = report.anomalies.filter((item) => item.family === "recurring_fault").length;
+  return (
+    <>
+      <section className="insight-strip" aria-label={t("Сводка сигналов")}>
+        <article className="insight-tile is-high">
+          <span className="insight-tile-icon">
+            <Icon name="alert" />
+          </span>
+          <div>
+            <strong>{severity.high}</strong>
+            <small>{t("Высокий приоритет")}</small>
+          </div>
+        </article>
+        <article className="insight-tile is-medium">
+          <span className="insight-tile-icon">
+            <Icon name="zap" />
+          </span>
+          <div>
+            <strong>{severity.medium}</strong>
+            <small>{t("Средний приоритет")}</small>
+          </div>
+        </article>
+        <article className="insight-tile is-low">
+          <span className="insight-tile-icon">
+            <Icon name="activity" />
+          </span>
+          <div>
+            <strong>{severity.low}</strong>
+            <small>{t("Низкий приоритет")}</small>
+          </div>
+        </article>
+        <article className="insight-tile is-repeat">
+          <span className="insight-tile-icon">
+            <Icon name="refresh" />
+          </span>
+          <div>
+            <strong>{repeat}</strong>
+            <small>{t("Повторные неисправности")}</small>
+          </div>
+        </article>
+      </section>
+      <section className="analytics-section analytics-split leaders-split">
+        <Leaders
+          icon="wrench"
+          eye={t("ТОП ПРОБЛЕМНОГО ОБОРУДОВАНИЯ")}
+          title={t("Проблемное оборудование")}
+          note={t("По числу нарядов за период; учитываются просрочки и простой.")}
+          rows={machines}
+        />
+        <Leaders
+          icon="pin"
+          eye={t("УЧАСТКИ")}
+          title={t("Проблемные участки")}
+          note={t("Где больше всего работ и просрочек.")}
+          rows={areas}
+        />
+      </section>
+      <HistoryTrends
+        forecast={report.forecast}
+        timing={report.breakdown_time}
+        equipmentName={(id, fallback) => {
+          const item = equipment.find((machine) => machine.id === id);
+          return item ? `${item.code ? item.code + " · " : ""}${item.name}` : fallback;
+        }}
+      />
+      <section className="analytics-section">
+        <Heading
+          icon="sparkles"
+          eye={t("СИГНАЛЫ")}
+          title={t("Аномалии с доказательствами")}
+          note={t("Система показывает только наблюдаемые факты.")}
+        />
+        <Anomalies
+          report={report}
+          canPrepare={role === "master"}
+          preparing={preparing}
+          onPrepare={onPrepare}
+        />
+      </section>
+      <PreventionOutcomesPanel api={api} query={appliedQuery} revision={revision} />
+    </>
+  );
+}
+
+function Leaders({
+  icon,
+  eye,
+  title,
+  note,
+  rows,
+}: {
+  icon: IconName;
+  eye: string;
+  title: string;
+  note: string;
+  rows: AnalyticsReport["leaders"]["machines"];
+}) {
+  const max = Math.max(1, ...rows.map((row) => row.order_count));
+  return (
+    <div className="leaders">
+      <Heading icon={icon} eye={eye} title={title} note={note} />
+      {rows.length ? (
+        <ol className="leader-list">
+          {rows.map((row, index) => (
+            <li key={row.id} className={index === 0 ? "is-top" : undefined}>
+              <span className="leader-rank">{index + 1}</span>
+              <div className="leader-body">
+                <div className="leader-line">
+                  <strong>{row.name}</strong>
+                  <span className="leader-count">{t("{0} нар.", [row.order_count])}</span>
+                </div>
+                <div className="leader-bar" aria-hidden="true">
+                  <span style={{ width: `${Math.max(4, percent(row.order_count, max))}%` }} />
+                </div>
+                <small>
+                  {row.overdue_count > 0 ? (
+                    <span className="leader-overdue">{t("Просрочено: {0}", [row.overdue_count])}</span>
+                  ) : (
+                    <span>{t("Без просрочек")}</span>
+                  )}
+                  {" · "}
+                  {t("Простой: {0}", [duration(row.downtime_seconds)])}
+                </small>
+              </div>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="muted">{t("За период нет нарядов для сравнения.")}</p>
+      )}
+    </div>
+  );
+}
+
 function Filter({
   title,
   items,
@@ -439,7 +716,7 @@ function Filter({
     <label>
       {title}
       <select value={value ?? ""} onChange={(e) => onChange(e.target.value)}>
-        <option value="">{t("Все доступные")}</option>
+        <option value="">{t("Все")}</option>
         {items.map((i) => (
           <option key={i.id} value={i.id}>
             {i.code ? `${i.code} · ` : ""}
@@ -450,34 +727,78 @@ function Filter({
     </label>
   );
 }
-function Heading({ eye, title, note }: { eye: string; title: string; note: string }) {
+function Heading({ icon, eye, title, note }: { icon?: IconName; eye: string; title: string; note: string }) {
   return (
     <div className="section-heading">
-      <div>
-        <p className="eyebrow">{eye}</p>
-        <h2>{title}</h2>
+      <div className="section-heading-title">
+        {icon && (
+          <span className="section-heading-icon" aria-hidden="true">
+            <Icon name={icon} />
+          </span>
+        )}
+        <div>
+          <p className="eyebrow">{eye}</p>
+          <h2>{title}</h2>
+        </div>
       </div>
       <small>{note}</small>
     </div>
   );
 }
 function Metric({
+  icon,
   label,
   value,
   note,
   warn,
+  tone,
 }: {
+  icon?: IconName;
   label: string;
   value: string | number;
   note?: string;
   warn?: boolean;
+  tone?: "teal" | "green" | "red";
 }) {
   return (
-    <article className={"metric " + (warn ? "metric-warning" : "")}>
-      <span>{label}</span>
+    <article className={"metric " + (warn ? "metric-warning " : "") + (tone ? `metric-${tone}` : "")}>
+      <div className="metric-head">
+        <span>{label}</span>
+        {icon && (
+          <span className="metric-icon" aria-hidden="true">
+            <Icon name={icon} />
+          </span>
+        )}
+      </div>
       <strong>{value}</strong>
       {note && <small>{note}</small>}
     </article>
+  );
+}
+function DurationMetric({
+  icon,
+  label,
+  value,
+  note,
+}: {
+  icon: IconName;
+  label: string;
+  value: number | null | undefined;
+  note: string;
+}) {
+  return value == null ? (
+    <article className="metric metric-empty">
+      <div className="metric-head">
+        <span>{label}</span>
+        <span className="metric-icon" aria-hidden="true">
+          <Icon name={icon} />
+        </span>
+      </div>
+      <strong aria-label={t("Недостаточно данных")}>—</strong>
+      <small>{t("Недостаточно данных")}</small>
+    </article>
+  ) : (
+    <Metric icon={icon} label={label} value={duration(value)} note={note} />
   );
 }
 function Ratings({ report, privateView }: { report: AnalyticsReport; privateView: boolean }) {
@@ -492,8 +813,12 @@ function Ratings({ report, privateView }: { report: AnalyticsReport; privateView
     );
   return (
     <div className="ratings-grid">
-      <RatingTable title={privateView ? t("Моя оценка") : t("Исполнители")} rows={employee} />
-      {!privateView && <RatingTable title={t("Бригады")} rows={brigade} />}{" "}
+      <RatingTable
+        title={privateView ? t("Моя оценка") : t("Исполнители")}
+        rows={employee}
+        ranked={!privateView}
+      />
+      {!privateView && <RatingTable title={t("Бригады")} rows={brigade} ranked />}{" "}
       {report.ratings.limitations.length > 0 && (
         <p className="muted rating-note">{report.ratings.limitations.join(" ")}</p>
       )}
@@ -540,6 +865,12 @@ const anomalyLabels: Record<string, string> = {
     return t("Высокий");
   },
 };
+const anomalyIcons: Record<string, IconName> = {
+  recurring_fault: "refresh",
+  after_ppr: "shield",
+  material_outlier: "package",
+  rework_concentration: "user",
+};
 const evidenceLabels: Record<string, string> = {
   get order_ids() {
     return t("Наряды");
@@ -582,15 +913,33 @@ function evidenceValue(value: unknown) {
       : value.join(", ");
   return typeof value === "object" ? t("Составное доказательство") : String(value);
 }
-function RatingTable({ title, rows }: { title: string; rows: AnalyticsReport["ratings"]["employees"] }) {
+function RatingTable({
+  title,
+  rows,
+  ranked,
+}: {
+  title: string;
+  rows: AnalyticsReport["ratings"]["employees"];
+  ranked: boolean;
+}) {
   const max = Math.max(1, ...rows.map((r) => r.score ?? 0));
   return (
     <div className="rating-table">
       <h3>{title}</h3>
-      {rows.map((row) => (
-        <div className="rating-row" key={row.subject_id}>
+      {rows.map((row, index) => (
+        <div
+          className={`rating-row${ranked && index < 3 && row.score != null ? ` is-podium rank-${index + 1}` : ""}`}
+          key={row.subject_id}
+        >
           <div className="rating-name">
-            <strong>{row.subject_name}</strong>
+            <strong>
+              {ranked && (
+                <span className="rating-rank" aria-label={t("Место {0}", [index + 1])}>
+                  {index + 1}
+                </span>
+              )}
+              {row.subject_name}
+            </strong>
             <small>
               {t("Нарядов:")} {row.sample_size}
               {row.unavailable_components.length
@@ -672,6 +1021,7 @@ function Materials({ report }: { report: AnalyticsReport }) {
   return (
     <div>
       <Heading
+        icon="package"
         eye={t("РЕСУРСЫ")}
         title={t("Материалы")}
         note={t("Расход разделён по материалу и единице.")}
@@ -706,9 +1056,11 @@ function Materials({ report }: { report: AnalyticsReport }) {
 }
 function Downtime({ report }: { report: AnalyticsReport }) {
   const rows = report.downtime.by_equipment;
+  const total = report.downtime.planned_seconds + report.downtime.unplanned_seconds;
   return (
     <div>
       <Heading
+        icon="pause"
         eye={t("ОБОРУДОВАНИЕ")}
         title={t("Зафиксированный простой")}
         note={t("Только явно внесённые интервалы, не выводится из статусов.")}
@@ -721,6 +1073,12 @@ function Downtime({ report }: { report: AnalyticsReport }) {
           {t("Неплановый:")} <strong>{duration(report.downtime.unplanned_seconds)}</strong>
         </span>
       </div>
+      {total > 0 && (
+        <div className="downtime-split" aria-hidden="true">
+          <span className="is-planned" style={{ flexGrow: report.downtime.planned_seconds }} />
+          <span className="is-unplanned" style={{ flexGrow: report.downtime.unplanned_seconds }} />
+        </div>
+      )}
       <div className="compact-table">
         {rows.length ? (
           rows.map((row) => (
@@ -790,44 +1148,82 @@ function Anomalies({
   preparing: boolean;
   onPrepare: (source: PreventionSource) => void;
 }) {
-  return report.anomalies.length ? (
-    <div className="anomaly-list">
-      {report.anomalies.map((item, index) => {
-        const source = preventionSource(report, item);
+  const order = { high: 0, medium: 1, low: 2 } as const;
+  const anomalies = report.anomalies
+    .map((item, index) => ({ item, index }))
+    .sort(
+      (first, second) =>
+        order[first.item.severity] - order[second.item.severity] || first.index - second.index,
+    );
+  // One group per signal type: the rule is explained once, each finding is a short row.
+  const groups: Array<{ family: string; items: typeof anomalies }> = [];
+  for (const entry of anomalies) {
+    const group = groups.find((value) => value.family === entry.item.family);
+    if (group) group.items.push(entry);
+    else groups.push({ family: entry.item.family, items: [entry] });
+  }
+  return anomalies.length ? (
+    <div className="anomaly-groups">
+      {groups.map((group) => {
+        const sharedFormula = group.items.every(({ item }) => item.formula === group.items[0].item.formula)
+          ? group.items[0].item.formula
+          : null;
         return (
-          <article className={"anomaly severity-" + item.severity} key={item.title + index}>
-            <div>
-              <span className="status">{anomalyLabels[item.severity] ?? item.severity}</span>
-              <h3>{item.title}</h3>
-              <p>{anomalyLabels[item.family] ?? item.family}</p>
-            </div>
-            <div>
-              <p className="anomaly-formula">
-                <strong>{t("Правило:")}</strong> {item.formula}
-              </p>
-              <dl>
-                {entries(item.evidence)
-                  .filter(([key]) => !/(?:^|_)ids?$/.test(key))
-                  .map(([key, value]) => (
-                    <div key={key}>
-                      <dt>{evidenceLabels[key] ?? key.replaceAll("_", " ")}</dt>
-                      <dd>{evidenceValue(value)}</dd>
-                    </div>
-                  ))}
-              </dl>
-              {canPrepare && source && (
-                <button
-                  className="secondary prevention-action"
-                  type="button"
-                  data-testid={`prevention-prepare-${item.family}-${index}`}
-                  disabled={preparing}
-                  onClick={() => onPrepare(source)}
-                >
-                  {preparing ? t("Подготавливаем…") : t("Подготовить наряд")}
-                </button>
+          <section className="anomaly-group" key={group.family}>
+            <header className="anomaly-group-head">
+              <span className="anomaly-family">
+                <Icon name={anomalyIcons[group.family] ?? "sparkles"} />
+                {anomalyLabels[group.family] ?? group.family}
+              </span>
+              <b className="anomaly-group-count">{group.items.length}</b>
+              {sharedFormula && (
+                <p className="anomaly-formula">
+                  <strong>{t("Правило:")}</strong> {sharedFormula}
+                </p>
               )}
+            </header>
+            <div className="anomaly-list">
+              {group.items.map(({ item, index }) => {
+                const source = preventionSource(report, item);
+                const facts = entries(item.evidence).filter(([key]) => !/(?:^|_)ids?$/.test(key));
+                return (
+                  <article className={"anomaly severity-" + item.severity} key={item.title + index}>
+                    <div className="anomaly-summary">
+                      <span className="status">{anomalyLabels[item.severity] ?? item.severity}</span>
+                      <h3>{item.title}</h3>
+                      {!sharedFormula && (
+                        <p className="anomaly-formula">
+                          <strong>{t("Правило:")}</strong> {item.formula}
+                        </p>
+                      )}
+                    </div>
+                    {facts.length > 0 && (
+                      <dl className="anomaly-facts">
+                        {facts.map(([key, value]) => (
+                          <div key={key}>
+                            <dt>{evidenceLabels[key] ?? key.replaceAll("_", " ")}</dt>
+                            <dd>{evidenceValue(value)}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
+                    {canPrepare && source && (
+                      <button
+                        className="secondary with-icon prevention-action"
+                        type="button"
+                        data-testid={`prevention-prepare-${item.family}-${index}`}
+                        disabled={preparing}
+                        onClick={() => onPrepare(source)}
+                      >
+                        <Icon name="plus" />
+                        {preparing ? t("Подготавливаем…") : t("Подготовить наряд")}
+                      </button>
+                    )}
+                  </article>
+                );
+              })}
             </div>
-          </article>
+          </section>
         );
       })}
     </div>
@@ -840,14 +1236,16 @@ function Anomalies({
 }
 function Activity({ report }: { report: AnalyticsReport }) {
   const rows = report.activity.by_employee;
+  const max = Math.max(1, ...rows.map((row) => row.active_seconds + row.paused_seconds));
   return (
     <section>
       <Heading
+        icon="timer"
         eye={t("СМЕННАЯ ЗАГРУЗКА")}
         title={t("Активная работа")}
         note={t("Показаны только подтверждённые интервалы по нарядам.")}
       />
-      <div className="compact-table">
+      <div className="compact-table activity-table">
         {rows.length ? (
           <>
             <div className="table-head">
@@ -858,8 +1256,12 @@ function Activity({ report }: { report: AnalyticsReport }) {
             {rows.map((row) => (
               <div className="table-row" key={row.employee_id}>
                 <strong>{row.employee_name}</strong>
-                <span>
+                <span className="activity-cell">
                   {duration(row.active_seconds)} / {duration(row.paused_seconds)}
+                  <span className="activity-bar" aria-hidden="true">
+                    <span className="is-active" style={{ width: `${percent(row.active_seconds, max)}%` }} />
+                    <span className="is-paused" style={{ width: `${percent(row.paused_seconds, max)}%` }} />
+                  </span>
                 </span>
                 <span>{row.order_count}</span>
               </div>

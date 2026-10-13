@@ -2,6 +2,7 @@ import { Skeleton } from "./components/Skeleton";
 import { t, getLocale, useLanguage, message } from "./lib/i18n";
 import { AppPreferences } from "./components/AppPreferences";
 import { ProfileMenu } from "./components/ProfileMenu";
+import { ShiftChip } from "./components/ShiftChip";
 import { Icon, type IconName } from "./components/Icon";
 import { OrderReference } from "./components/OrderReference";
 import { useDeviceInstallation } from "./lib/useDeviceInstallation";
@@ -12,7 +13,9 @@ import { Login } from "./features/Login";
 import { OrderDetailDialog, type ActionOutcome } from "./features/OrderDetail";
 import { NotificationButton, NotificationsDialog } from "./features/Notifications";
 import { RealtimeConnection } from "./lib/realtime";
-import { CreateOrderDialog, OrdersView, ReferenceView, WorkloadView } from "./features/Workspace";
+import { CreateOrderDialog, OrdersView, ReferenceView } from "./features/Workspace";
+import { WorkloadView } from "./features/Workers";
+import { withCurrentOrderTitles } from "./lib/orderText";
 import { EquipmentCard } from "./features/EquipmentCard";
 import { EmployeesView } from "./features/Employees";
 import { AnalyticsView } from "./features/Analytics";
@@ -30,6 +33,8 @@ import {
 } from "./lib/offline";
 import type {
   ActionRequest,
+  BeforePhotos,
+  CreateOrder,
   Catalog,
   Employee,
   Equipment,
@@ -44,6 +49,12 @@ import type {
 import "./styles.css";
 import "./shell.css";
 import "./layout-polish.css";
+import "./theme.css";
+import "./features/workers.css";
+import "./features/insights.css";
+import "./features/order-polish.css";
+import "./features/admin-polish.css";
+import "./print.css";
 import {
   useAppLocation,
   readRoute,
@@ -100,6 +111,7 @@ const navIcons: Record<View, IconName> = {
   workload: "workload",
   reference: "reference",
   analytics: "analytics",
+  insights: "sparkles",
   employees: "employees",
 };
 const navCollapsedKey = "technaryad.nav.collapsed";
@@ -166,6 +178,17 @@ export default function App() {
   const appLocation = useAppLocation();
   const route = readRoute(appLocation);
   const view = route.view;
+  const mainRef = useRef<HTMLElement>(null);
+  const shownView = useRef(view);
+  // A menu choice opens the new screen from its top and moves keyboard/screen-reader focus to it.
+  // Back/forward and in-screen navigation keep their own scroll and focus handling.
+  useEffect(() => {
+    if (shownView.current === view) return;
+    shownView.current = view;
+    if (!document.activeElement?.closest(".side-nav, .bottom-nav")) return;
+    window.scrollTo({ top: 0 });
+    mainRef.current?.focus({ preventScroll: true });
+  }, [view]);
   const selected = route.orderId;
   useEffect(() => {
     if (equipmentForOrder && route.equipmentId !== equipmentForOrder.id) setEquipmentForOrder(null);
@@ -313,7 +336,7 @@ export default function App() {
       setLoading(true);
       setError("");
       try {
-        const [catalog, orders, workload, employees, masters] = await Promise.all([
+        const [catalog, orders, rawWorkload, employees, masters, running] = await Promise.all([
           api.catalog(),
           actor.role === "admin"
             ? Promise.resolve({
@@ -343,7 +366,15 @@ export default function App() {
           canViewWorkload(actor.role) ? api.workload() : Promise.resolve([]),
           actor.role === "master" ? api.employees() : Promise.resolve([]),
           ["master", "manager", "executor"].includes(actor.role) ? api.masters() : Promise.resolve([]),
+          // Titles for "currently working on": optional, never blocks the dashboard.
+          canViewWorkload(actor.role)
+            ? api
+                .orders({ status: ["in_progress"], limit: 200 })
+                .then((page) => page.items)
+                .catch(() => null)
+            : Promise.resolve(null),
         ]);
+        const workload = withCurrentOrderTitles(rawWorkload, running, catalog);
         if (guard !== authGeneration.current || request !== refreshGeneration.current) return;
         if (orders.items.length === 0 && currentFilters.offset > 0 && currentFilters.offset >= orders.total) {
           const lastOffset =
@@ -591,6 +622,24 @@ export default function App() {
     sessionStorage.setItem(expiryKey, response.expires_at);
     setToken(response.access_token);
   }
+  /** Issue an order, then attach the fault photos picked in the form (case §5.1, demo step 2). */
+  async function createOrder(input: CreateOrder, photos?: BeforePhotos) {
+    const created = await api.create(input);
+    let photoFailed = false;
+    if (photos?.files.length) {
+      let version = created.version;
+      try {
+        for (const file of photos.files)
+          version = (await api.photo(created.order_id, "before", version, file, photos.aiShareAllowed))
+            .version;
+      } catch {
+        // The order already exists: never report it as "not created" because a photo failed.
+        photoFailed = true;
+      }
+    }
+    await refresh();
+    if (photoFailed) setError(t("Наряд выдан, но фото не загружено. Добавьте фото в карточке наряда."));
+  }
   async function directAction(id: string, request: ActionRequest, canQueue = false): Promise<ActionOutcome> {
     if (!user) throw new ApiError(401, "unauthorized");
     if (user.role === "executor" && canQueue) {
@@ -648,8 +697,11 @@ export default function App() {
   if (!user)
     return (
       <main className="splash">
-        <span className="spinner"></span>
-        <p>{t("Проверяем сессию…")}</p>
+        <span className="splash-mark" aria-hidden="true">
+          {t("Т")}
+          <span>•</span>
+        </span>
+        <p role="status">{t("Проверяем сессию…")}</p>
         {error && <p className="error">{error}</p>}
       </main>
     );
@@ -684,6 +736,16 @@ export default function App() {
   const toggleLabel = navCollapsed ? t("Развернуть меню") : t("Свернуть меню");
   return (
     <div className={navCollapsed ? "app-shell nav-collapsed" : "app-shell"}>
+      <a
+        className="skip-link"
+        href="#main-content"
+        onClick={(event) => {
+          event.preventDefault();
+          mainRef.current?.focus();
+        }}
+      >
+        {t("Перейти к содержимому")}
+      </a>
       <aside className="side-nav" id="side-nav">
         <div className="side-nav-head">
           <button
@@ -747,7 +809,7 @@ export default function App() {
           </button>
         </div>
       </aside>
-      <main className="app-main">
+      <main className="app-main" id="main-content" ref={mainRef} tabIndex={-1}>
         <header
           className={user.role === "admin" ? "topbar" : "topbar live-bar"}
           data-live-state={user.role === "admin" ? undefined : liveState}
@@ -762,6 +824,7 @@ export default function App() {
               <span>{t("Наряд")}</span>
             </strong>
           </div>
+          <ShiftChip live={user.role !== "admin" && liveState === "live"} />
           <div className="topbar-actions">
             {user.role !== "admin" && liveState !== "live" && (
               <span className={`connection-state ${liveState}`} role="status">
@@ -899,10 +962,7 @@ export default function App() {
             filters={filters}
             onFilters={changeFilters}
             onOpen={setSelected}
-            onCreate={async (input) => {
-              await api.create(input);
-              await refresh();
-            }}
+            onCreate={(input, photos) => createOrder(input, photos)}
             onAssistant={() => setAssistantOpen(true)}
             faultReportCount={faultReportCount}
             onFaultReports={() =>
@@ -912,6 +972,7 @@ export default function App() {
             onBrigadeOptions={(input) => api.brigadeOptions(input)}
             onSimilar={(input) => api.similarRepairs(input)}
             onViewEvidence={(id) => api.order(id)}
+            onWorkers={canViewWorkload(user.role) ? () => setView("workload") : undefined}
             onHistory={async (equipmentId) =>
               changeFilters({
                 ...filters,
@@ -928,8 +989,13 @@ export default function App() {
           (!data ? (
             !error && (
               <section className="workspace">
-                <h1>{t("Загрузка исполнителей")}</h1>
-                <Skeleton variant="list" />
+                <div className="page-head">
+                  <div>
+                    <p className="eyebrow">{t("СМЕНА")}</p>
+                    <h1>{t("Исполнители")}</h1>
+                  </div>
+                </div>
+                <Skeleton variant="people" count={9} label={t("Загружаем исполнителей…")} />
               </section>
             )
           ) : (
@@ -939,10 +1005,12 @@ export default function App() {
               onEmployeeOrders={openEmployeeOrders}
             />
           ))}{" "}
-        {visibleView === "analytics" && !route.equipmentId && (
+        {(visibleView === "analytics" || visibleView === "insights") && !route.equipmentId && (
           <AnalyticsView
+            key={visibleView}
             api={api}
             role={user.role}
+            mode={visibleView === "insights" ? "insights" : "report"}
             revision={liveRevision}
             onPreventiveDraft={setPreventiveDraft}
           />
@@ -960,8 +1028,13 @@ export default function App() {
           ) : (
             !error && (
               <section className="workspace">
-                <h1>{t("Сотрудники и доступ")}</h1>
-                <Skeleton variant="list" />
+                <div className="page-head">
+                  <div>
+                    <p className="eyebrow">{t("АДМИНИСТРИРОВАНИЕ")}</p>
+                    <h1>{t("Сотрудники и доступ")}</h1>
+                  </div>
+                </div>
+                <Skeleton variant="list" label={t("Загружаем сотрудников…")} />
               </section>
             )
           ))}
@@ -970,8 +1043,13 @@ export default function App() {
           (!data ? (
             !error && (
               <section className="workspace">
-                <h1>{t("Справочники")}</h1>
-                <Skeleton />
+                <div className="page-head">
+                  <div>
+                    <p className="eyebrow">{t("СПРАВОЧНИКИ")}</p>
+                    <h1>{t("Справочники")}</h1>
+                  </div>
+                </div>
+                <Skeleton label={t("Загрузка справочников…")} />
               </section>
             )
           ) : (
@@ -1049,10 +1127,9 @@ export default function App() {
             initialAreaId={equipmentForOrder.area_id}
             initialEquipmentId={equipmentForOrder.id}
             onClose={() => setEquipmentForOrder(null)}
-            onCreate={async (input) => {
-              await api.create(input);
+            onCreate={async (input, photos) => {
+              await createOrder(input, photos);
               setEquipmentForOrder(null);
-              await refresh();
             }}
             onSuggest={(input) => api.suggestions(input)}
             onBrigadeOptions={(input) => api.brigadeOptions(input)}
@@ -1067,10 +1144,9 @@ export default function App() {
           workers={data.workload}
           preventiveDraft={preventiveDraft}
           onClose={() => setPreventiveDraft(null)}
-          onCreate={async (input) => {
-            await api.create(input);
+          onCreate={async (input, photos) => {
+            await createOrder(input, photos);
             setPreventiveDraft(null);
-            await refresh();
             setNotice(t("Наряд выдан"));
           }}
           onSuggest={(input) => api.suggestions(input)}
@@ -1086,10 +1162,9 @@ export default function App() {
           workers={data.workload}
           faultReportDraft={faultReportDraft}
           onClose={() => setFaultReportDraft(null)}
-          onCreate={async (input) => {
-            await api.create(input);
+          onCreate={async (input, photos) => {
+            await createOrder(input, photos);
             setFaultReportDraft(null);
-            await refresh();
             setNotice(t("Наряд выдан"));
             setFaultReportRevision((value) => value + 1);
           }}

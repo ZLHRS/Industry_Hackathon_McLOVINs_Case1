@@ -21,6 +21,19 @@ function notification(overrides: Partial<NotificationItem>): NotificationItem {
 }
 
 describe("notification inbox grouping", () => {
+  it("names an order group by its machine when the server payload provides it", () => {
+    const [group] = groupNotifications([
+      notification({
+        id: "overdue",
+        order_id: "order-a",
+        title: "Просрочен наряд НР-2026-0597",
+        payload: { number: "НР-2026-0597", equipment: " Экскаватор 1 ", equipment_number: "MI-013" },
+      }),
+    ]);
+    expect(group).toMatchObject({ orderReference: "НР-2026-0597", equipmentLabel: "Экскаватор 1 (MI-013)" });
+    const [plain] = groupNotifications([notification({ id: "plain", order_id: "order-b" })]);
+    expect(plain.equipmentLabel).toBeNull();
+  });
   it("groups only loaded work-order events by their stable order ID and retains each unread event", () => {
     const groups = groupNotifications([
       notification({

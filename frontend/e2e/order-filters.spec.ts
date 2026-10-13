@@ -166,7 +166,11 @@ test("master defaults to own orders, work/history stay distinct, worker link sho
   await expect(page.getByLabel("Мастер", { exact: true })).toHaveValue("");
   await expect(page.getByText(otherTitle, { exact: true })).toBeVisible();
 
-  await page.getByRole("navigation").first().getByRole("button", { name: "Загрузка", exact: true }).click();
+  await page
+    .getByRole("navigation")
+    .first()
+    .getByRole("button", { name: "Исполнители", exact: true })
+    .click();
   // Resolve the worker name through the existing scoped workload API, not a fixture-specific label.
   const load = await request.get("/api/v1/workload", { headers: headers(master) });
   const workerName = (await load.json()).find(

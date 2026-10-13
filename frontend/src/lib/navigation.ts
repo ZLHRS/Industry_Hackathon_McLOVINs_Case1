@@ -13,7 +13,7 @@ const sections: DirectorySection[] = [
   "time-norms",
   "employees",
 ];
-const views: View[] = ["orders", "workload", "reference", "analytics", "employees"];
+const views: View[] = ["orders", "workload", "reference", "analytics", "insights", "employees"];
 const eventName = "technaryad:navigation";
 const snapshot = () => window.location.pathname + window.location.search;
 const subscribe = (listener: () => void) => {
@@ -71,7 +71,7 @@ export function closeOrderPage() {
   const parent = window.history.state?.technaryad && window.history.state?.parent;
   if (
     typeof parent === "string" &&
-    /^\/(orders|workload|analytics|reference|employees)(\/|\?|$)/.test(parent) &&
+    /^\/(orders|workload|analytics|insights|reference|employees)(\/|\?|$)/.test(parent) &&
     !readRoute(parent).orderId
   )
     window.history.back();

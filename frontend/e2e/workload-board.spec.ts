@@ -100,7 +100,7 @@ test("busy current number appears in both assignment controls and availability c
   ).toContainText(busy.current_order_number!);
   await page.keyboard.press("Escape");
   await page.goto("/workload");
-  await expect(page.getByRole("heading", { name: "Загрузка исполнителей" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Исполнители", exact: true })).toBeVisible();
   const colors = {
     free: "rgb(35, 134, 70)",
     busy: "rgb(197, 138, 16)",

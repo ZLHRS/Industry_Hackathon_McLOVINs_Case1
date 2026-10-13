@@ -1,0 +1,321 @@
+/* Shift executors. Case R07 colours: green — free, yellow — busy, blue — queue, grey — off shift.
+   The status colour is the strongest signal on every card so it reads at a glance. */
+.workers-workspace {
+  --free: #238646;
+  --free-soft: #e6f5ea;
+  --busy: #c58a10;
+  --busy-soft: #fff4d6;
+  --queued: #1d6c91;
+  --queued-soft: #e3f0f8;
+  --off: #858a8b;
+  --off-soft: #eff1f1;
+}
+.workers-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1.1rem;
+}
+.workers-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.workers-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 42px;
+  padding: 0 0.9rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: #2b403c;
+  font-size: 0.88rem;
+  font-weight: 700;
+  --tone: var(--teal);
+  --tone-soft: var(--teal-soft);
+}
+.workers-filter b {
+  color: var(--ink);
+  font-weight: 850;
+}
+.workers-filter.free {
+  --tone: var(--free);
+  --tone-soft: var(--free-soft);
+}
+.workers-filter.busy {
+  --tone: var(--busy);
+  --tone-soft: var(--busy-soft);
+}
+.workers-filter.queued {
+  --tone: var(--queued);
+  --tone-soft: var(--queued-soft);
+}
+.workers-filter.off_shift {
+  --tone: var(--off);
+  --tone-soft: var(--off-soft);
+}
+.workers-filter:hover {
+  border-color: var(--tone);
+}
+.workers-filter.is-active {
+  border-color: var(--tone);
+  background: var(--tone-soft);
+  box-shadow: inset 0 0 0 1px var(--tone);
+}
+.workers-filter-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  flex: none;
+  border-radius: 50%;
+  background: var(--off);
+}
+.workers-filter-dot.free {
+  background: var(--free);
+}
+.workers-filter-dot.busy {
+  background: var(--busy);
+}
+.workers-filter-dot.queued {
+  background: var(--queued);
+}
+.workers-search {
+  flex: 0 1 20rem;
+}
+.workers-search input {
+  min-height: 42px;
+  padding-left: 2.4rem;
+}
+
+/* Groups */
+.workers-workspace .workers-groups {
+  display: grid;
+  gap: 1.4rem;
+  border-top: 0;
+}
+.workers-group-title {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0 0 0.65rem;
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.workers-group-title small {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.6rem;
+  height: 1.6rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  color: #3b4f4b;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+.workers-group-title .workers-filter-dot {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+.workers-workspace .workers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: 0.6rem;
+}
+
+/* Card: tinted by status, thick status edge */
+.workers-workspace .workers-grid > .worker-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.6rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--tone) 30%, white);
+  border-left: 5px solid var(--tone);
+  border-radius: 12px;
+  background: linear-gradient(90deg, var(--tone-soft), var(--surface) 70%);
+  box-shadow: var(--shadow-xs);
+  --tone: var(--off);
+  --tone-soft: var(--off-soft);
+}
+.workers-workspace .worker-card.is-free {
+  --tone: var(--free);
+  --tone-soft: var(--free-soft);
+}
+.workers-workspace .worker-card.is-busy {
+  --tone: var(--busy);
+  --tone-soft: var(--busy-soft);
+}
+.workers-workspace .worker-card.is-queued {
+  --tone: var(--queued);
+  --tone-soft: var(--queued-soft);
+}
+.workers-workspace .worker-card.is-off_shift {
+  opacity: 0.78;
+}
+.workers-workspace .worker-card > div {
+  display: flex;
+}
+.workers-workspace .worker-card-head {
+  align-items: center;
+  gap: 0.65rem;
+}
+.workers-workspace .worker-card-head > .availability {
+  width: 0.8rem;
+  height: 0.8rem;
+  inline-size: 0.8rem;
+  block-size: 0.8rem;
+  flex: none;
+  border-radius: 50%;
+}
+.workers-workspace .worker-identity {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+.workers-workspace .worker-identity small {
+  overflow: hidden;
+  color: var(--muted-ink);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workers-workspace .workload-person-link {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.98rem;
+  font-weight: 750;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workers-workspace .workload-person-link:hover {
+  color: var(--teal-deep);
+  text-decoration: underline;
+}
+/* Status label: solid colour, readable from a distance */
+.workers-workspace .availability-label {
+  flex: none;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: var(--tone);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+.workers-workspace .availability-label.busy {
+  color: #3b2a00;
+}
+
+/* What the person is working on: title first, number second */
+.workers-workspace .worker-current {
+  display: grid;
+  gap: 0.2rem;
+  width: 100%;
+  min-height: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--tone) 35%, white);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  text-decoration: none;
+}
+.workers-workspace .worker-current:hover {
+  border-color: var(--tone);
+  box-shadow: var(--shadow-sm);
+}
+.worker-current-title {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.worker-current-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.1rem 0.6rem;
+  color: var(--muted-ink);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+.worker-current-meta .worker-since {
+  color: #86590c;
+  font-weight: 750;
+}
+.workers-workspace .worker-card-foot {
+  flex-wrap: wrap;
+  gap: 0.3rem 0.9rem;
+}
+.worker-card-foot small {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: #34504a;
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+.worker-card-foot .icon {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+.worker-paused {
+  color: #8e5a06 !important;
+}
+.workers-empty {
+  padding: 2rem 1rem;
+}
+
+@media (max-width: 820px) {
+  .workers-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .workers-toolbar > * {
+    min-width: 0;
+  }
+  .workers-filters {
+    gap: 0.4rem;
+  }
+  .workers-filter {
+    flex: none;
+    min-height: 42px;
+    padding: 0 0.7rem;
+    font-size: 0.82rem;
+  }
+  .workers-search {
+    flex: 1 1 auto;
+  }
+  .workers-workspace .workers-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The whole name row opens the person's orders: a glove-sized target without a taller card. */
+.workers-workspace .worker-card-head {
+  position: relative;
+}
+.workers-workspace .workload-person-link::after {
+  content: "";
+  position: absolute;
+  inset: -0.45rem 0;
+}
+.workers-workspace .workload-person-link:focus-visible {
+  outline: none;
+}
+.workers-workspace .workload-person-link:focus-visible::after {
+  border-radius: 10px;
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}

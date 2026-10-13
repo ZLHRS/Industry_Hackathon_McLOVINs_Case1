@@ -1,5 +1,6 @@
 import { t, message } from "../lib/i18n";
 import { LanguageSwitcher } from "../components/LanguageSwitcher";
+import { Icon } from "../components/Icon";
 import { FormEvent, useState } from "react";
 import type { ApiError } from "../api";
 
@@ -38,22 +39,20 @@ export function Login({ onLogin }: { onLogin: (login: string, secret: string) =>
           </div>
           <span>{t("Костанайские минералы")}</span>
         </div>
-        <p className="eyebrow">{t("СИСТЕМА РЕМОНТА")}</p>
         <h1>
           {t("Тех")}
           <span>{t("Наряд")}</span>
         </h1>
-        <p>{t("Рабочий контур смены: наряды, ремонт и загрузка участка.")}</p>
-        <div className="login-points" aria-label={t("Возможности системы")}>
-          <span>{t("Наряды")}</span>
-          <span>{t("Ремонт")}</span>
-          <span>{t("Смена")}</span>
-        </div>
+        <p className="login-slogan">{t("Наряд выдан — ИИ на контроле")}</p>
       </section>
       <form className="login-form" onSubmit={submit}>
         <LanguageSwitcher />
-        <h2>{t("Вход в смену")}</h2>
-        <p className="muted">{t("Введите данные учётной записи для начала смены.")}</p>
+        <div className="login-form-head">
+          <span className="login-form-icon" aria-hidden="true">
+            <Icon name="lock" />
+          </span>
+          <h2>{t("Вход в смену")}</h2>
+        </div>
         <label>
           {t("Логин")}
           <input
@@ -107,6 +106,14 @@ export function Login({ onLogin }: { onLogin: (login: string, secret: string) =>
         <button className="primary" disabled={busy}>
           {busy ? t("Проверяем…") : t("Войти")}
         </button>
+        <p className="login-access">
+          <Icon name="shield" />
+          <span>
+            {t(
+              "Закрытая система для сотрудников предприятия. Учётные записи выдаёт администратор; данные не передаются третьим лицам.",
+            )}
+          </span>
+        </p>
       </form>
     </main>
   );

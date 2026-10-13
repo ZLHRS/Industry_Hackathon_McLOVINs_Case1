@@ -13,7 +13,7 @@ async function openMonthlyReport(page: Page, login = state.master_login) {
   await page.getByRole("button", { name: "Войти", exact: true }).click();
   await expect(page.getByTestId("app-preferences-toggle")).toBeVisible();
   await page
-    .getByRole("button", { name: /^(Отчёт|Мои результаты)$/ })
+    .getByRole("button", { name: /^(ИИ-анализ|Мои результаты)$/ })
     .first()
     .click();
   await page.getByRole("combobox", { name: "Период", exact: true }).selectOption("month");

@@ -1,0 +1,395 @@
+/* Work order dialog: calmer surfaces, fact tiles and the life-cycle stepper. Loaded last. */
+.dialog {
+  background: var(--surface);
+  color: var(--ink);
+}
+.dialog-head {
+  z-index: 3;
+  background: rgba(255, 255, 255, 0.92);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border-bottom-color: var(--line);
+  padding: 0.8rem 1.15rem;
+}
+.dialog-head h2 {
+  font-size: 1.18rem;
+  font-weight: 800;
+}
+.dialog-head .icon-button {
+  border-radius: 12px;
+}
+.dialog-head .icon-button:hover {
+  background: var(--surface-sunken);
+}
+.order-detail {
+  gap: 1.05rem;
+  padding: 1.15rem;
+}
+.order-description {
+  color: var(--ink);
+  font-size: 1.12rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+.order-detail .facts {
+  gap: 0.55rem;
+}
+.order-detail .facts > div {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+.order-detail .facts dt {
+  color: #5d6d69;
+  font-size: 0.66rem;
+}
+.order-detail .facts dd {
+  color: var(--ink);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+.order-detail .facts .team-assignment-fact {
+  grid-column: 1 / -1;
+}
+.order-detail .order-next-step {
+  border: 1px solid #bfe0d7;
+  border-left: 4px solid var(--teal);
+  border-radius: 12px;
+  background: linear-gradient(90deg, #eaf7f3, #f6fbfa);
+}
+.order-detail :is(.action-block, .repair-submission, .order-comment) {
+  padding: 1rem 1.05rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+}
+.order-detail .action-block > h3,
+.order-detail .repair-submission > h3,
+.order-detail .order-comment > h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.2rem;
+  color: #2a4641;
+  font-size: 0.78rem;
+}
+.order-detail .action-block > h3::before,
+.order-detail .repair-submission > h3::before,
+.order-detail .order-comment > h3::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 2px;
+  background: var(--teal);
+}
+.order-detail .master-controls > h3::before {
+  background: var(--violet);
+}
+.order-detail .audit-controls > h3::before {
+  background: var(--amber);
+}
+.order-detail .timeline {
+  padding-left: 0;
+  list-style: none;
+  gap: 0;
+}
+.order-detail .timeline li {
+  position: relative;
+  padding: 0 0 0.85rem 1.35rem;
+  border-left: 2px solid var(--line);
+  margin-left: 0.35rem;
+}
+.order-detail .timeline li:last-child {
+  border-left-color: transparent;
+  padding-bottom: 0;
+}
+.order-detail .timeline li::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 0.2rem;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--teal);
+  box-shadow: 0 0 0 1px #b9dcd3;
+}
+
+/* Life-cycle stepper */
+.order-progress {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin: 0;
+  padding: 0.85rem 0.6rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  list-style: none;
+  --step: var(--teal);
+}
+.order-progress.is-alert {
+  --step: var(--red);
+}
+.order-progress.is-waiting {
+  --step: var(--amber);
+}
+.order-progress.is-done {
+  --step: var(--green);
+}
+.order-progress-step {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  text-align: center;
+}
+.order-progress-step::before {
+  content: "";
+  position: absolute;
+  top: 0.8rem;
+  left: calc(-50% + 1rem);
+  right: calc(50% + 1rem);
+  height: 2px;
+  border-radius: 2px;
+  background: var(--line-strong);
+}
+.order-progress-step:first-child::before {
+  display: none;
+}
+.order-progress-step.is-done::before,
+.order-progress-step.is-current::before {
+  background: var(--teal);
+}
+.order-progress.is-done .order-progress-step::before {
+  background: var(--green);
+}
+.order-progress-dot {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  border: 2px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  color: #8a9894;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.order-progress-dot .icon {
+  width: 0.9rem;
+  height: 0.9rem;
+  stroke-width: 3;
+}
+.order-progress-step.is-done .order-progress-dot {
+  border-color: var(--teal);
+  background: var(--teal);
+  color: #fff;
+}
+.order-progress.is-done .order-progress-step .order-progress-dot {
+  border-color: var(--green);
+  background: var(--green);
+}
+.order-progress-step.is-current .order-progress-dot {
+  border-color: var(--step);
+  background: var(--step);
+  color: #fff;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--step) 20%, transparent);
+}
+.order-progress-label {
+  max-width: 100%;
+  overflow: hidden;
+  color: #6b7a76;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.order-progress-step.is-current .order-progress-label {
+  color: color-mix(in srgb, var(--step) 80%, black);
+  font-weight: 800;
+}
+.order-progress-step.is-done .order-progress-label {
+  color: #36524c;
+}
+.order-progress.is-cancelled {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: #5d6563;
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+.order-progress.is-cancelled .icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  color: var(--red);
+}
+
+@media (max-width: 600px) {
+  .order-progress {
+    padding: 0.7rem 0.2rem 0.6rem;
+  }
+  .order-progress-label {
+    font-size: 0.6rem;
+  }
+  .order-progress-dot {
+    width: 1.4rem;
+    height: 1.4rem;
+    font-size: 0.64rem;
+  }
+  .order-progress-step::before {
+    top: 0.68rem;
+    left: calc(-50% + 0.85rem);
+    right: calc(50% + 0.85rem);
+  }
+  .order-detail .facts > div {
+    padding: 0.5rem 0.6rem;
+  }
+}
+
+/* Legacy warm surfaces aligned with the cool console palette */
+.master-action-panel,
+.employee-password-action {
+  border-color: var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+.order-detail .audit-controls {
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+}
+.catalog-import-actions {
+  background: var(--surface);
+}
+.master-controls details {
+  border-radius: 12px;
+}
+.order-detail .master-controls :is(details, .master-action-panel) {
+  border-color: var(--line);
+}
+.order-detail .master-controls details[open] {
+  background: var(--surface-soft);
+}
+
+/* Native photo picker: a clear button instead of the browser's default chrome */
+.dialog input[type="file"] {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 0.74rem;
+  color: var(--muted-ink);
+}
+.dialog input[type="file"]::file-selector-button {
+  margin-right: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #a8d2c7;
+  border-radius: 9px;
+  background: var(--teal-soft);
+  color: var(--teal-deep);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+.dialog input[type="file"]::file-selector-button:hover {
+  background: #cfeae2;
+}
+
+/* Fault photos in the issue form: optional, compact, consent shown only once photos exist */
+.before-photo-picker {
+  display: grid;
+  gap: 0.6rem;
+}
+.before-photo-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.8rem;
+}
+.before-photo-add {
+  min-height: 44px;
+  padding: 0 0.95rem;
+  cursor: pointer;
+}
+.before-photo-add:focus-within {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+.before-photo-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.before-photo-list li {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+.before-photo-list img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.before-photo-remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(15, 30, 28, 0.72);
+  color: #fff;
+}
+/* The visible chip is small, the tap area covers the top-right quarter of the thumbnail. */
+.before-photo-remove::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+}
+.before-photo-remove .icon {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+.before-photo-consent {
+  align-items: flex-start;
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.before-photo-consent input {
+  margin-top: 0.15rem;
+  flex: none;
+}
+.before-photo-notice {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+/* Section titles in the order card: sentence case at body size (overrides the label style above) */
+.order-detail .action-block > h3,
+.order-detail .repair-submission > h3,
+.order-detail .order-comment > h3 {
+  color: var(--ink);
+  font-size: 0.98rem;
+  letter-spacing: -0.01em;
+  text-transform: none;
+}

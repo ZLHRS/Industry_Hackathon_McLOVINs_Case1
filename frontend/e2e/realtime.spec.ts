@@ -78,6 +78,8 @@ test("two clients: issue and open-card status within 5s, urgent receipt, reconne
     await executor.getByRole("button", { name: /Уведомления: непрочитанных/ }).click();
     const inbox = executor.getByRole("dialog");
     const notification = inbox.locator(".notification-item").filter({ hasText: order.detail.number }).first();
+    const group = inbox.locator(".notification-group").filter({ hasText: order.detail.number }).first();
+    await group.locator("summary").click();
     await expect(notification).toBeVisible();
     await expect(notification).toHaveClass(/urgent/);
     await notification.getByRole("button", { name: "Подтвердить получение" }).click();
@@ -88,10 +90,10 @@ test("two clients: issue and open-card status within 5s, urgent receipt, reconne
     expect((await afterAck.json()).status).toBe("issued");
     await executor.screenshot({ path: info.outputPath("urgent-inbox-mobile.png"), fullPage: true });
     expect(await executor.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-    await notification.getByRole("button", { name: "Открыть наряд" }).click();
+    await group.getByRole("button", { name: "Открыть наряд", exact: true }).click();
     const acceptedAt = Date.now();
     await executor.getByRole("dialog").getByRole("button", { name: "Принять", exact: true }).click();
-    await expect(page.getByRole("dialog").getByRole("heading", { name: /· Принят$/ })).toBeVisible({
+    await expect(page.getByRole("dialog").locator(".dialog-head small")).toContainText("· Принят", {
       timeout: 5000,
     });
     const acceptMs = Date.now() - acceptedAt;

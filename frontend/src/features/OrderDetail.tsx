@@ -1,6 +1,7 @@
 import { Skeleton } from "../components/Skeleton";
 import { t, getLocale, message } from "../lib/i18n";
 import "./order-ux.css";
+import { OrderProgress } from "./OrderProgress";
 import { canReviewRepair, canViewRepairOutcome, roleLabels } from "../lib/roleAccess";
 import { FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import { ApiError, capturePhotoTime } from "../api";
@@ -613,6 +614,7 @@ export function OrderDetailDialog({
             </button>
           )}
         </div>
+        <OrderProgress status={detail.status} />
         <div className="order-next-step">
           <div>
             <strong>{["closed", "cancelled"].includes(detail.status) ? t("Итог") : t("Что дальше")}</strong>

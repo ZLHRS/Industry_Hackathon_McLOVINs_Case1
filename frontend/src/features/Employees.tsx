@@ -4,10 +4,25 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Api, ApiError } from "../api";
 import { Dialog } from "../components/Dialog";
 import { roleLabels } from "../lib/roleAccess";
+import { Icon, type IconName } from "../components/Icon";
 import type { AdminEmployee, Catalog, CreateEmployee, Employee, EmployeeAccessUpdate, Role } from "../types";
 import "./employees.css";
 
 const roles: Role[] = ["executor", "master", "manager", "admin"];
+const roleIcons: Record<Role, IconName> = {
+  executor: "wrench",
+  master: "orders",
+  manager: "analytics",
+  admin: "shield",
+};
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join("");
+}
 const blankCreate = (): CreateEmployee => ({
   login: "",
   display_name: "",
@@ -118,10 +133,60 @@ export function EmployeesView({
             {t("Добавьте сотрудника или откройте его запись, чтобы настроить права и пароль.")}
           </p>
         </div>
-        <button className="primary" type="button" onClick={() => setCreateOpen(true)}>
+        <button className="primary with-icon" type="button" onClick={() => setCreateOpen(true)}>
+          <Icon name="plus" />
           {t("Добавить сотрудника")}
         </button>
       </div>
+      {items && (
+        <div className="employee-overview" role="group" aria-label={t("Сводка по ролям")}>
+          <button
+            type="button"
+            className={`employee-overview-tile${!role ? " is-active" : ""}`}
+            aria-pressed={!role}
+            onClick={() => setRole("")}
+          >
+            <span className="employee-overview-icon">
+              <Icon name="employees" />
+            </span>
+            <span>
+              <strong>{items.length}</strong>
+              <small>{t("Все сотрудники")}</small>
+            </span>
+          </button>
+          {roles.map((value) => (
+            <button
+              key={value}
+              type="button"
+              className={`employee-overview-tile role-${value}${role === value ? " is-active" : ""}`}
+              aria-pressed={role === value}
+              onClick={() => setRole(role === value ? "" : value)}
+            >
+              <span className="employee-overview-icon">
+                <Icon name={roleIcons[value]} />
+              </span>
+              <span>
+                <strong>{items.filter((item) => item.role === value).length}</strong>
+                <small>{roleLabels[value]}</small>
+              </span>
+            </button>
+          ))}
+          <button
+            type="button"
+            className={`employee-overview-tile is-inactive-tile${status === "inactive" ? " is-active" : ""}`}
+            aria-pressed={status === "inactive"}
+            onClick={() => setStatus(status === "inactive" ? "all" : "inactive")}
+          >
+            <span className="employee-overview-icon">
+              <Icon name="lock" />
+            </span>
+            <span>
+              <strong>{items.filter((item) => !item.is_active).length}</strong>
+              <small>{t("Доступ отключён")}</small>
+            </span>
+          </button>
+        </div>
+      )}
       <section className="employee-filters" aria-label={t("Фильтры сотрудников")}>
         <label className="employee-search">
           {t("Поиск")}
@@ -226,11 +291,16 @@ export function EmployeesView({
               key={employee.id}
             >
               <div className="employee-name">
-                <strong>{employee.display_name}</strong>
-                <span>{employee.login}</span>
+                <span className={`employee-avatar role-${employee.role}`} aria-hidden="true">
+                  {initials(employee.display_name)}
+                </span>
+                <span className="employee-name-text">
+                  <strong>{employee.display_name}</strong>
+                  <span>{employee.login}</span>
+                </span>
               </div>
               <div className="employee-meta">
-                <span>{roleLabels[employee.role]}</span>
+                <span className={`role-pill role-${employee.role}`}>{roleLabels[employee.role]}</span>
                 <span>{employee.specialty || t("Специальность не указана")}</span>
                 <span>{employee.grade ? employee.grade + t(" разряд") : t("Разряд не указан")}</span>
               </div>

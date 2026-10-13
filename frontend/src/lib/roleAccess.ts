@@ -1,7 +1,7 @@
 import { t } from "./i18n";
 import type { Role } from "../types";
 
-export type View = "orders" | "workload" | "reference" | "analytics" | "employees";
+export type View = "orders" | "workload" | "reference" | "analytics" | "insights" | "employees";
 export const navigation: Record<Role, Array<[View, string]>> = {
   get executor(): Array<[View, string]> {
     return [
@@ -12,16 +12,18 @@ export const navigation: Record<Role, Array<[View, string]>> = {
   get master(): Array<[View, string]> {
     return [
       ["orders", t("Наряды")],
-      ["workload", t("Загрузка")],
+      ["workload", t("Исполнители")],
+      ["analytics", t("Отчёты")],
+      ["insights", t("ИИ-анализ")],
       ["reference", t("Справочники")],
-      ["analytics", t("Отчёт")],
     ];
   },
   get manager(): Array<[View, string]> {
     return [
       ["orders", t("Наряды")],
-      ["workload", t("Загрузка")],
-      ["analytics", t("Отчёт")],
+      ["workload", t("Исполнители")],
+      ["analytics", t("Отчёты")],
+      ["insights", t("ИИ-анализ")],
     ];
   },
   get admin(): Array<[View, string]> {

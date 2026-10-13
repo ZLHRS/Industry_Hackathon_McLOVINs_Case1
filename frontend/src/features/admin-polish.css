@@ -1,0 +1,241 @@
+/* Administrator and directory screens. Loaded last. */
+.employees {
+  --role-executor: #1f6f99;
+  --role-master: #0b7d70;
+  --role-manager: #6b4fc4;
+  --role-admin: #b46c05;
+}
+.employee-overview {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+}
+.employee-overview-tile {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 68px;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+  color: var(--ink);
+  text-align: left;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+  --tone: var(--teal);
+}
+.employee-overview-tile.role-executor {
+  --tone: var(--role-executor);
+}
+.employee-overview-tile.role-master {
+  --tone: var(--role-master);
+}
+.employee-overview-tile.role-manager {
+  --tone: var(--role-manager);
+}
+.employee-overview-tile.role-admin {
+  --tone: var(--role-admin);
+}
+.employee-overview-tile.is-inactive-tile {
+  --tone: #7b8583;
+}
+.employee-overview-tile:hover {
+  box-shadow: var(--shadow-md);
+}
+.employee-overview-tile.is-active {
+  border-color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 7%, white);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--tone) 20%, transparent);
+}
+.employee-overview-icon {
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  flex: none;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--tone) 13%, white);
+  color: var(--tone);
+}
+.employee-overview-icon .icon {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+.employee-overview-tile strong {
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.employee-overview-tile small {
+  display: block;
+  color: var(--muted-ink);
+  font-size: 0.74rem;
+  font-weight: 650;
+  line-height: 1.2;
+}
+.employees .employee-filters {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+  padding: 0.9rem 1rem;
+}
+.employees .employee-list {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.employees .employee-row {
+  padding-inline: 1rem;
+  border-bottom-color: #edf1f0;
+  transition: background 0.15s ease;
+}
+.employees .employee-row:last-child {
+  border-bottom: 0;
+}
+.employees .employee-row:hover {
+  background: var(--surface-soft);
+}
+.employees .employee-name {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.employee-name-text {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.employee-name-text strong {
+  color: var(--ink);
+}
+.employee-avatar {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--tone, var(--teal)) 14%, white);
+  color: color-mix(in srgb, var(--tone, var(--teal)) 80%, black) !important;
+  font-size: 0.8rem !important;
+  font-weight: 800;
+}
+.employee-avatar.role-executor,
+.role-pill.role-executor {
+  --tone: var(--role-executor);
+}
+.employee-avatar.role-master,
+.role-pill.role-master {
+  --tone: var(--role-master);
+}
+.employee-avatar.role-manager,
+.role-pill.role-manager {
+  --tone: var(--role-manager);
+}
+.employee-avatar.role-admin,
+.role-pill.role-admin {
+  --tone: var(--role-admin);
+}
+.employees .is-inactive .employee-avatar {
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+.role-pill {
+  justify-self: start;
+  width: max-content;
+  max-width: 100%;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone, var(--teal)) 11%, white);
+  color: color-mix(in srgb, var(--tone, var(--teal)) 85%, black) !important;
+  font-size: 0.74rem !important;
+  font-weight: 750;
+}
+
+/* Directory overview */
+.reference-overview .reference-card strong {
+  color: var(--ink);
+}
+.reference-card-count {
+  color: var(--teal-deep);
+  font-weight: 800;
+}
+.reference-workspace .reference-directory {
+  border-radius: var(--radius-lg);
+}
+.reference-workspace .reference-list {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+}
+.reference-workspace .reference-list .reference-row {
+  padding-inline: 1rem;
+  border-top-color: #edf1f0;
+}
+.reference-workspace .reference-list .reference-row:first-child {
+  border-top: 0;
+}
+.reference-state {
+  border-radius: 999px;
+}
+
+@media (max-width: 1100px) {
+  .employee-overview {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 820px) {
+  .employee-overview {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.4rem;
+  }
+  .employee-overview-tile {
+    display: grid;
+    gap: 0.1rem;
+    min-height: 0;
+    padding: 0.55rem 0.6rem;
+  }
+  .employee-overview-icon {
+    display: none;
+  }
+  .employee-overview-tile strong {
+    font-size: 1.1rem;
+  }
+  .employee-overview-tile small {
+    font-size: 0.68rem;
+  }
+  /* One compact line of facts per person */
+  .employees .employee-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.2rem 0.6rem;
+  }
+}
+
+/* Equipment directory: status tabs move to their own row before they can push the page wider. */
+@media (max-width: 1200px) {
+  .equipment-controls {
+    grid-template-columns: minmax(0, 1fr) minmax(12rem, 0.8fr);
+  }
+  .equipment-controls .reference-status-filter {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+  .equipment-controls .directory-tabs {
+    width: 100%;
+  }
+  .equipment-controls .directory-tabs button {
+    flex: 1;
+  }
+}

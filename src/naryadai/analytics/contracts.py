@@ -198,6 +198,39 @@ class AnomalyView(BaseModel):
     formula: str
 
 
+class FailureRiskView(BaseModel):
+    equipment_id: UUID
+    equipment_name: str
+    recent_count: int
+    usual_count: float
+    growth: float | None = None
+    level: Literal["high", "elevated"]
+    fault_code: str | None = None
+    fault_name: str | None = None
+    fault_count: int = 0
+    order_ids: list[UUID] = Field(default_factory=list)
+
+
+class FailureForecastView(BaseModel):
+    recent_days: int
+    baseline_days: int
+    items: list[FailureRiskView] = Field(default_factory=list)
+    formula: str
+
+
+class BreakdownTimeView(BaseModel):
+    days: int
+    timezone: str
+    formula: str
+    total: int = 0
+    day_shift: int = 0
+    night_shift: int = 0
+    buckets: list[int] = Field(default_factory=lambda: [0, 0, 0, 0])
+    dominant_shift: ShiftKind | None = None
+    ratio: float | None = None
+    from_downtime: int = 0
+
+
 class MetaView(BaseModel):
     as_of: datetime
     row_count: int
@@ -218,6 +251,8 @@ class AnalyticsReport(BaseModel):
     materials: MaterialsView
     leaders: LeadersView
     anomalies: list[AnomalyView] = Field(default_factory=list)
+    forecast: FailureForecastView | None = None
+    breakdown_time: BreakdownTimeView | None = None
     meta: MetaView
 
 

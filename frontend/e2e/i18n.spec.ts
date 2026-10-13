@@ -173,9 +173,9 @@ for (const language of ["ru", "kk", "en"] as const) {
   });
 }
 for (const [role, account, routes] of [
-  ["master", state.master_login, ["/orders", "/workload", "/reference", "/analytics"]],
+  ["master", state.master_login, ["/orders", "/workload", "/reference", "/analytics", "/insights"]],
   ["executor", state.executor_login, ["/orders", "/analytics"]],
-  ["manager", state.manager_login, ["/orders", "/workload", "/analytics"]],
+  ["manager", state.manager_login, ["/orders", "/workload", "/analytics", "/insights"]],
   ["admin", state.admin_login, ["/employees", "/reference"]],
 ] as const) {
   test(`${role}: all permitted screens in three languages on a phone`, async ({ page }) => {

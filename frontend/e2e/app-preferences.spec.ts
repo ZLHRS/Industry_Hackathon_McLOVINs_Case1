@@ -90,7 +90,7 @@ test("one settings menu replaces page banners and dialog language controls", asy
   await page.getByRole("button", { name: "Выдать наряд", exact: true }).click();
   await expect(page.getByRole("dialog").locator(".language-switcher")).toHaveCount(0);
   await page.keyboard.press("Escape");
-  for (const route of ["/workload", "/reference", "/analytics"]) {
+  for (const route of ["/workload", "/reference", "/analytics", "/insights"]) {
     await page.goto(route);
     await expect(toggle).toBeVisible();
     await expect(page.locator(".language-switcher")).toHaveCount(1);

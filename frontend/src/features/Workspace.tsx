@@ -1,5 +1,6 @@
 import { Skeleton } from "../components/Skeleton";
 import { suggestionText } from "../lib/suggestionText";
+import { orderTitle } from "../lib/orderText";
 import { boardColumnOrders, belongsToOverdueBoardColumn, currentBusyOrderNumber } from "./workspaceBoard";
 import { t, message } from "../lib/i18n";
 import {
@@ -19,7 +20,9 @@ import { Api, ApiError } from "../api";
 import { local, ruPriority, ruStatus } from "./OrderDetail";
 import { SimilarRepairsPanel } from "./SimilarRepairsPanel";
 import { CatalogImport } from "./CatalogImport";
+import { BeforePhotoPicker } from "./BeforePhotoPicker";
 import type {
+  BeforePhotos,
   Catalog,
   BrigadeAssignmentOption,
   BrigadeAssignmentOptions,
@@ -127,6 +130,7 @@ export function OrdersView({
   onSimilar,
   onViewEvidence,
   onBrigadeOptions,
+  onWorkers,
   loading,
 }: {
   role: Role;
@@ -138,7 +142,7 @@ export function OrdersView({
   filters: OrderFilters;
   onFilters: (next: OrderFilters) => void;
   onOpen: (id: string) => void;
-  onCreate: (input: CreateOrder) => Promise<void>;
+  onCreate: (input: CreateOrder, photos?: BeforePhotos) => Promise<void>;
   onAssistant: () => void;
   faultReportCount: number;
   onFaultReports: () => void;
@@ -152,6 +156,7 @@ export function OrdersView({
   onSimilar: (input: SimilarRepairsRequest) => Promise<import("../types").SimilarRepairs>;
   onViewEvidence: (id: string) => Promise<OrderDetail>;
   onBrigadeOptions: (input: BrigadeOptionsRequest) => Promise<BrigadeAssignmentOptions>;
+  onWorkers?: () => void;
   loading: boolean;
 }) {
   const [creating, setCreating] = useState(false);
@@ -226,7 +231,16 @@ export function OrdersView({
   const visibleOrders = page?.items ?? [];
   const urgentCount = page?.attention_count ?? 0;
   const activeCount = (page?.counts.in_progress ?? 0) + (page?.counts.paused ?? 0);
+  const waitingCount = (page?.counts.issued ?? 0) + (page?.counts.accepted ?? 0) + (page?.counts.queued ?? 0);
+  const onShiftWorkers = workload.filter((person) => person.is_on_shift).length;
+  const freeWorkers = workload.filter((person) => person.availability === "free").length;
   const emptyState = visibleOrders.length === 0;
+  const focusOrder =
+    role === "executor" && activeTab
+      ? (["in_progress", "paused", "rework", "issued", "accepted", "queued"] as const)
+          .map((status) => visibleOrders.find((order) => order.status === status))
+          .find(Boolean)
+      : undefined;
   const unfilteredEmpty = !hasAdditionalFilters && !filters.query && !filters.attention;
 
   return (
@@ -239,11 +253,24 @@ export function OrdersView({
         </div>
         {role === "master" && (
           <div className="orders-page-actions">
-            <button className="secondary" type="button" onClick={onAssistant}>
+            <button className="secondary with-icon" type="button" onClick={onAssistant}>
+              <Icon name="sparkles" />
               {t("Помощник")}
             </button>
-            <button className="secondary" type="button" onClick={onFaultReports}>
-              {t("Сообщения о поломках")} ({faultReportCount})
+            <button
+              className={`secondary with-icon fault-reports-button${faultReportCount ? " has-reports" : ""}`}
+              type="button"
+              onClick={onFaultReports}
+            >
+              <Icon name="alert" />
+              <span className="label-full">{t("Сообщения о поломках")}</span>
+              <span className="label-short" aria-hidden="true">
+                {t("Поломки")}
+              </span>
+              <span className="sr-only"> ({faultReportCount})</span>
+              <b className="count-badge" aria-hidden="true">
+                {faultReportCount}
+              </b>
             </button>
             <button className="primary with-icon" onClick={() => setCreating(true)}>
               <Icon name="plus" />
@@ -253,14 +280,17 @@ export function OrdersView({
         )}
         {role === "executor" && (
           <div className="orders-page-actions">
-            <button className="secondary" type="button" onClick={onFaultReports}>
+            <button className="secondary with-icon" type="button" onClick={onFaultReports}>
+              <Icon name="alert" />
               {t("Сообщить о поломке")}
             </button>
           </div>
         )}
       </div>
 
-      {page && (role !== "executor" || urgentCount > 0) && (
+      {focusOrder && <ExecutorFocus order={focusOrder} catalog={catalog} onOpen={onOpen} />}
+
+      {page && (role !== "executor" || (urgentCount > 0 && !focusOrder)) && (
         <section className={`operations-strip role-${role}`} aria-label={t("Сводка очереди")}>
           <button
             type="button"
@@ -270,7 +300,7 @@ export function OrdersView({
           >
             <span className="operations-kicker">
               <Icon name="alert" />
-              {t("ТРЕБУЮТ ВНИМАНИЯ")}
+              {t("Требуют внимания")}
             </span>
             <strong>{urgentCount}</strong>
             <small>{filters.attention ? t("Показаны срочные") : t("Сроки и высокий приоритет")}</small>
@@ -282,13 +312,34 @@ export function OrdersView({
             </span>
             <strong>{activeCount}</strong>
           </div>
-          <div className="operations-stat">
-            <span>
-              <Icon name="list" />
-              {t("В выборке")}
-            </span>
-            <strong>{page.total}</strong>
-          </div>
+          {role !== "executor" && (
+            <>
+              <div className="operations-stat is-extra">
+                <span>
+                  <Icon name="inbox" />
+                  {t("Ждут начала")}
+                </span>
+                <strong>{waitingCount}</strong>
+              </div>
+              {onWorkers && workload.length > 0 && (
+                <button
+                  type="button"
+                  className="operations-stat operations-link is-extra"
+                  onClick={onWorkers}
+                  title={t("Открыть список исполнителей")}
+                >
+                  <span>
+                    <Icon name="workload" />
+                    {t("Свободны")}
+                  </span>
+                  <strong>
+                    {freeWorkers}
+                    <small> / {onShiftWorkers}</small>
+                  </strong>
+                </button>
+              )}
+            </>
+          )}
         </section>
       )}
 
@@ -375,7 +426,7 @@ export function OrdersView({
             value={filters.priority}
             onChange={(e) => onFilters({ ...filters, priority: e.target.value, offset: 0 })}
           >
-            <option value="">{t("Все")}</option>
+            <option value="">{t("Все приоритеты")}</option>
             {Object.entries(ruPriority).map(([key, value]) => (
               <option key={key} value={key}>
                 {value}
@@ -440,7 +491,7 @@ export function OrdersView({
                 })
               }
             >
-              <option value="">{t("Все доступные мастера")}</option>
+              <option value="">{t("Все мастера")}</option>
               {role === "master" && <option value={currentUserId}>{t("Мои наряды")}</option>}
               {masters
                 .filter((item) => item.id !== currentUserId)
@@ -493,7 +544,11 @@ export function OrdersView({
       )}
       {!page ? (
         loading ? (
-          <Skeleton variant={role === "executor" ? "list" : "cards"} />
+          <Skeleton
+            variant={role === "executor" ? "list" : "board"}
+            count={4}
+            label={t("Загружаем наряды…")}
+          />
         ) : null
       ) : emptyState ? (
         <div className="empty orders-empty">
@@ -539,8 +594,8 @@ export function OrdersView({
           catalog={catalog}
           workers={workload}
           onClose={() => setCreating(false)}
-          onCreate={async (input) => {
-            await onCreate(input);
+          onCreate={async (input, photos) => {
+            await onCreate(input, photos);
             setCreating(false);
           }}
           onSuggest={onSuggest}
@@ -549,6 +604,60 @@ export function OrdersView({
           onBrigadeOptions={onBrigadeOptions}
         />
       )}
+    </section>
+  );
+}
+
+/** Native select options cannot wrap: keep a busy person's task readable in one line. */
+function shortTitle(value: string) {
+  return value.length > 42 ? `${value.slice(0, 41).trimEnd()}…` : value;
+}
+
+/** The one order an executor should act on now. Opens the same detail as the list row. */
+function ExecutorFocus({
+  order,
+  catalog,
+  onOpen,
+}: {
+  order: Order;
+  catalog: Catalog | null;
+  onOpen: (id: string) => void;
+}) {
+  const machine = catalog?.equipment.find((item) => item.id === order.equipment_id);
+  const description = orderTitle(order);
+  const working = order.status === "in_progress" || order.status === "paused";
+  return (
+    <section
+      className={`executor-focus priority-${order.priority}${working ? " is-working" : ""}`}
+      aria-label={t("Текущая задача")}
+    >
+      <div className="executor-focus-top">
+        <span className="executor-focus-kicker">{working ? t("Текущий наряд") : t("Следующий наряд")}</span>
+        <span className={`status status-${order.status}`}>{ruStatus[order.status]}</span>
+      </div>
+      <p className="executor-focus-title">
+        <b>{order.number}</b> {description}
+      </p>
+      <p className="executor-focus-meta">
+        {machine && (
+          <span>
+            <Icon name="wrench" />
+            {machine.inventory_number} · {machine.name}
+          </span>
+        )}
+        <span className={order.overdue ? "danger-text" : undefined}>
+          <Icon name="clock" />
+          {t("Срок:")} {local(order.deadline)}
+        </span>
+      </p>
+      <button
+        type="button"
+        className="primary with-icon executor-focus-open"
+        onClick={() => onOpen(order.id)}
+      >
+        {t("Перейти к наряду")}
+        <Icon name="chevronRight" />
+      </button>
     </section>
   );
 }
@@ -644,22 +753,23 @@ function Kanban({
   onOpen: (id: string) => void;
   onHistory: (equipmentId: string) => Promise<void>;
 }) {
-  const columns: Array<[string, Order["status"][]]> = [
-    [t("К выдаче"), ["issued", "accepted", "queued"]],
-    [t("В работе"), ["in_progress", "paused"]],
-    [t("На проверке"), ["completed", "ai_review"]],
-    [t("Доработка и отказы"), ["rework", "rejected"]],
-    [t("Закрытые"), ["closed"]],
-    [t("Отменённые"), ["cancelled"]],
-  ] satisfies Array<[string, Order["status"][]]>;
+  const columns: Array<[string, string, Order["status"][]]> = [
+    [t("К выдаче"), "queue", ["issued", "accepted", "queued"]],
+    [t("В работе"), "progress", ["in_progress", "paused"]],
+    [t("На проверке"), "review", ["completed", "ai_review"]],
+    [t("Доработка и отказы"), "rework", ["rework", "rejected"]],
+    [t("Закрытые"), "closed", ["closed"]],
+    [t("Отменённые"), "cancelled", ["cancelled"]],
+  ] satisfies Array<[string, string, Order["status"][]]>;
   const overdue = orders.filter(belongsToOverdueBoardColumn);
   const visibleColumns = [
     ...(overdue.length
-      ? [{ title: t("Просроченные"), items: overdue, className: "kanban-column-overdue" }]
+      ? [{ title: t("Просроченные"), key: "overdue", items: overdue, className: "kanban-column-overdue" }]
       : []),
     ...columns
-      .map(([title, statuses]) => ({
+      .map(([title, key, statuses]) => ({
         title,
+        key,
         items: boardColumnOrders(orders, statuses),
         className: undefined,
       }))
@@ -667,9 +777,13 @@ function Kanban({
   ];
   return (
     <div className="kanban" aria-label={t("Доска нарядов")}>
-      {visibleColumns.map(({ title, items, className }) => {
+      {visibleColumns.map(({ title, key, items, className }) => {
         return (
-          <section key={title} className={`kanban-column${className ? ` ${className}` : ""}`}>
+          <section
+            key={title}
+            data-column={key}
+            className={`kanban-column${className ? ` ${className}` : ""}`}
+          >
             <h2>
               {title} <small>{items.length}</small>
             </h2>
@@ -704,9 +818,7 @@ function OrderRow({
   onHistory?: (equipmentId: string) => Promise<void>;
 }) {
   const machine = catalog?.equipment.find((item) => item.id === order.equipment_id);
-  const description = order.is_synthetic
-    ? order.description.replace(/^ДЕМО: синтетические данные\.\s*ДЕМО:\s*/i, "")
-    : order.description;
+  const description = orderTitle(order);
   return (
     <article className={`order-row priority-${order.priority}`}>
       <button
@@ -715,6 +827,12 @@ function OrderRow({
         aria-label={`${order.description} · ${t("Открыть наряд {0}", [order.number])}`}
       >
         <span className="order-main">
+          {(order.priority === "emergency" || order.priority === "high") && (
+            <span className={`order-priority-tag ${order.priority}`}>
+              {order.priority === "emergency" && <Icon name="zap" />}
+              {ruPriority[order.priority]}
+            </span>
+          )}
           <OrderReference description={description} number={order.number} className="order-row-reference" />
           <small>{machine ? `${machine.inventory_number} · ${machine.name}` : t("Оборудование")}</small>
           {order.brigade && (
@@ -766,7 +884,7 @@ export function CreateOrderDialog({
   catalog: Catalog;
   workers: Workload[];
   onClose: () => void;
-  onCreate: (input: CreateOrder) => Promise<void>;
+  onCreate: (input: CreateOrder, photos?: BeforePhotos) => Promise<void>;
   onSuggest: (input: {
     area_id: string;
     equipment_id: string;
@@ -809,6 +927,8 @@ export function CreateOrderDialog({
     deadline: "",
     comment: "",
   });
+  const [beforePhotos, setBeforePhotos] = useState<File[]>([]);
+  const [beforePhotosShared, setBeforePhotosShared] = useState(false);
   const [error, setError] = useState("");
   const [suggestionError, setSuggestionError] = useState("");
   const [suggestions, setSuggestions] = useState<OrderSuggestions | null>(null);
@@ -982,17 +1102,20 @@ export function CreateOrderDialog({
     try {
       setSubmitting(true);
       const { brigade_id, participant_ids, ...orderInput } = input;
-      await onCreate({
-        ...orderInput,
-        work_type: preventiveDraft ? "planned" : (input.work_type as CreateOrder["work_type"]),
-        priority: input.priority as CreateOrder["priority"],
-        deadline: input.deadline + ":00+05:00",
-        fault_code_id: input.fault_code_id || undefined,
-        comment: input.comment || undefined,
-        prevention_source: preventiveDraft?.source,
-        fault_report_id: faultReportDraft?.id,
-        ...(brigade_id ? { brigade_id, participant_ids } : {}),
-      });
+      await onCreate(
+        {
+          ...orderInput,
+          work_type: preventiveDraft ? "planned" : (input.work_type as CreateOrder["work_type"]),
+          priority: input.priority as CreateOrder["priority"],
+          deadline: input.deadline + ":00+05:00",
+          fault_code_id: input.fault_code_id || undefined,
+          comment: input.comment || undefined,
+          prevention_source: preventiveDraft?.source,
+          fault_report_id: faultReportDraft?.id,
+          ...(brigade_id ? { brigade_id, participant_ids } : {}),
+        },
+        beforePhotos.length ? { files: beforePhotos, aiShareAllowed: beforePhotosShared } : undefined,
+      );
     } catch (caught) {
       if (caught instanceof ApiError && caught.detail === "brigade_membership_changed") {
         brigadeRequestId.current += 1;
@@ -1198,6 +1321,13 @@ export function CreateOrderDialog({
             onChange={(event) => updateInput({ ...input, description: event.target.value }, true)}
           />
         </label>
+        <BeforePhotoPicker
+          files={beforePhotos}
+          aiShareAllowed={beforePhotosShared}
+          disabled={submitting}
+          onFiles={setBeforePhotos}
+          onAiShareAllowed={setBeforePhotosShared}
+        />
         <SimilarRepairsPanel
           input={similarInput}
           requestKey={suggestionKey}
@@ -1675,7 +1805,7 @@ export function CreateOrderDialog({
                                 ? t("В работе")
                                 : t("Не на смене")}
                           {currentBusyOrderNumber(person)
-                            ? `${person.current_order_description ? ` · ${person.current_order_description}` : ""} · № ${currentBusyOrderNumber(person)}`
+                            ? `${person.current_order_description ? ` · ${shortTitle(person.current_order_description)}` : ""} · № ${currentBusyOrderNumber(person)}`
                             : ""}
                         </option>
                       ))}
@@ -1709,89 +1839,6 @@ export function CreateOrderDialog({
         </button>
       </form>
     </Dialog>
-  );
-}
-export function WorkloadView({
-  workers,
-  onOpen,
-  onEmployeeOrders,
-}: {
-  workers: Workload[];
-  onOpen: (id: string) => void;
-  onEmployeeOrders: (employeeId: string) => void;
-}) {
-  const onShift = workers.filter((person) => person.is_on_shift);
-  const busy = onShift.filter((person) => person.availability === "busy").length;
-  return (
-    <section className="workspace">
-      <div className="page-head">
-        <div>
-          <p className="eyebrow">{t("СМЕНА")}</p>
-          <h1>{t("Загрузка исполнителей")}</h1>
-        </div>
-      </div>
-      <div className="workload-summary" aria-label={t("Сводка загрузки")}>
-        <span>
-          <Icon name="workload" />
-          <b>{onShift.length}</b> {t("в смене")}
-        </span>
-        <span>
-          <Icon name="wrench" />
-          <b>{busy}</b> {t("заняты")}
-        </span>
-        <span>
-          <Icon name="list" />
-          <b>{onShift.reduce((sum, person) => sum + person.queue_length, 0)}</b> {t("в очереди")}
-        </span>
-      </div>
-      <div className="workload">
-        {workers.map((person) => (
-          <article key={person.employee_id} className="worker">
-            <span className={`availability ${person.availability}`}></span>
-            <div>
-              <button
-                type="button"
-                className="workload-person-link"
-                onClick={() => onEmployeeOrders(person.employee_id)}
-              >
-                {person.display_name}
-              </button>
-              <small>
-                {person.specialty} · {person.grade} {t("разряд")}
-              </small>
-            </div>
-            <div>
-              <b className={`availability-label ${person.availability}`}>
-                {person.availability === "busy"
-                  ? t("Занят")
-                  : person.availability === "free"
-                    ? t("Свободен")
-                    : person.availability === "queued"
-                      ? t("Очередь")
-                      : t("Не в смене")}
-              </b>
-              {person.current_order_id && person.current_order_number ? (
-                <button
-                  className="workload-order-link"
-                  type="button"
-                  onClick={() => onOpen(person.current_order_id!)}
-                >
-                  <OrderReference
-                    description={person.current_order_description}
-                    number={person.current_order_number}
-                  />
-                </button>
-              ) : (
-                <small className="workload-queue" title={t("В очереди:") + " " + person.queue_length}>
-                  <Icon name="list" />
-                  <span className="sr-only">{t("В очереди:")}</span> {person.queue_length}
-                </small>
-              )}
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
   );
 }
 const sectionIcons: Record<DirectorySection, IconName> = {

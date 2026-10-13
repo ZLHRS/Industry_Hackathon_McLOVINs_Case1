@@ -8,6 +8,8 @@ export type NotificationGroup = {
   orderId: string | null;
   faultReportId: string | null;
   orderReference: string | null;
+  /** The machine the order is about, when the server copy names it: "Дробилка 1 (CR-008)". */
+  equipmentLabel: string | null;
   orderDescription: string | null;
   items: NotificationItem[];
   unreadCount: number;
@@ -35,6 +37,17 @@ function orderReference(item: NotificationItem) {
   return text.match(/\b[\p{L}]{1,6}[-–]\d[\p{L}\d_-]*\b/iu)?.[0] ?? null;
 }
 
+function equipmentLabel(item: NotificationItem) {
+  const name =
+    typeof item.payload.equipment === "string" ? cleanNotificationText(item.payload.equipment) : "";
+  const number =
+    typeof item.payload.equipment_number === "string"
+      ? cleanNotificationText(item.payload.equipment_number)
+      : "";
+  if (!name) return null;
+  return number ? `${name} (${number})` : name;
+}
+
 function orderDescription(item: NotificationItem) {
   const value = item.payload.order_description;
   return typeof value === "string" && cleanNotificationText(value) ? cleanNotificationText(value) : null;
@@ -56,6 +69,7 @@ export function groupNotifications(items: readonly NotificationItem[]): Notifica
           ? `fault:${item.fault_report_id}`
           : "system";
     const reference = type === "order" ? orderReference(item) : null;
+    const machine = type === "order" ? equipmentLabel(item) : null;
     const description = type === "order" ? orderDescription(item) : null;
     const existing = groups.get(key);
     if (existing) {
@@ -63,6 +77,7 @@ export function groupNotifications(items: readonly NotificationItem[]): Notifica
       existing.unreadCount += item.read_at ? 0 : 1;
       existing.urgentCount += item.urgent ? 1 : 0;
       existing.orderReference ||= reference;
+      existing.equipmentLabel ||= machine;
       existing.orderDescription ||= description;
       continue;
     }
@@ -72,6 +87,7 @@ export function groupNotifications(items: readonly NotificationItem[]): Notifica
       orderId: item.order_id,
       faultReportId: item.fault_report_id,
       orderReference: reference,
+      equipmentLabel: machine,
       orderDescription: description,
       items: [item],
       unreadCount: item.read_at ? 0 : 1,

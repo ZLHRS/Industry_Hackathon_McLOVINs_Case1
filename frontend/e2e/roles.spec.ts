@@ -20,8 +20,8 @@ for (const role of ["executor", "master", "manager", "admin"] as const) {
     await expect(navigation).toBeVisible();
     const labels = {
       executor: ["Моя работа", "Мои результаты"],
-      master: ["Наряды", "Загрузка", "Справочники", "Отчёт"],
-      manager: ["Наряды", "Загрузка", "Отчёт"],
+      master: ["Наряды", "Исполнители", "Отчёты", "ИИ-анализ", "Справочники"],
+      manager: ["Наряды", "Исполнители", "Отчёты", "ИИ-анализ"],
       admin: ["Сотрудники", "Справочники"],
     };
     const expectNavigationLabels = async (scope: typeof navigation) => {
@@ -68,7 +68,7 @@ for (const role of ["executor", "master", "manager", "admin"] as const) {
       await page.screenshot({ path: info.outputPath(`${role}-order-mobile.png`) });
       await page.keyboard.press("Escape");
       await navigation
-        .getByRole("button", { name: role === "executor" ? "Мои результаты" : "Отчёт", exact: true })
+        .getByRole("button", { name: role === "executor" ? "Мои результаты" : "Отчёты", exact: true })
         .click();
       await expect(
         page.getByRole("heading", { name: role === "executor" ? "Мой отчёт" : "Отчёты смены", exact: true }),

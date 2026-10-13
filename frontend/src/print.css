@@ -1,0 +1,82 @@
+/* Print and "Save as PDF" (case §7: reports exported to PDF or Excel). Screen styles are untouched. */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    box-shadow: none !important;
+  }
+  .side-nav,
+  .bottom-nav,
+  .topbar,
+  .skip-link,
+  .page-navigation,
+  .pending-panel,
+  .banner,
+  .analytics-actions,
+  .analytics-filters,
+  .report-pending,
+  .report-stale,
+  .report-caption-loading,
+  .ai-summary-head button,
+  .prevention-action,
+  .analytics .ai-summary-panel:not(:has(.ai-summary-result)) {
+    display: none !important;
+  }
+  .app-shell {
+    display: block !important;
+  }
+  .app-main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  .page-head {
+    margin-bottom: 0.4rem !important;
+  }
+  .page-head h1 {
+    font-size: 20pt !important;
+  }
+  .analytics .metric-grid {
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)) !important;
+  }
+  .analytics .analytics-split,
+  .analytics .ratings-grid {
+    display: block !important;
+  }
+  .metric,
+  .insight-tile,
+  .anomaly-group,
+  .rating-row,
+  .table-row,
+  .anomaly,
+  .report-caption {
+    break-inside: avoid;
+  }
+  .analytics .analytics-split > div + div,
+  .analytics .ratings-grid > div + div {
+    margin-top: 1rem;
+  }
+  .analytics .table-head,
+  .analytics .table-row {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) !important;
+  }
+  .app-main,
+  .analytics {
+    background: #fff !important;
+  }
+  .analytics .analytics-section {
+    margin-top: 0.6rem !important;
+    padding: 0.7rem 0.8rem !important;
+  }
+}

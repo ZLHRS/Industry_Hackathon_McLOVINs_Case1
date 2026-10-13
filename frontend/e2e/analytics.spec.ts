@@ -17,7 +17,7 @@ async function login(page: Page, account: string) {
   await expect(page.getByTestId("app-preferences-toggle")).toBeVisible();
 }
 async function openReport(page: Page) {
-  const report = page.getByRole("button", { name: /^(Отчёт|Мои результаты)$/, exact: true });
+  const report = page.getByRole("button", { name: /^(Отчёты|Мои результаты)$/, exact: true });
   await expect(report.first()).toBeVisible();
   await report.first().click();
   await expect(page.getByRole("heading", { name: /отчёт/i })).toBeVisible();

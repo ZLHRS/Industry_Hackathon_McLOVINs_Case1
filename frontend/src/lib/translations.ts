@@ -1,5 +1,7 @@
+import { uiTranslations } from "./translationsUi";
+
 /** Interface copy only. User-entered and server-authored content is never translated here. */
-export const translations: Record<string, { kk: string; en: string }> = {
+const baseTranslations: Record<string, { kk: string; en: string }> = {
   "Страница {0} из {1}": { kk: "{1} беттің {0}-і", en: "Page {0} of {1}" },
   "Нажмите на карточку, чтобы посмотреть связанные события.": {
     kk: "Байланысты оқиғаларды көру үшін карточканы басыңыз.",
@@ -3914,4 +3916,9 @@ export const translations: Record<string, { kk: string; en: string }> = {
     kk: "Жүйе",
     en: "System",
   },
+};
+
+export const translations: Record<string, { kk: string; en: string }> = {
+  ...baseTranslations,
+  ...uiTranslations,
 };

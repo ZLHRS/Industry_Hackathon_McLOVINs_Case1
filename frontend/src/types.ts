@@ -352,6 +352,9 @@ export interface Workload {
   current_started_at: string | null;
   queue_length: number;
   paused_count: number;
+  /** Filled on the client from the visible running orders: what the person is working on. */
+  current_order_title?: string | null;
+  current_order_equipment?: string | null;
 }
 export interface ActionRequest {
   action: string;
@@ -490,6 +493,11 @@ export interface CreateOrder {
   prevention_source?: PreventionSource;
   /** Links a master-confirmed work order to the originating fault report. */
   fault_report_id?: string;
+}
+/** Optional "before" photos picked in the issue form; uploaded right after the order exists. */
+export interface BeforePhotos {
+  files: File[];
+  aiShareAllowed: boolean;
 }
 export type FaultReportStatus = "open" | "converted" | "dismissed";
 export interface FaultReportMaster {
@@ -699,6 +707,10 @@ export interface AnalyticsReport {
     evidence: Record<string, unknown>;
     formula: string;
   }>;
+  /** Failure forecast (case §6.5 bonus); absent for executors and older servers. */
+  forecast?: FailureForecast | null;
+  /** Breakdowns by shift and time of day (case §6.5). */
+  breakdown_time?: BreakdownTime | null;
   meta: {
     as_of: string;
     row_count: number;
@@ -706,6 +718,41 @@ export interface AnalyticsReport {
     formula_descriptions: Record<string, string>;
     warnings: string[];
   };
+}
+export interface FailureRisk {
+  equipment_id: string;
+  equipment_name: string;
+  recent_count: number;
+  /** Usual unplanned orders per the same number of days, from the previous 60 days. */
+  usual_count: number;
+  /** recent / usual; null when there were no earlier breakdowns to compare with. */
+  growth: number | null;
+  level: "high" | "elevated";
+  fault_code: string | null;
+  fault_name: string | null;
+  fault_count: number;
+  order_ids: string[];
+}
+export interface FailureForecast {
+  recent_days: number;
+  /** Days of history behind the usual level; under 30 means no forecast. */
+  baseline_days: number;
+  items: FailureRisk[];
+  formula: string;
+}
+export interface BreakdownTime {
+  days: number;
+  timezone: string;
+  formula: string;
+  total: number;
+  day_shift: number;
+  night_shift: number;
+  /** Four 6-hour intervals of plant time: 00–06, 06–12, 12–18, 18–24. */
+  buckets: number[];
+  dominant_shift: "day" | "night" | null;
+  /** How many times more breakdowns the dominant shift has; null when the other has none. */
+  ratio: number | null;
+  from_downtime: number;
 }
 export interface AnalyticsSummary {
   source: "openai" | "rules";

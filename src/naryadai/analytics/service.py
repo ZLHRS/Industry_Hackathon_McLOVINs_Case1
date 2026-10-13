@@ -19,7 +19,7 @@ from naryadai.infrastructure.models import (
     WorkOrder,
 )
 
-from . import aggregates
+from . import aggregates, trends
 from .contracts import (
     AnalyticsOptions,
     AnalyticsQuery,
@@ -177,6 +177,8 @@ def _calculate(
         )
     if end <= start:
         warnings.append("Выбранный период ещё не наблюдался: будущие результаты не прогнозируются.")
+    # Equipment-level signals over the area/equipment scope; executors see only their own work.
+    equipment_signals = principal.role != "executor"
     return AnalyticsReport(
         period=period,
         filters=FilterView(
@@ -203,6 +205,10 @@ def _calculate(
         anomalies=[]
         if principal.role == "executor"
         else anomalies(selected, data, start, end, now),
+        forecast=trends.failure_forecast(data, end) if equipment_signals else None,
+        breakdown_time=(
+            trends.breakdown_time(data, end, now, period.timezone) if equipment_signals else None
+        ),
         meta=MetaView(
             as_of=now,
             row_count=len(selected),
