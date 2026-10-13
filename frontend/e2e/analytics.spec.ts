@@ -48,8 +48,13 @@ test("master filters analytics and downloads authenticated XLSX without invoking
   );
   await page.getByRole("button", { name: "Применить", exact: true }).click();
   expect((await updated).status()).toBe(200);
+  const exportTrigger = page.getByRole("button", { name: "Экспорт", exact: true });
+  await exportTrigger.click();
+  await expect(exportTrigger).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("button", { name: "Excel", exact: false })).toBeVisible();
+  await page.screenshot({ path: info.outputPath("analytics-export-desktop.png"), fullPage: true });
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Скачать Excel", exact: true }).click();
+  await page.getByRole("button", { name: "Excel", exact: false }).click();
   const file = await download;
   expect(file.suggestedFilename()).toMatch(/\.xlsx$/i);
   expect(summaryCalls).toBe(0);
@@ -65,6 +70,13 @@ test("executor sees a private report and never receives peer controls", async ({
   await expect(page.getByLabel("Бригада", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Аномалии с доказательствами", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "ИИ-сводка мастера" })).toHaveCount(0);
+  const exportTrigger = page.getByRole("button", { name: "Экспорт", exact: true });
+  await exportTrigger.click();
+  await expect(exportTrigger).toHaveAttribute("aria-expanded", "true");
+  await page.screenshot({ path: info.outputPath("analytics-export-mobile.png"), fullPage: true });
+  await page.keyboard.press("Escape");
+  await expect(exportTrigger).toHaveAttribute("aria-expanded", "false");
+  await expect(exportTrigger).toBeFocused();
   await page.screenshot({ path: info.outputPath("analytics-executor-mobile.png"), fullPage: true });
   await noOverflow(page);
 });

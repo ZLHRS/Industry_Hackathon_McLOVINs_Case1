@@ -1007,14 +1007,79 @@
   }
 }
 
-/* Report actions on phones: Excel and PDF side by side, refresh below */
+.analytics .export-disclosure {
+  position: relative;
+  flex: none;
+}
+.analytics .export-trigger {
+  min-width: 8.75rem;
+}
+.analytics .export-options {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  display: grid;
+  width: min(19rem, calc(100vw - 2rem));
+  gap: 0.2rem;
+  padding: 0.35rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 14px 28px rgba(19, 49, 43, 0.18);
+}
+.analytics .export-option {
+  display: grid;
+  grid-template-columns: 1.2rem minmax(0, 1fr);
+  column-gap: 0.55rem;
+  align-items: center;
+  width: 100%;
+  min-height: 3.1rem;
+  padding: 0.5rem 0.6rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+.analytics .export-option:hover,
+.analytics .export-option:focus-visible {
+  background: var(--teal-soft);
+  color: var(--teal-deep);
+}
+.analytics .export-option .icon {
+  grid-row: 1 / span 2;
+  width: 1.1rem;
+  height: 1.1rem;
+}
+.analytics .export-option span {
+  font-weight: 750;
+}
+.analytics .export-option small {
+  color: #52645f;
+  font-size: 0.74rem;
+  line-height: 1.25;
+}
+
+/* Report actions: one compact export disclosure and a refresh action. */
 @media (max-width: 600px) {
   .analytics .analytics-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
   }
+  .analytics .export-disclosure {
+    min-width: 0;
+  }
+  .analytics .export-trigger {
+    width: 100%;
+    min-width: 0;
+  }
   .analytics .analytics-actions .primary {
     grid-column: 1 / -1;
+  }
+  .analytics .export-options {
+    right: auto;
+    left: 0;
   }
 }
 

@@ -13,6 +13,16 @@ export const uiTranslations: Record<string, { kk: string; en: string }> = {
     kk: "Есепті PDF-ке сақтау немесе басып шығару",
     en: "Save the report as PDF or print it",
   },
+  Экспорт: { kk: "Экспорт", en: "Export" },
+  Excel: { kk: "Excel", en: "Excel" },
+  "Скачать таблицу с выбранными фильтрами": {
+    kk: "Таңдалған сүзгілері бар кестені жүктеп алу",
+    en: "Download a table with the selected filters",
+  },
+  "Откроет печать: выберите «Сохранить как PDF»": {
+    kk: "Басып шығаруды ашады: «PDF ретінде сақтау» тармағын таңдаңыз",
+    en: "Opens print: choose “Save as PDF”",
+  },
   "Можно приложить до 5 фото.": {
     kk: "5 фотоға дейін тіркеуге болады.",
     en: "You can attach up to 5 photos.",

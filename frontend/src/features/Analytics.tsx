@@ -85,10 +85,13 @@ export function AnalyticsView({
   const [summaryError, setSummaryError] = useState("");
   const [summarizing, setSummarizing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const mounted = useRef(true);
   const reportRequest = useRef(0);
   const summaryRequest = useRef(0);
+  const exportDisclosure = useRef<HTMLDivElement>(null);
+  const exportTrigger = useRef<HTMLButtonElement>(null);
   const people = role === "master" || role === "manager";
   const refresh = async (next = query) => {
     const request = ++reportRequest.current;
@@ -135,6 +138,24 @@ export function AnalyticsView({
       summaryRequest.current += 1;
     };
   }, []);
+  useEffect(() => {
+    if (!exportOpen) return;
+    const closeWhenOutside = (event: PointerEvent) => {
+      if (!exportDisclosure.current?.contains(event.target as Node)) setExportOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setExportOpen(false);
+      exportTrigger.current?.focus();
+    };
+    document.addEventListener("pointerdown", closeWhenOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeWhenOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [exportOpen]);
   // The first realtime sync after opening the page is a baseline, not a change since the report.
   const firstRevision = useRef(revision);
   useEffect(() => {
@@ -147,9 +168,11 @@ export function AnalyticsView({
   const stale = report !== null && reportRevision < revision;
   const pendingFilters = appliedQuery !== null && JSON.stringify(query) !== JSON.stringify(appliedQuery);
   const machines = useMemo(() => options?.equipment ?? [], [options]);
+  const exportDisabled = !report || loading || exporting;
   const setOne = (field: "area_id" | "equipment_id" | "executor_id" | "brigade_id", value: string) =>
     setQuery((q) => ({ ...q, [field]: value ? [value] : [] }));
   const download = async () => {
+    setExportOpen(false);
     setExporting(true);
     try {
       const file = await api.analyticsExport(appliedQuery ?? query),
@@ -230,27 +253,48 @@ export function AnalyticsView({
         </div>
         <div className="analytics-actions">
           {!insights && (
-            <button
-              className="secondary with-icon"
-              onClick={() => void download()}
-              disabled={!report || exporting}
-            >
-              <Icon name="download" />
-              {exporting ? t("Готовим Excel…") : t("Скачать Excel")}
-            </button>
-          )}
-          {!insights && (
-            <button
-              className="secondary with-icon analytics-print"
-              type="button"
-              onClick={() => window.print()}
-              disabled={!report}
-              title={t("Сохранить отчёт в PDF или распечатать")}
-              aria-label={t("Сохранить отчёт в PDF или распечатать")}
-            >
-              <Icon name="printer" />
-              PDF
-            </button>
+            <div className="export-disclosure" ref={exportDisclosure}>
+              <button
+                className="secondary with-icon export-trigger"
+                type="button"
+                ref={exportTrigger}
+                onClick={() => setExportOpen((open) => !open)}
+                disabled={exportDisabled}
+                aria-expanded={exportOpen}
+                aria-controls="analytics-export-options"
+              >
+                <Icon name="download" />
+                {exporting ? t("Готовим Excel…") : t("Экспорт")}
+              </button>
+              {exportOpen && (
+                <div className="export-options" id="analytics-export-options">
+                  <button
+                    className="export-option"
+                    type="button"
+                    onClick={() => void download()}
+                    disabled={exportDisabled}
+                  >
+                    <Icon name="download" />
+                    <span>{t("Excel")}</span>
+                    <small>{t("Скачать таблицу с выбранными фильтрами")}</small>
+                  </button>
+                  <button
+                    className="export-option"
+                    type="button"
+                    onClick={() => {
+                      setExportOpen(false);
+                      window.print();
+                    }}
+                    disabled={exportDisabled}
+                    title={t("Сохранить отчёт в PDF или распечатать")}
+                  >
+                    <Icon name="printer" />
+                    <span>PDF</span>
+                    <small>{t("Откроет печать: выберите «Сохранить как PDF»")}</small>
+                  </button>
+                </div>
+              )}
+            </div>
           )}
           <button
             className="primary with-icon"

@@ -22,7 +22,19 @@ for (const width of [390, 1440]) {
     await page.screenshot({ path: info.outputPath(`trends-${width}.png`), fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await page.goto("/analytics");
-    const pdf = page.getByRole("button", { name: "Сохранить отчёт в PDF или распечатать" });
+    const exportTrigger = page.getByRole("button", { name: "Экспорт", exact: true });
+    await expect(exportTrigger).toBeEnabled();
+    await exportTrigger.click();
+    await expect(exportTrigger).toHaveAttribute("aria-expanded", "true");
+    await page.screenshot({ path: info.outputPath(`export-menu-${width}.png`), fullPage: true });
+    await page.keyboard.press("Escape");
+    await expect(exportTrigger).toHaveAttribute("aria-expanded", "false");
+    await expect(exportTrigger).toBeFocused();
+    await exportTrigger.click();
+    await page.getByRole("heading", { name: /отчёт/i }).click();
+    await expect(exportTrigger).toHaveAttribute("aria-expanded", "false");
+    await exportTrigger.click();
+    const pdf = page.getByRole("button", { name: /PDF/ });
     await expect(pdf).toBeEnabled();
     await page.evaluate(() => {
       window.print = () => {
