@@ -5,7 +5,7 @@ import base64
 import json
 import socket
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from sqlalchemy import select
 from test_order_api import api as api
-from test_order_api import issue
+from test_order_api import create_body, issue
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 
@@ -22,6 +22,7 @@ from naryadai.app import create_app
 from naryadai.config import Settings
 from naryadai.infrastructure.models import (
     AuthSession,
+    FaultReport,
     Notification,
     PushSubscription,
     RealtimeRevision,
@@ -48,6 +49,61 @@ async def seed_notification(database, api, *, who="executor"):
         session.add(note)
         await session.flush()
         return note.id, order["order_id"]
+
+
+async def seed_order_events(database, api, *, count, who="executor", start=None):
+    order = await issue(
+        api,
+        create_body(api, executor_id=str(api["users"][who])),
+    )
+    created_at = start or datetime.now(UTC)
+    async with database.sessions.begin() as session:
+        for index in range(count):
+            session.add(
+                Notification(
+                    employee_id=api["users"][who],
+                    work_order_id=UUID(order["order_id"]),
+                    dedup_key=str(uuid4()),
+                    kind="reminder",
+                    title=f"Событие {index}",
+                    body="Проверьте наряд",
+                    urgent=True,
+                    action_required=True,
+                    payload={},
+                    created_at=created_at + timedelta(seconds=index),
+                )
+            )
+    return order["order_id"]
+
+
+async def seed_fault_event(database, api, *, start):
+    async with database.sessions.begin() as session:
+        report = FaultReport(
+            equipment_id=api["machines"][0].id,
+            area_id=api["areas"][0].id,
+            reporter_id=api["users"]["executor"],
+            master_id=api["users"]["master"],
+            description="Pump vibrates",
+            idempotency_key=str(uuid4()),
+            request_hash="0" * 64,
+        )
+        session.add(report)
+        await session.flush()
+        session.add(
+            Notification(
+                employee_id=api["users"]["executor"],
+                fault_report_id=report.id,
+                dedup_key=str(uuid4()),
+                kind="fault_created",
+                title="New fault report",
+                body="Pump vibrates",
+                urgent=False,
+                action_required=False,
+                payload={},
+                created_at=start,
+            )
+        )
+        return str(report.id)
 
 
 async def test_inbox_scope_read_ack_and_lifecycle_unchanged(api, database):
@@ -104,6 +160,90 @@ async def test_inbox_pagination_and_assignment_revocation(api, database):
     assert (
         await client.post(f"/api/v1/notifications/{first}/read", headers=headers)
     ).status_code == 404
+
+
+async def test_grouped_inbox_paginates_subjects_and_filters_events(api, database):
+    start = datetime.now(UTC) - timedelta(minutes=10)
+    first_order = await seed_order_events(database, api, count=51, start=start)
+    second_order = await seed_order_events(
+        database, api, count=2, start=start + timedelta(minutes=20)
+    )
+    fault_report = await seed_fault_event(database, api, start=start + timedelta(minutes=30))
+    client, headers = api["client"], api["headers"]
+    prefix = "/api/v1/notifications"
+
+    first = (await client.get(prefix + "/groups?limit=1", headers=headers["executor"])).json()
+    second = (
+        await client.get(prefix + "/groups?limit=1&offset=1", headers=headers["executor"])
+    ).json()
+    third = (
+        await client.get(prefix + "/groups?limit=1&offset=2", headers=headers["executor"])
+    ).json()
+    assert first["total"] == 3
+    assert first["unread_count"] == 54
+    assert first["items"][0]["key"] == f"fault:{fault_report}"
+    assert second["items"][0]["key"] == f"order:{second_order}"
+    first_order_group = third["items"][0]
+    assert first_order_group["key"] == f"order:{first_order}"
+    assert first_order_group["order_id"] == first_order
+    assert first_order_group["fault_report_id"] is None
+    assert first_order_group["total"] == first_order_group["unread_count"] == 51
+    assert first_order_group["pending_count"] == 51
+    assert first_order_group["latest"]["order_id"] == first_order
+
+    filtered = (
+        await client.get(f"{prefix}?order_id={first_order}&limit=100", headers=headers["executor"])
+    ).json()
+    assert filtered["total"] == 51
+    assert filtered["unread_count"] == 54
+    assert {item["order_id"] for item in filtered["items"]} == {first_order}
+    assert (
+        await client.get(
+            f"{prefix}?order_id={first_order}&fault_report_id={fault_report}",
+            headers=headers["executor"],
+        )
+    ).status_code == 422
+    assert (
+        await client.get(prefix + "/groups", headers=headers["coworker"])
+    ).json() == {"items": [], "total": 0, "unread_count": 0}
+
+
+async def test_grouped_inbox_counts_receipts_in_the_filtered_view(api, database):
+    order_id = await seed_order_events(database, api, count=3)
+    client, headers = api["client"], api["headers"]["executor"]
+    path = "/api/v1/notifications"
+    async with database.sessions.begin() as session:
+        session.add(
+            Notification(
+                employee_id=api["users"]["executor"],
+                work_order_id=UUID(order_id),
+                dedup_key=str(uuid4()),
+                kind="information",
+                title="Informational event",
+                body="No receipt is required",
+                urgent=False,
+                action_required=True,
+                payload={},
+            )
+        )
+    initial = (await client.get(path + "/groups", headers=headers)).json()
+    group = initial["items"][0]
+    assert group["order_id"] == order_id
+    assert group["unread_count"] == 4
+    assert group["pending_count"] == 3
+
+    events = (await client.get(f"{path}?order_id={order_id}", headers=headers)).json()["items"]
+    assert (await client.post(f"{path}/{events[0]['id']}/read", headers=headers)).status_code == 200
+    assert (await client.post(f"{path}/{events[1]['id']}/ack", headers=headers)).status_code == 200
+
+    grouped = (await client.get(path + "/groups", headers=headers)).json()
+    assert grouped["unread_count"] == 2
+    assert grouped["items"][0]["unread_count"] == 2
+    assert grouped["items"][0]["pending_count"] == 2
+    unread = (await client.get(path + "/groups?unread_only=true", headers=headers)).json()
+    assert unread["total"] == 1 and unread["unread_count"] == 2
+    assert unread["items"][0]["total"] == unread["items"][0]["unread_count"] == 2
+    assert unread["items"][0]["pending_count"] == 1
 
 
 def push_body(index=0):

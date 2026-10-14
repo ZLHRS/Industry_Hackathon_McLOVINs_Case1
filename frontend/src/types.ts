@@ -549,6 +549,20 @@ export interface NotificationPage {
   total: number;
   unread_count: number;
 }
+export interface NotificationGroupSummary {
+  key: string;
+  order_id: string | null;
+  fault_report_id: string | null;
+  total: number;
+  unread_count: number;
+  pending_count: number;
+  latest: NotificationItem;
+}
+export interface NotificationGroupPage {
+  items: NotificationGroupSummary[];
+  total: number;
+  unread_count: number;
+}
 export interface PushConfig {
   enabled: boolean;
   public_key: string | null;

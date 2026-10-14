@@ -429,8 +429,8 @@ export function AnalyticsView({
       )}
       {loading && !report && (
         <Skeleton
-          variant="report"
-          count={insights ? 4 : 5}
+          variant={insights ? "insights" : "report"}
+          count={people ? 10 : 9}
           label={
             insights ? t("Ищем закономерности в истории нарядов…") : t("Формируем отчёт по журналу нарядов…")
           }

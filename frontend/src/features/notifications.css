@@ -248,6 +248,23 @@
   display: grid;
 }
 
+.notification-history-note {
+  margin: 0;
+  padding: 0.65rem 1rem;
+  color: var(--muted, #61716d);
+  font-size: 0.78rem;
+  background: #f8fbfa;
+}
+
+.notification-history-tools {
+  padding: 0.75rem 1rem;
+}
+
+.notification-group > .loading-skeleton {
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
 .notification-drawer .notification-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

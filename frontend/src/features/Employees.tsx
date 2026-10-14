@@ -282,7 +282,7 @@ export function EmployeesView({
         </p>
       )}
       {loading && !items ? (
-        <Skeleton variant="list" label={t("Загружаем сотрудников…")} />
+        <Skeleton variant="list" count={5} label={t("Загружаем сотрудников…")} />
       ) : !items ? null : visible.length ? (
         <div className="employee-list" aria-label={t("Список сотрудников")}>
           {visible.map((employee) => (

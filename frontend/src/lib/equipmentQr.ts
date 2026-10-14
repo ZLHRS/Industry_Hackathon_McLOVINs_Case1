@@ -48,3 +48,20 @@ export function isLocalQrOrigin(origin: string): boolean {
     /^127\./.test(host)
   );
 }
+
+/** Accept only equipment routes on this deployment or the permanent project domain.
+ * Navigate locally by ID: QR content can never redirect to an external website.
+ */
+export function scannedEquipmentId(value: string, origin: string): string | null {
+  if (value.length > 2048) return null;
+  try {
+    const url = new URL(value.trim(), origin);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return null;
+    if (url.origin !== new URL(origin).origin && url.origin !== "https://technaryad.online") return null;
+    if (url.search || url.hash) return null;
+    const match = /^\/equipment\/([^/]+)\/?$/.exec(url.pathname);
+    return match && equipmentIdPattern.test(match[1]) ? match[1].toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}

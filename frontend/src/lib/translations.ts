@@ -3960,6 +3960,71 @@ const baseTranslations: Record<string, { kk: string; en: string }> = {
 };
 
 export const translations: Record<string, { kk: string; en: string }> = {
+  "Групп на странице: {0} из {1}.": {
+    kk: "Беттегі топтар: {1} ішінен {0}.",
+    en: "Groups on this page: {0} of {1}.",
+  },
+  "События показаны от новых к старым.": {
+    kk: "Оқиғалар жаңадан ескіге қарай көрсетілген.",
+    en: "Events are shown newest first.",
+  },
+  "История событий": { kk: "Оқиғалар тарихы", en: "Event history" },
+  "События {0}–{1} из {2}": { kk: "{2} ішінен {0}–{1} оқиғалар", en: "Events {0}–{1} of {2}" },
+  Новее: { kk: "Жаңарақ", en: "Newer" },
+  Ранее: { kk: "Ертерек", en: "Older" },
+  "Сканировать QR оборудования": { kk: "Жабдықтың QR-кодын сканерлеу", en: "Scan equipment QR" },
+  "Сканировать оборудование": { kk: "Жабдықты сканерлеу", en: "Scan equipment" },
+  "Наведите камеру на QR-код на наклейке.": {
+    kk: "Камераны жапсырмадағы QR-кодқа бағыттаңыз.",
+    en: "Point the camera at the QR code on the label.",
+  },
+  "Это не QR оборудования ТехНаряда. Наведите камеру на наклейку оборудования.": {
+    kk: "Бұл ТехНаряд жабдығының QR-коды емес. Камераны жабдық жапсырмасына бағыттаңыз.",
+    en: "This is not a TechNaryad equipment QR. Point the camera at the equipment label.",
+  },
+  "Камера доступна по HTTPS. Откройте защищённый адрес сайта или выберите фото QR.": {
+    kk: "Камера HTTPS арқылы қолжетімді. Сайттың қауіпсіз мекенжайын ашыңыз немесе QR фотосын таңдаңыз.",
+    en: "The camera requires HTTPS. Open the secure site or select a QR photo.",
+  },
+  "Не удалось прочитать изображение. Попробуйте другое фото QR.": {
+    kk: "Суретті оқу мүмкін болмады. Басқа QR фотосын таңдаңыз.",
+    en: "Could not read the image. Try another QR photo.",
+  },
+  "Доступ к камере запрещён. Разрешите его в настройках браузера или выберите фото QR.": {
+    kk: "Камераға қолжетімділік бұғатталған. Браузер баптауларында рұқсат беріңіз немесе QR фотосын таңдаңыз.",
+    en: "Camera access is blocked. Allow it in browser settings or select a QR photo.",
+  },
+  "Не удалось включить камеру. Закройте другие приложения с камерой или выберите фото QR.": {
+    kk: "Камераны қосу мүмкін болмады. Камераны қолданатын басқа қолданбаларды жабыңыз немесе QR фотосын таңдаңыз.",
+    en: "Could not start the camera. Close other camera apps or select a QR photo.",
+  },
+  "Выберите изображение размером до 20 МБ.": {
+    kk: "Өлшемі 20 МБ дейінгі суретті таңдаңыз.",
+    en: "Select an image up to 20 MB.",
+  },
+  "QR-код не найден. Выберите чёткое фото, на котором код виден целиком.": {
+    kk: "QR-код табылмады. Код толық көрінетін анық фото таңдаңыз.",
+    en: "No QR code found. Select a clear photo showing the entire code.",
+  },
+  "Камера сканера": { kk: "Сканер камерасы", en: "Scanner camera" },
+  "Включаем камеру…": { kk: "Камера қосылуда…", en: "Starting camera…" },
+  "Читаем QR-код…": { kk: "QR-код оқылуда…", en: "Reading QR code…" },
+  "QR на оборудовании": { kk: "Жабдықтағы QR", en: "Equipment QR" },
+  "Держите код в рамке. Карточка откроется автоматически.": {
+    kk: "Кодты жақтау ішінде ұстаңыз. Карточка автоматты түрде ашылады.",
+    en: "Keep the code inside the frame. The equipment card will open automatically.",
+  },
+  "Откроется карточка оборудования с доступными вам сведениями и действиями.": {
+    kk: "Сізге қолжетімді мәліметтер мен әрекеттер бар жабдық карточкасы ашылады.",
+    en: "Opens the equipment card with information and actions available to you.",
+  },
+  "Выключить камеру": { kk: "Камераны өшіру", en: "Stop camera" },
+  "Включить камеру": { kk: "Камераны қосу", en: "Start camera" },
+  "Выбрать фото QR": { kk: "QR фотосын таңдау", en: "Select QR photo" },
+  "Изображение обрабатывается на устройстве и не отправляется на сервер.": {
+    kk: "Сурет құрылғыда өңделеді және серверге жіберілмейді.",
+    en: "The image is processed on your device and is not sent to the server.",
+  },
   ...baseTranslations,
   ...uiTranslations,
 };

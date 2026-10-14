@@ -15,6 +15,7 @@ import type {
   User,
   Workload,
   NotificationPage,
+  NotificationGroupPage,
   NotificationItem,
   PushConfig,
   FaultReportMaster,
@@ -672,9 +673,23 @@ export class Api {
     const identity = upload.type + ":" + capturedAt + ":" + (await digest(await upload.arrayBuffer()));
     return this.mutate(path, { headers: { "Content-Type": upload.type }, body: upload }, identity, key);
   }
-  notifications(offset = 0, unreadOnly = false) {
+  notificationGroups(offset = 0, unreadOnly = false) {
+    return this.request<NotificationGroupPage>(
+      `/notifications/groups?offset=${offset}&limit=10&unread_only=${unreadOnly}`,
+    );
+  }
+  notifications(
+    offset = 0,
+    unreadOnly = false,
+    group?: { order_id: string | null; fault_report_id: string | null },
+  ) {
+    const filter = group?.order_id
+      ? `&order_id=${encodeURIComponent(group.order_id)}`
+      : group?.fault_report_id
+        ? `&fault_report_id=${encodeURIComponent(group.fault_report_id)}`
+        : "";
     return this.request<NotificationPage>(
-      `/notifications?offset=${offset}&limit=50&unread_only=${unreadOnly}`,
+      `/notifications?offset=${offset}&limit=50&unread_only=${unreadOnly}${filter}`,
     );
   }
   markNotificationRead(id: string) {

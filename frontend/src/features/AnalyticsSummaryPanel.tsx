@@ -50,7 +50,7 @@ export function AnalyticsSummaryPanel({
           {t("Собираем выводы по показателям отчёта…")}
         </p>
       )}
-      {busy && !summary && <Skeleton variant="list" count={3} />}
+      {busy && !summary && <Skeleton variant="summary" />}
       {!busy && !summary && !error && (
         <p className="ai-summary-intro">{t("Основные выводы и рекомендации за выбранный период.")}</p>
       )}

@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const state = JSON.parse(readFileSync(resolve("../tmp/e2e-server.json"), "utf8"));
+test.use({ reducedMotion: "reduce" });
+
 async function login(page: Page, admin = false) {
   await page.goto("/");
   await page.getByLabel("Логин", { exact: true }).fill(admin ? state.admin_login : state.master_login);
@@ -27,8 +29,9 @@ for (const width of [390, 768, 1440]) {
       await route.continue();
     });
     await login(page);
-    const skeleton = page.locator(".orders-workspace .loading-skeleton");
+    const skeleton = page.getByRole("status", { name: "Загружаем наряды…", exact: true });
     await expect(skeleton).toBeVisible();
+    await expect(skeleton.locator(".loading-skeleton-column")).toHaveCount(2);
     await expect(page.locator(".orders-empty")).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await page.screenshot({ path: info.outputPath(`orders-loading-${width}.png`) });
@@ -41,6 +44,7 @@ for (const width of [390, 768, 1440]) {
     ).toBe("none");
     initial.release();
     await expect(page.locator(".order-row").first()).toBeVisible();
+    await page.screenshot({ path: info.outputPath(`orders-loaded-${width}.png`) });
     await expect(skeleton).toHaveCount(0);
     await page.unroute(orderList);
     const filtered = gate();
@@ -65,7 +69,7 @@ test("notifications filter and order detail have loading states, with real empty
   await page.setViewportSize({ width: 390, height: 900 });
   await login(page);
   await expect(page.locator(".order-row").first()).toBeVisible();
-  const notifications = /\/api\/v1\/notifications\?/;
+  const notifications = /\/api\/v1\/notifications\/groups\?/;
   let held = gate();
   let fail = false;
   await page.route(notifications, async (route) => {
@@ -78,23 +82,24 @@ test("notifications filter and order detail have loading states, with real empty
   });
   await page.getByRole("button", { name: /Уведомления: непрочитанных/ }).click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.locator(".loading-skeleton")).toBeVisible();
+  await expect(dialog.locator(".loading-skeleton--notifications")).toBeVisible();
+  await expect(dialog.locator(".loading-skeleton-notification")).toHaveCount(3);
   await expect(dialog.getByText("Уведомлений нет.", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: info.outputPath("inbox-loading-mobile.png") });
   held.release();
   await expect(dialog.getByText("Уведомлений нет.", { exact: true })).toBeVisible();
   held = gate();
   await dialog.getByLabel("Только непрочитанные", { exact: true }).check();
-  await expect(dialog.locator(".loading-skeleton")).toBeVisible();
+  await expect(dialog.locator(".loading-skeleton--notifications")).toBeVisible();
   await expect(dialog.getByText("Уведомлений нет.", { exact: true })).toHaveCount(0);
   fail = true;
   held.release();
   await expect(dialog.getByRole("alert")).toBeVisible();
-  await expect(dialog.locator(".loading-skeleton")).toHaveCount(0);
+  await expect(dialog.locator(".loading-skeleton--notifications")).toHaveCount(0);
   held = gate();
   fail = false;
   await dialog.getByRole("button", { name: "Повторить", exact: true }).click();
-  await expect(dialog.locator(".loading-skeleton")).toBeVisible();
+  await expect(dialog.locator(".loading-skeleton--notifications")).toBeVisible();
   held.release();
   await expect(dialog.getByText("Уведомлений нет.", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
@@ -141,10 +146,12 @@ test("catalog and employees loading avoid fake totals; loaded staff stay visible
     await route.continue();
   });
   await page.goto("/reference");
-  await expect(page.locator(".loading-skeleton--cards")).toBeVisible();
+  await expect(page.locator(".loading-skeleton--catalog")).toBeVisible();
+  await expect(page.locator(".loading-skeleton--catalog .loading-skeleton-catalog-card")).toHaveCount(7);
   await page.screenshot({ path: info.outputPath("catalog-loading-desktop.png") });
   fresh.release();
   await expect(page.locator(".loading-skeleton")).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath("catalog-loaded-desktop.png") });
 });
 
 test("analytics skeleton ends on error and retry; refresh keeps report visible", async ({ page }, info) => {
@@ -159,6 +166,7 @@ test("analytics skeleton ends on error and retry; refresh keeps report visible",
   });
   await page.goto("/analytics");
   await expect(page.locator(".loading-skeleton--report")).toBeVisible();
+  await expect(page.locator(".loading-skeleton--report .loading-skeleton-kpi")).toHaveCount(10);
   await page.screenshot({ path: info.outputPath("analytics-loading-desktop.png") });
   held.release();
   await expect(page.getByRole("alert")).toContainText("Не удалось сформировать отчёт");
@@ -169,6 +177,7 @@ test("analytics skeleton ends on error and retry; refresh keeps report visible",
   await expect(page.locator(".loading-skeleton--report")).toBeVisible();
   held.release();
   await expect(page.locator(".metric-grid")).toBeVisible();
+  await page.screenshot({ path: info.outputPath("analytics-loaded-desktop.png") });
   held = gate();
   await page.getByRole("button", { name: "Обновить отчёт", exact: true }).click();
   await expect(page.getByRole("button", { name: "Считаем…", exact: true })).toBeDisabled();

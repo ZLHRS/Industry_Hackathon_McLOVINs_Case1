@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { equipmentLink, isLocalQrOrigin, qrSvgDataUrl } from "./equipmentQr";
+import { equipmentLink, isLocalQrOrigin, qrSvgDataUrl, scannedEquipmentId } from "./equipmentQr";
 
 const id = "00112233-4455-6677-8899-aabbccddeeff";
 
@@ -44,5 +44,30 @@ it("distinguishes laptop-only addresses from LAN and public addresses", () => {
     "https://foo.trycloudflare.com",
   ]) {
     expect(isLocalQrOrigin(origin)).toBe(false);
+  }
+});
+
+it("scanner accepts equipment links but never redirects to arbitrary QR destinations", () => {
+  const origin = "http://localhost:5173";
+  for (const value of [
+    `/equipment/${id}`,
+    `${origin}/equipment/${id}`,
+    `  https://technaryad.online/equipment/${id.toUpperCase()}/  `,
+  ]) {
+    expect(scannedEquipmentId(value, origin)).toBe(id);
+  }
+  for (const value of [
+    "javascript:alert(1)",
+    `https://evil.example/equipment/${id}`,
+    `https://technaryad.online.evil.example/equipment/${id}`,
+    `https://user:pass@technaryad.online/equipment/${id}`,
+    `/equipment/${id}?redirect=evil`,
+    `/equipment/${id}#private`,
+    "/equipment/not-an-id",
+    "/orders",
+    "not a link",
+    `//evil.example/equipment/${id}`,
+  ]) {
+    expect(scannedEquipmentId(value, origin)).toBeNull();
   }
 });

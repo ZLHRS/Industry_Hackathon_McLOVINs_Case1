@@ -343,7 +343,17 @@ export function OrdersView({
         </section>
       )}
 
-      {page && (
+      {!page && loading && role !== "executor" && (
+        <div className="loading-skeleton loading-queue-overview" aria-hidden="true">
+          {[0, 1, 2, 3].map((index) => (
+            <div key={index}>
+              <span className="loading-skeleton-block loading-skeleton-line" />
+              <span className="loading-skeleton-block loading-skeleton-value" />
+            </div>
+          ))}
+        </div>
+      )}
+      {(page || loading) && (
         <div className="status-tabs" aria-label={t("Список нарядов")}>
           <button
             className={activeTab ? "active" : ""}
@@ -545,8 +555,8 @@ export function OrdersView({
       {!page ? (
         loading ? (
           <Skeleton
-            variant={role === "executor" ? "list" : "board"}
-            count={4}
+            variant={archiveTab || role === "executor" ? "list" : "board"}
+            count={archiveTab || role === "executor" ? 5 : 2}
             label={t("Загружаем наряды…")}
           />
         ) : null

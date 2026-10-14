@@ -1,5 +1,6 @@
 import { Skeleton } from "./components/Skeleton";
 import { t, getLocale, useLanguage, message } from "./lib/i18n";
+import { EquipmentScanner } from "./components/EquipmentScanner";
 import { AppPreferences } from "./components/AppPreferences";
 import { ProfileMenu } from "./components/ProfileMenu";
 import { ShiftChip } from "./components/ShiftChip";
@@ -843,6 +844,7 @@ export default function App() {
                 </span>
               </span>
             )}
+            <EquipmentScanner onOpen={(id) => navigate("/equipment/" + id)} />
             <AppPreferences installation={installation} />
             {user.role !== "admin" && (
               <NotificationButton count={unreadCount} onOpen={() => setInboxOpen(true)} />
@@ -996,7 +998,7 @@ export default function App() {
                     <h1>{t("Исполнители")}</h1>
                   </div>
                 </div>
-                <Skeleton variant="people" count={9} label={t("Загружаем исполнителей…")} />
+                <Skeleton variant="people" count={6} label={t("Загружаем исполнителей…")} />
               </section>
             )
           ) : (
@@ -1035,7 +1037,7 @@ export default function App() {
                     <h1>{t("Сотрудники и доступ")}</h1>
                   </div>
                 </div>
-                <Skeleton variant="list" label={t("Загружаем сотрудников…")} />
+                <Skeleton variant="list" count={5} label={t("Загружаем сотрудников…")} />
               </section>
             )
           ))}
@@ -1047,10 +1049,14 @@ export default function App() {
                 <div className="page-head">
                   <div>
                     <p className="eyebrow">{t("СПРАВОЧНИКИ")}</p>
-                    <h1>{t("Справочники")}</h1>
+                    <h1>{t("Справочные данные")}</h1>
                   </div>
                 </div>
-                <Skeleton label={t("Загрузка справочников…")} />
+                <Skeleton
+                  variant="catalog"
+                  count={user.role === "admin" || user.role === "master" ? 7 : 5}
+                  label={t("Загрузка справочников…")}
+                />
               </section>
             )
           ) : (

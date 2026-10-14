@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import exists, func, or_, select, text
+from sqlalchemy import String, case, cast, exists, func, literal, or_, select, text
 from sqlalchemy.dialects.postgresql import insert
 
 from naryadai.application.common import OperationError, ensure_role, visible_orders
@@ -50,6 +50,22 @@ class NotificationView(BaseModel):
 
 class NotificationPage(BaseModel):
     items: list[NotificationView]
+    total: int
+    unread_count: int
+
+
+class NotificationGroupView(BaseModel):
+    key: str
+    order_id: UUID | None
+    fault_report_id: UUID | None
+    total: int
+    unread_count: int
+    pending_count: int
+    latest: NotificationView
+
+
+class NotificationGroupPage(BaseModel):
+    items: list[NotificationGroupView]
     total: int
     unread_count: int
 
@@ -105,6 +121,18 @@ def inbox_scope(principal: Principal) -> Any:
     )
 
 
+def _subject_key() -> Any:
+    """Stable, typed key for the one notification subject guaranteed by the DB constraint."""
+
+    return case(
+        (
+            Notification.work_order_id.is_not(None),
+            literal("order:") + cast(Notification.work_order_id, String),
+        ),
+        else_=literal("fault:") + cast(Notification.fault_report_id, String),
+    )
+
+
 @router.get("", response_model=NotificationPage)
 async def inbox(
     database: DatabaseDep,
@@ -112,7 +140,11 @@ async def inbox(
     offset: int = Query(default=0, ge=0, le=100_000),
     limit: int = Query(default=50, ge=1, le=100),
     unread_only: bool = False,
+    order_id: UUID | None = None,
+    fault_report_id: UUID | None = None,
 ) -> NotificationPage:
+    if order_id is not None and fault_report_id is not None:
+        raise OperationError(422, "notification_subject_filter_conflict")
     scope = inbox_scope(principal)
     async with database.sessions() as session:
         await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
@@ -121,6 +153,10 @@ async def inbox(
             .outerjoin(WorkOrder, WorkOrder.id == Notification.work_order_id)
             .where(scope)
         )
+        if order_id is not None:
+            query = query.where(Notification.work_order_id == order_id)
+        if fault_report_id is not None:
+            query = query.where(Notification.fault_report_id == fault_report_id)
         if unread_only:
             query = query.where(Notification.read_at.is_(None))
         total = await session.scalar(select(func.count()).select_from(query.subquery())) or 0
@@ -144,6 +180,103 @@ async def inbox(
             items=[
                 notification_view(item, order_number=number, order_description=description)
                 for item, number, description in rows
+            ],
+            total=total,
+            unread_count=unread,
+        )
+
+
+@router.get("/groups", response_model=NotificationGroupPage)
+async def inbox_groups(
+    database: DatabaseDep,
+    principal: PrincipalDep,
+    offset: int = Query(default=0, ge=0, le=100_000),
+    limit: int = Query(default=10, ge=1, le=50),
+    unread_only: bool = False,
+) -> NotificationGroupPage:
+    """Return one inbox row per visible order or fault report.
+
+    Window aggregates retain the event-level visibility predicate and make the
+    counts and latest event come from the same repeatable-read snapshot.
+    """
+
+    scope = inbox_scope(principal)
+    subjects = (Notification.work_order_id, Notification.fault_report_id)
+    newest = (Notification.created_at.desc(), Notification.id.desc())
+    grouped_events = (
+        select(
+            Notification.id.label("latest_id"),
+            Notification.work_order_id.label("order_id"),
+            Notification.fault_report_id.label("fault_report_id"),
+            Notification.created_at.label("latest_created_at"),
+            _subject_key().label("key"),
+            func.count(Notification.id).over(partition_by=subjects).label("event_total"),
+            func.count(Notification.id)
+            .filter(Notification.read_at.is_(None))
+            .over(partition_by=subjects)
+            .label("event_unread_count"),
+            func.count(Notification.id)
+            .filter(
+                Notification.urgent.is_(True),
+                Notification.action_required.is_(True),
+                Notification.acknowledged_at.is_(None),
+            )
+            .over(partition_by=subjects)
+            .label("event_pending_count"),
+            func.row_number().over(partition_by=subjects, order_by=newest).label("subject_rank"),
+        )
+        .outerjoin(WorkOrder, WorkOrder.id == Notification.work_order_id)
+        .where(scope)
+    )
+    if unread_only:
+        grouped_events = grouped_events.where(Notification.read_at.is_(None))
+    groups = grouped_events.subquery()
+    group_rows = select(groups).where(groups.c.subject_rank == 1)
+    async with database.sessions() as session:
+        await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
+        total = await session.scalar(select(func.count()).select_from(group_rows.subquery())) or 0
+        unread = (
+            await session.scalar(
+                select(func.count())
+                .select_from(Notification)
+                .outerjoin(WorkOrder, WorkOrder.id == Notification.work_order_id)
+                .where(scope, Notification.read_at.is_(None))
+            )
+            or 0
+        )
+        page = (
+            await session.execute(
+                group_rows.order_by(
+                    groups.c.latest_created_at.desc(), groups.c.key.asc()
+                ).offset(offset).limit(limit)
+            )
+        ).mappings().all()
+        latest_ids = [row["latest_id"] for row in page]
+        latest_by_id: dict[UUID, NotificationView] = {}
+        if latest_ids:
+            latest_rows = (
+                await session.execute(
+                    select(Notification, WorkOrder.number, WorkOrder.description)
+                    .outerjoin(WorkOrder, WorkOrder.id == Notification.work_order_id)
+                    .where(scope, Notification.id.in_(latest_ids))
+                )
+            ).all()
+            latest_by_id = {
+                item.id: notification_view(item, order_number=number, order_description=description)
+                for item, number, description in latest_rows
+            }
+        return NotificationGroupPage(
+            items=[
+                NotificationGroupView(
+                    key=row["key"],
+                    order_id=row["order_id"],
+                    fault_report_id=row["fault_report_id"],
+                    total=row["event_total"],
+                    unread_count=row["event_unread_count"],
+                    pending_count=row["event_pending_count"],
+                    latest=latest_by_id[row["latest_id"]],
+                )
+                for row in page
             ],
             total=total,
             unread_count=unread,

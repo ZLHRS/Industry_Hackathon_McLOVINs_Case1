@@ -405,7 +405,7 @@ export function FaultReportsDialog({
         {(mode === "detail" || reportsOpen) &&
           !error &&
           ((mode === "detail" && !detail) || (pageLoading && !page)) && (
-            <Skeleton variant={mode === "detail" ? "detail" : "list"} count={3} />
+            <Skeleton variant={mode === "detail" ? "detail" : "fault-reports"} count={3} />
           )}
         {(mode === "detail" || reportsOpen) &&
           reports.map((report) => (
