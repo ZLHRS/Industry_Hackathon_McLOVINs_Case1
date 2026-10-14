@@ -68,13 +68,29 @@ async def api(database, tmp_path):
             users[login] = person.id
         machines = [
             Equipment(
-                inventory_number=f"M{i}",
-                name=f"Pump{i}",
-                area_id=a.id,
+                inventory_number="M0",
+                name="Pump0",
+                area_id=areas[0].id,
                 equipment_type="pump",
                 criticality=3,
-            )
-            for i, a in enumerate(areas)
+            ),
+            Equipment(
+                inventory_number="M1",
+                name="Pump1",
+                area_id=areas[1].id,
+                equipment_type="pump",
+                criticality=3,
+            ),
+            *[
+                Equipment(
+                    inventory_number=f"MAIN-{index}",
+                    name=f"Auxiliary unit {index}",
+                    area_id=areas[0].id,
+                    equipment_type="pump",
+                    criticality=3,
+                )
+                for index in range(2, 7)
+            ],
         ]
         fault = FaultCode(code="F01", name="Leak", specialty="mechanic")
         material = Material(code="M01", name="Oil", unit="litre")
@@ -199,6 +215,7 @@ async def test_reads_filters_pagination_counts_and_equipment_history(api, databa
             api,
             priority="emergency",
             work_type="planned",
+            equipment_id=str(api["machines"][2].id),
             executor_id=str(api["users"]["coworker"]),
         ),
     )
@@ -227,7 +244,7 @@ async def test_reads_filters_pagination_counts_and_equipment_history(api, databa
     data = (await client.get("/api/v1/work-orders?overdue=false", headers=headers)).json()
     assert data["total"] == 1 and data["items"][0]["id"] == second["order_id"]
     path = f"/api/v1/equipment/{api['machines'][0].id}/history"
-    assert (await client.get(path, headers=headers)).json()["total"] == 2
+    assert (await client.get(path, headers=headers)).json()["total"] == 1
     assert (await client.get(path, headers=api["headers"]["executor"])).status_code == 403
     hidden = f"/api/v1/equipment/{api['machines'][1].id}/history"
     assert (await client.get(hidden, headers=headers)).status_code == 404
@@ -242,9 +259,15 @@ async def test_reads_filters_pagination_counts_and_equipment_history(api, databa
 async def test_work_order_sorts_before_pagination_with_stable_uuid_ties(api, database):
     now = datetime.now(UTC) + timedelta(days=3)
     first = await issue(api, create_body(api, priority="high"))
-    second = await issue(api, create_body(api, priority="emergency"))
-    third = await issue(api, create_body(api, priority="normal"))
-    fourth = await issue(api, create_body(api, priority="normal"))
+    second = await issue(
+        api, create_body(api, priority="emergency", equipment_id=str(api["machines"][2].id))
+    )
+    third = await issue(
+        api, create_body(api, priority="normal", equipment_id=str(api["machines"][3].id))
+    )
+    fourth = await issue(
+        api, create_body(api, priority="normal", equipment_id=str(api["machines"][4].id))
+    )
     async with database.sessions.begin() as session:
         await session.execute(
             update(WorkOrder)
@@ -311,21 +334,34 @@ async def test_master_filter_and_scoped_master_options(api, database):
     first = await issue(api)
     response = await client.post(
         "/api/v1/work-orders",
-        json=create_body(api, priority="emergency", executor_id=str(api["users"]["coworker"])),
+        json=create_body(
+            api,
+            priority="emergency",
+            equipment_id=str(api["machines"][2].id),
+            executor_id=str(api["users"]["coworker"]),
+        ),
         headers=api["headers"]["colleague"] | {"Idempotency-Key": str(uuid4())},
     )
     assert response.status_code == 201, response.text
     second = response.json()
     response = await client.post(
         "/api/v1/work-orders",
-        json=create_body(api, executor_id=str(api["users"]["coworker"])),
+        json=create_body(
+            api,
+            equipment_id=str(api["machines"][3].id),
+            executor_id=str(api["users"]["coworker"]),
+        ),
         headers=api["headers"]["colleague"] | {"Idempotency-Key": str(uuid4())},
     )
     assert response.status_code == 201, response.text
     third = response.json()
     response = await client.post(
         "/api/v1/work-orders",
-        json=create_body(api, executor_id=str(api["users"]["executor"])),
+        json=create_body(
+            api,
+            equipment_id=str(api["machines"][4].id),
+            executor_id=str(api["users"]["executor"]),
+        ),
         headers=api["headers"]["colleague"] | {"Idempotency-Key": str(uuid4())},
     )
     assert response.status_code == 201, response.text
@@ -856,10 +892,18 @@ async def test_search_precedes_pagination_and_preserves_scope(api):
             api,
             description="Hydraulic pump inspection",
             priority="emergency",
+            equipment_id=str(api["machines"][2].id),
             executor_id=str(api["users"]["coworker"]),
         ),
     )
-    await issue(api, create_body(api, description="Unrelated bearing replacement"))
+    await issue(
+        api,
+        create_body(
+            api,
+            description="Unrelated bearing replacement",
+            equipment_id=str(api["machines"][3].id),
+        ),
+    )
     page = (
         await client.get(
             "/api/v1/work-orders",
@@ -897,7 +941,14 @@ async def test_search_precedes_pagination_and_preserves_scope(api):
 
 async def test_search_number_equipment_and_literal_wildcards(api):
     created = await issue(api, create_body(api, description="Inspect 50%_capacity seal"))
-    await issue(api, create_body(api, description="Inspect all remaining seals"))
+    await issue(
+        api,
+        create_body(
+            api,
+            description="Inspect all remaining seals",
+            equipment_id=str(api["machines"][2].id),
+        ),
+    )
     client, headers = api["client"], api["headers"]["master"]
     detail = (
         await client.get(
@@ -905,7 +956,7 @@ async def test_search_number_equipment_and_literal_wildcards(api):
             headers=headers,
         )
     ).json()
-    for query, expected in [("pump0", 2), ("m0", 2), ("%_", 1), (detail["number"], 1)]:
+    for query, expected in [("pump0", 1), ("m0", 1), ("%_", 1), (detail["number"], 1)]:
         response = await client.get("/api/v1/work-orders", params={"q": query}, headers=headers)
         assert response.status_code == 200
         assert response.json()["total"] == expected
@@ -920,10 +971,14 @@ async def test_search_number_equipment_and_literal_wildcards(api):
 
 async def test_attention_filter_counts_all_pages_without_archived_or_foreign_orders(api, database):
     first = await issue(api, create_body(api, priority="high"))
-    second = await issue(api, create_body(api, priority="emergency"))
-    late = await issue(api)
-    await issue(api)
-    archived = await issue(api, create_body(api, priority="emergency"))
+    second = await issue(
+        api, create_body(api, priority="emergency", equipment_id=str(api["machines"][2].id))
+    )
+    late = await issue(api, create_body(api, equipment_id=str(api["machines"][3].id)))
+    await issue(api, create_body(api, equipment_id=str(api["machines"][4].id)))
+    archived = await issue(
+        api, create_body(api, priority="emergency", equipment_id=str(api["machines"][5].id))
+    )
     assert (
         await action(api, archived, "cancel", "master", reason="Duplicate request")
     ).status_code == 200

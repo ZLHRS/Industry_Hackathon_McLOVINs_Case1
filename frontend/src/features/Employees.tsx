@@ -1,6 +1,6 @@
 import { Skeleton } from "../components/Skeleton";
 import { t, message } from "../lib/i18n";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState, useId, useRef } from "react";
 import { Api, ApiError } from "../api";
 import { Dialog } from "../components/Dialog";
 import { roleLabels } from "../lib/roleAccess";
@@ -441,10 +441,22 @@ function CreateDialog({
   onSaved: () => Promise<void>;
 }) {
   const [input, setInput] = useState<CreateEmployee>(blankCreate);
+  const [confirmation, setConfirmation] = useState("");
+  const [confirmationTouched, setConfirmationTouched] = useState(false);
+  const confirmationRef = useRef<HTMLInputElement>(null);
+  const passwordHintId = useId();
+  const confirmationHintId = useId();
+  const mismatch = confirmationTouched && input.secret !== confirmation;
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (busy) return;
+    if (input.secret !== confirmation) {
+      setConfirmationTouched(true);
+      confirmationRef.current?.focus();
+      return;
+    }
     if (input.role !== "admin" && input.area_ids.length === 0) {
       setError(t("Выберите хотя бы один участок, иначе сотрудник не увидит доступные ему данные."));
       return;
@@ -454,6 +466,7 @@ function CreateDialog({
     try {
       await api.createEmployee(input);
       setInput((current) => ({ ...current, secret: "" }));
+      setConfirmation("");
       await onSaved();
     } catch (caught) {
       setError(failure(caught, t("создать сотрудника")));
@@ -463,123 +476,154 @@ function CreateDialog({
   };
   return (
     <Dialog title={t("Новый сотрудник")} onClose={busy ? () => undefined : onClose} size="wide">
-      <form className="dialog-form employee-form" onSubmit={(event) => void submit(event)}>
+      <form
+        className="dialog-form employee-form employee-create-form"
+        onSubmit={(event) => void submit(event)}
+      >
         <p className="muted">
           {t("Сначала укажите сотрудника и его работу, затем выберите участки и задайте пароль.")}
-        </p>
-        <p className="muted" id="employee-login-hint">
-          {t(
-            "Логин: от 3 до 64 символов — строчные латинские буквы, цифры, точка, дефис или подчёркивание. Пароль: от 8 символов.",
-          )}
         </p>
         {error && (
           <p className="error" role="alert">
             {message(error)}
           </p>
         )}
-        <div className="employee-form-grid">
-          <label>
-            {t("Логин")}
-            <input
-              value={input.login}
-              onChange={(event) => setInput({ ...input, login: event.target.value.trim() })}
-              autoComplete="off"
-              aria-label={t("Логин")}
-              aria-describedby="employee-login-hint"
-              pattern={"[a-z0-9][a-z0-9._\\-]{2,63}"}
-              maxLength={64}
-              required
+        <fieldset className="employee-create-section" disabled={busy}>
+          <legend>{t("Данные сотрудника")}</legend>
+          <div className="employee-form-grid">
+            <label>
+              {t("Логин")}
+              <input
+                value={input.login}
+                onChange={(event) => setInput({ ...input, login: event.target.value.trim() })}
+                autoComplete="off"
+                aria-label={t("Логин")}
+                aria-describedby="employee-login-hint"
+                pattern={"[a-z0-9][a-z0-9._\\-]{2,63}"}
+                maxLength={64}
+                required
+              />
+              <small className="employee-field-hint" id="employee-login-hint">
+                {t("3–64 символа: a–z, 0–9, точка, дефис или подчёркивание.")}
+              </small>
+            </label>
+            <label>
+              {t("ФИО сотрудника")}
+              <input
+                value={input.display_name}
+                onChange={(event) => setInput({ ...input, display_name: event.target.value })}
+                maxLength={160}
+                required
+              />
+            </label>
+            <label>
+              {t("Роль")}
+              <select
+                aria-label={t("Роль")}
+                value={input.role}
+                onChange={(event) => setInput({ ...input, role: event.target.value as Role })}
+              >
+                {roles.map((value) => (
+                  <option key={value} value={value}>
+                    {roleLabels[value]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              {t("Специальность")}
+              <select
+                aria-label={t("Специальность")}
+                value={input.specialty}
+                onChange={(event) => setInput({ ...input, specialty: event.target.value })}
+                required
+              >
+                <option value="">{t("Выберите специальность")}</option>
+                {specialties(catalog).map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              {t("Разряд")}
+              <input
+                type="number"
+                min="1"
+                max="6"
+                value={input.grade}
+                onChange={(event) => setInput({ ...input, grade: Number(event.target.value) })}
+                required
+              />
+            </label>
+            <label>
+              {t("Бригада")}
+              <select
+                aria-label={t("Бригада")}
+                value={input.brigade_id ?? ""}
+                onChange={(event) => setInput({ ...input, brigade_id: event.target.value || null })}
+              >
+                <option value="">{t("Не назначена")}</option>
+                {catalog.brigades.map((brigade) => (
+                  <option key={brigade.id} value={brigade.id}>
+                    {brigade.code} · {brigade.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </fieldset>
+        <fieldset className="employee-create-access" disabled={busy}>
+          {input.role === "admin" ? (
+            <p className="notice">
+              {t("Администратор работает со всеми справочниками; участки не ограничивают его доступ.")}
+            </p>
+          ) : (
+            <AreaFields
+              catalog={catalog}
+              value={input.area_ids}
+              onChange={(area_ids) => setInput({ ...input, area_ids })}
             />
-          </label>
-          <label>
-            {t("ФИО сотрудника")}
-            <input
-              value={input.display_name}
-              onChange={(event) => setInput({ ...input, display_name: event.target.value })}
-              maxLength={160}
-              required
-            />
-          </label>
-          <label>
-            {t("Роль")}
-            <select
-              aria-label={t("Роль")}
-              value={input.role}
-              onChange={(event) => setInput({ ...input, role: event.target.value as Role })}
-            >
-              {roles.map((value) => (
-                <option key={value} value={value}>
-                  {roleLabels[value]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {t("Специальность")}
-            <select
-              aria-label={t("Специальность")}
-              value={input.specialty}
-              onChange={(event) => setInput({ ...input, specialty: event.target.value })}
-              required
-            >
-              <option value="">{t("Выберите специальность")}</option>
-              {specialties(catalog).map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {t("Разряд")}
-            <input
-              type="number"
-              min="1"
-              max="6"
-              value={input.grade}
-              onChange={(event) => setInput({ ...input, grade: Number(event.target.value) })}
-              required
-            />
-          </label>
-          <label>
-            {t("Бригада")}
-            <select
-              aria-label={t("Бригада")}
-              value={input.brigade_id ?? ""}
-              onChange={(event) => setInput({ ...input, brigade_id: event.target.value || null })}
-            >
-              <option value="">{t("Не назначена")}</option>
-              {catalog.brigades.map((brigade) => (
-                <option key={brigade.id} value={brigade.id}>
-                  {brigade.code} · {brigade.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        {input.role === "admin" ? (
-          <p className="notice">
-            {t("Администратор работает со всеми справочниками; участки не ограничивают его доступ.")}
+          )}
+        </fieldset>
+        <fieldset className="employee-create-section employee-create-security" disabled={busy}>
+          <legend>
+            <Icon name="lock" />
+            {t("Пароль для входа")}
+          </legend>
+          <p className="employee-field-hint" id={passwordHintId}>
+            {t("От 8 до 128 символов. Пробелы в пароле сохраняются.")}
           </p>
-        ) : (
-          <AreaFields
-            catalog={catalog}
-            value={input.area_ids}
-            onChange={(area_ids) => setInput({ ...input, area_ids })}
-          />
-        )}
-        <label>
-          {t("Пароль")}
-          <input
-            type="password"
-            value={input.secret}
-            onChange={(event) => setInput({ ...input, secret: event.target.value })}
-            autoComplete="new-password"
-            minLength={8}
-            maxLength={128}
-            required
-          />
-        </label>
+          <div className="employee-form-grid">
+            <CreatePasswordField
+              label={t("Пароль")}
+              value={input.secret}
+              onChange={(secret) => setInput({ ...input, secret })}
+              describedBy={passwordHintId}
+            />
+            <CreatePasswordField
+              label={t("Повторите пароль")}
+              value={confirmation}
+              onChange={setConfirmation}
+              onBlur={() => setConfirmationTouched(true)}
+              inputRef={confirmationRef}
+              invalid={mismatch}
+              describedBy={confirmationHintId}
+            />
+          </div>
+          <p
+            id={confirmationHintId}
+            className={`employee-password-feedback${mismatch ? " is-error" : confirmation && confirmation === input.secret ? " is-match" : ""}`}
+            aria-live="polite"
+          >
+            {mismatch
+              ? t("Пароли не совпадают. Проверьте оба поля.")
+              : confirmation && confirmation === input.secret
+                ? t("Пароли совпадают")
+                : t("Введите тот же пароль ещё раз, чтобы избежать опечатки.")}
+          </p>
+        </fieldset>
         <div className="action-row">
           <button className="secondary" type="button" onClick={onClose} disabled={busy}>
             {t("Отмена")}
@@ -590,6 +634,72 @@ function CreateDialog({
         </div>
       </form>
     </Dialog>
+  );
+}
+
+function CreatePasswordField({
+  label,
+  value,
+  onChange,
+  onBlur,
+  describedBy,
+  invalid,
+  inputRef,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  onBlur?: () => void;
+  describedBy: string;
+  invalid?: boolean;
+  inputRef?: React.Ref<HTMLInputElement>;
+}) {
+  const [visible, setVisible] = useState(false);
+  const id = useId();
+  return (
+    <div className="employee-password-control">
+      <label htmlFor={id}>{label}</label>
+      <div className="employee-password-input">
+        <input
+          id={id}
+          ref={inputRef}
+          type={visible ? "text" : "password"}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onBlur={onBlur}
+          autoComplete="new-password"
+          autoCapitalize="none"
+          spellCheck={false}
+          minLength={8}
+          maxLength={128}
+          required
+          aria-invalid={invalid || undefined}
+          aria-describedby={describedBy}
+        />
+        <button
+          type="button"
+          className="employee-password-eye"
+          onClick={() => setVisible(!visible)}
+          aria-controls={id}
+          aria-pressed={visible}
+          aria-label={`${visible ? t("Скрыть пароль") : t("Показать пароль")}: ${label}`}
+        >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M2.3 12C3.2 9.3 6.8 5 12 5s8.8 4.3 9.7 7c-.9 2.7-4.5 7-9.7 7S3.2 14.7 2.3 12Z" />
+            <circle cx="12" cy="12" r="3" />
+            {visible && <path d="m3 3 18 18" />}
+          </svg>
+        </button>
+      </div>
+    </div>
   );
 }
 

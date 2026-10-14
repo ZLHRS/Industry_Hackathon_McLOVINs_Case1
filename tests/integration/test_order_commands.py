@@ -12,7 +12,11 @@ from naryadai.application.common import OperationError
 from naryadai.application.contracts import Completion, CreateOrder, MaterialLine, OrderAction
 from naryadai.application.orders import apply_review, create_order, execute_action
 from naryadai.auth.dependencies import Principal
-from naryadai.domain.lifecycle import AiAssessment, WorkOrderStatus
+from naryadai.domain.lifecycle import (
+    EQUIPMENT_OCCUPYING_STATUSES,
+    AiAssessment,
+    WorkOrderStatus,
+)
 from naryadai.infrastructure.models import (
     AIReview,
     Area,
@@ -46,6 +50,14 @@ async def _fixture(database):
             grade=5,
             password_hash="x",
         )
+        second_master = Employee(
+            login="master-two",
+            display_name="Second master",
+            role="master",
+            specialty="maintenance",
+            grade=5,
+            password_hash="x",
+        )
         first = Employee(
             login="executor-one",
             display_name="Executor one",
@@ -62,9 +74,9 @@ async def _fixture(database):
             grade=4,
             password_hash="x",
         )
-        session.add_all([master, first, second])
+        session.add_all([master, second_master, first, second])
         await session.flush()
-        for employee in (master, first, second):
+        for employee in (master, second_master, first, second):
             session.add(EmployeeArea(employee_id=employee.id, area_id=area.id))
         equipment = Equipment(
             inventory_number="PUMP-1",
@@ -73,9 +85,16 @@ async def _fixture(database):
             equipment_type="pump",
             criticality=4,
         )
+        secondary_equipment = Equipment(
+            inventory_number="PUMP-2",
+            name="Reserve pump",
+            area_id=area.id,
+            equipment_type="pump",
+            criticality=4,
+        )
         fault = FaultCode(code="F1", name="Wear", specialty="mechanic")
         material = Material(code="M1", name="Seal", unit="piece")
-        session.add_all([equipment, fault, material])
+        session.add_all([equipment, secondary_equipment, fault, material])
         await session.flush()
 
         def principal(employee: Employee) -> Principal:
@@ -91,9 +110,11 @@ async def _fixture(database):
         return {
             "area": area.id,
             "equipment": equipment.id,
+            "secondary_equipment": secondary_equipment.id,
             "fault": fault.id,
             "material": material.id,
             "master": principal(master),
+            "second_master": principal(second_master),
             "first": principal(first),
             "second": principal(second),
         }
@@ -109,6 +130,20 @@ def _create_body(data) -> CreateOrder:
         priority=Priority.HIGH,
         deadline=datetime.now(UTC) + timedelta(days=1),
     )
+
+
+async def _additional_equipment(database, data, suffix: str) -> UUID:
+    async with database.sessions.begin() as session:
+        equipment = Equipment(
+            inventory_number=f"PUMP-{suffix}",
+            name=f"Pump {suffix}",
+            area_id=data["area"],
+            equipment_type="pump",
+            criticality=4,
+        )
+        session.add(equipment)
+        await session.flush()
+        return equipment.id
 
 
 async def test_order_completion_review_rework_and_new_submission(database) -> None:
@@ -325,10 +360,109 @@ async def test_idempotency_version_scope_and_reassignment_reset(database) -> Non
         assert order.last_submission_version is None
 
 
+async def test_equipment_reservation_rejects_duplicate_and_releases_after_rejection_or_cancel(
+    database,
+) -> None:
+    data = await _fixture(database)
+    body = _create_body(data)
+    first = await create_order(database, data["master"], body, "equipment-first-issue")
+
+    with pytest.raises(OperationError) as duplicate:
+        await create_order(database, data["master"], body, "equipment-duplicate-issue")
+    assert duplicate.value.status_code == 409
+    assert duplicate.value.detail == "equipment_has_active_order"
+
+    rejected = await execute_action(
+        database,
+        data["first"],
+        UUID(first["order_id"]),
+        OrderAction(
+            action="reject",
+            expected_version=first["version"],
+            reason="The asset is already isolated.",
+        ),
+        "equipment-reject-first",
+    )
+    assert rejected["status"] == WorkOrderStatus.REJECTED.value
+
+    second = await create_order(database, data["master"], body, "equipment-second-issue")
+    with pytest.raises(OperationError) as reassignment:
+        await execute_action(
+            database,
+            data["master"],
+            UUID(first["order_id"]),
+            OrderAction(
+                action="reassign",
+                expected_version=rejected["version"],
+                executor_id=data["second"].employee_id,
+                reason="Assign a different executor after rejection.",
+            ),
+            "equipment-reassign-rejected",
+        )
+    assert reassignment.value.status_code == 409
+    assert reassignment.value.detail == "equipment_has_active_order"
+
+    cancelled = await execute_action(
+        database,
+        data["master"],
+        UUID(second["order_id"]),
+        OrderAction(
+            action="cancel",
+            expected_version=second["version"],
+            reason="The planned outage was cancelled.",
+        ),
+        "equipment-cancel-second",
+    )
+    assert cancelled["status"] == WorkOrderStatus.CANCELLED.value
+
+    replacement = await create_order(database, data["master"], body, "equipment-third-issue")
+    assert replacement["status"] == WorkOrderStatus.ISSUED.value
+
+
+async def test_concurrent_issuance_leaves_one_active_order_per_equipment(database) -> None:
+    data = await _fixture(database)
+    body = _create_body(data)
+    results = await asyncio.wait_for(
+        asyncio.gather(
+            create_order(database, data["master"], body, "equipment-race-master-one"),
+            create_order(
+                database,
+                data["second_master"],
+                body.model_copy(update={"executor_id": data["second"].employee_id}),
+                "equipment-race-master-two",
+            ),
+            return_exceptions=True,
+        ),
+        timeout=10,
+    )
+    successful = [result for result in results if isinstance(result, dict)]
+    conflicts = [result for result in results if isinstance(result, OperationError)]
+    assert len(successful) == len(conflicts) == 1
+    assert conflicts[0].status_code == 409
+    assert conflicts[0].detail == "equipment_has_active_order"
+
+    async with database.sessions() as session:
+        active_order_ids = list(
+            await session.scalars(
+                select(WorkOrder.id).where(
+                    WorkOrder.equipment_id == data["equipment"],
+                    WorkOrder.status.in_(EQUIPMENT_OCCUPYING_STATUSES),
+                )
+            )
+        )
+    assert active_order_ids == [UUID(successful[0]["order_id"])]
+
+
 async def test_concurrent_start_serializes_busy_executor_and_idempotency(database) -> None:
     data = await _fixture(database)
     first = await create_order(database, data["master"], _create_body(data), "create-key-0003")
-    second = await create_order(database, data["master"], _create_body(data), "create-key-0004")
+    second_equipment = await _additional_equipment(database, data, "START-RACE")
+    second = await create_order(
+        database,
+        data["master"],
+        _create_body(data).model_copy(update={"equipment_id": second_equipment}),
+        "create-key-0004",
+    )
     first_id, second_id = UUID(first["order_id"]), UUID(second["order_id"])
     first_accepted = await execute_action(
         database,
@@ -445,10 +579,16 @@ async def test_brigade_snapshot_visibility_reassign_and_participant_collision(da
         "brigade-start-0001",
     )
     assert started["status"] == WorkOrderStatus.IN_PROGRESS.value
+    individual_equipment = await _additional_equipment(database, data, "BRIGADE-INDIVIDUAL")
     individual = await create_order(
         database,
         data["master"],
-        _create_body(data).model_copy(update={"executor_id": data["second"].employee_id}),
+        _create_body(data).model_copy(
+            update={
+                "equipment_id": individual_equipment,
+                "executor_id": data["second"].employee_id,
+            }
+        ),
         "brigade-collision01",
     )
     individual_id = UUID(individual["order_id"])

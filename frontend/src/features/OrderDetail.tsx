@@ -365,15 +365,19 @@ export function OrderDetailDialog({
           ? caught.message
           : brigadeMembershipChanged
             ? t("Состав бригады изменился. Выберите бригаду и ответственного заново.")
-            : failure.status === 409 && failure.detail === "version_conflict"
-              ? t("Наряд изменился. Проверьте обновлённые данные и повторите действие.")
-              : failure.status === 409
-                ? t(
-                    "Действие недоступно в текущем состоянии наряда. Проверьте данные и выберите доступное действие.",
-                  )
-                : failure.status === 401
-                  ? t("Сессия завершена.")
-                  : t("Действие не выполнено."),
+            : failure.detail === "equipment_has_active_order"
+              ? t(
+                  "На это оборудование уже выдан другой наряд. Переназначение недоступно, пока тот наряд не завершён или не отменён.",
+                )
+              : failure.status === 409 && failure.detail === "version_conflict"
+                ? t("Наряд изменился. Проверьте обновлённые данные и повторите действие.")
+                : failure.status === 409
+                  ? t(
+                      "Действие недоступно в текущем состоянии наряда. Проверьте данные и выберите доступное действие.",
+                    )
+                  : failure.status === 401
+                    ? t("Сессия завершена.")
+                    : t("Действие не выполнено."),
       );
       if (failure.status === 409) await refresh();
     } finally {
@@ -711,13 +715,14 @@ export function OrderDetailDialog({
             <div className="team-assignment-fact">
               <dt>{t("Состав бригады")}</dt>
               <dd>
-                {assignment
-                  .map((person) =>
-                    person.role === "responsible"
-                      ? `${person.display_name} · ${t("Ответственный")}`
-                      : person.display_name,
-                  )
-                  .join(", ")}
+                <ul className="order-team-list">
+                  {assignment.map((person) => (
+                    <li key={person.employee_id}>
+                      <span>{person.display_name}</span>
+                      {person.role === "responsible" && <small>{t("Ответственный")}</small>}
+                    </li>
+                  ))}
+                </ul>
               </dd>
             </div>
           )}
@@ -1439,10 +1444,13 @@ export function OrderDetailDialog({
         <section>
           <h3>{t("Материалы текущей сдачи и фотографии")}</h3>
           {currentMaterials.length ? (
-            <ul className="plain-list">
+            <ul className="order-material-list">
               {currentMaterials.map((item) => (
                 <li key={item.id}>
-                  {item.name} — {item.quantity} {item.unit}
+                  <strong>{item.name}</strong>
+                  <span>
+                    {item.quantity} <small>{item.unit}</small>
+                  </span>
                 </li>
               ))}
             </ul>

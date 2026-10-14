@@ -26,6 +26,7 @@ from naryadai.application.contracts import Completion, CreateOrder, OrderAction
 from naryadai.application.prevention import prevention_event_details, validate_prevention_source
 from naryadai.auth.dependencies import Principal
 from naryadai.domain.lifecycle import (
+    EQUIPMENT_OCCUPYING_STATUSES,
     Action,
     ActorRole,
     AiAssessment,
@@ -311,6 +312,32 @@ async def _active_catalog_for_order(
         raise OperationError(409, "equipment_inactive")
 
 
+async def _ensure_equipment_available_for_active_assignment(
+    session: AsyncSession, equipment_id: UUID, *, excluding_order_id: UUID | None = None
+) -> None:
+    """Reject another open assignment while the equipment row lock is held.
+
+    ``_active_catalog_for_order`` has already taken ``FOR UPDATE`` on this
+    equipment row.  Issuance and reassignment both follow that same lock,
+    which makes their active-assignment check serializable per equipment
+    without changing historical work orders or requiring a partial unique
+    index.
+    """
+
+    query = (
+        select(WorkOrder.id)
+        .where(
+            WorkOrder.equipment_id == equipment_id,
+            WorkOrder.status.in_(EQUIPMENT_OCCUPYING_STATUSES),
+        )
+    )
+    if excluding_order_id is not None:
+        query = query.where(WorkOrder.id != excluding_order_id)
+    occupied_order_id = await session.scalar(query.limit(1))
+    if occupied_order_id is not None:
+        raise OperationError(409, "equipment_has_active_order")
+
+
 async def _fault_report_for_conversion(
     session: AsyncSession, report_id: UUID, principal: Principal, body: CreateOrder
 ) -> FaultReport:
@@ -359,6 +386,7 @@ async def create_order(
                 raise OperationError(409, "prevention_area_mismatch")
 
         await _active_catalog_for_order(session, body.area_id, body.equipment_id)
+        await _ensure_equipment_available_for_active_assignment(session, body.equipment_id)
         report = (
             await _fault_report_for_conversion(session, body.fault_report_id, principal, body)
             if body.fault_report_id is not None
@@ -607,6 +635,9 @@ async def execute_action(
         elif body.action == "reassign":
             assert body.executor_id is not None
             await _active_catalog_for_order(session, order.area_id, order.equipment_id)
+            await _ensure_equipment_available_for_active_assignment(
+                session, order.equipment_id, excluding_order_id=order.id
+            )
             brigade_people = (
                 await _brigade_participants_for_area(
                     session,

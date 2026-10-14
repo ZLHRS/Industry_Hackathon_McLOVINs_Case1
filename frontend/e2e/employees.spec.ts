@@ -36,6 +36,19 @@ test("administrator creates, scopes, resets and disables an employee", async ({ 
   await dialog.getByLabel("Разряд", { exact: true }).fill("3");
   await dialog.getByRole("checkbox").first().check();
   await dialog.getByLabel("Пароль", { exact: true }).fill(initial);
+  await dialog.getByLabel("Повторите пароль", { exact: true }).fill("A-different-password-42");
+  await dialog.getByRole("button", { name: "Создать сотрудника", exact: true }).click();
+  await expect(dialog.getByLabel("Повторите пароль", { exact: true })).toBeFocused();
+  await expect(dialog.getByLabel("Повторите пароль", { exact: true })).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  await expect(dialog.getByText("Пароли не совпадают. Проверьте оба поля.", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Показать пароль: Пароль", exact: true }).click();
+  await expect(dialog.getByLabel("Пароль", { exact: true })).toHaveAttribute("type", "text");
+  await expect(dialog.getByLabel("Повторите пароль", { exact: true })).toHaveAttribute("type", "password");
+  await dialog.getByRole("button", { name: "Скрыть пароль: Пароль", exact: true }).click();
+  await dialog.getByLabel("Повторите пароль", { exact: true }).fill(initial);
   const createdResponse = page.waitForResponse(
     (r) => r.url().endsWith("/catalog/employees") && r.request().method() === "POST",
   );

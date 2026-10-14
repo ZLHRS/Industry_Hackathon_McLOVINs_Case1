@@ -1,6 +1,9 @@
+import "./report-resources.css";
 import { Skeleton } from "../components/Skeleton";
 import { t, getLocale, message } from "../lib/i18n";
 import { AnalyticsSummaryPanel } from "./AnalyticsSummaryPanel";
+import { MyRating } from "./MyRating";
+import { RatingTable } from "./RatingTable";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Api, ApiError } from "../api";
 import { Icon, type IconName } from "../components/Icon";
@@ -855,6 +858,19 @@ function Ratings({ report, privateView }: { report: AnalyticsReport; privateView
         <p>{t("Для периода недостаточно подтверждённых данных.")}</p>
       </div>
     );
+  if (privateView)
+    return employee.length ? (
+      <div className="personal-ratings">
+        {employee.map((row) => (
+          <MyRating key={row.subject_id} row={row} limitations={report.ratings.limitations} />
+        ))}
+      </div>
+    ) : (
+      <div className="empty">
+        <h3>{t("Рейтинг пока не рассчитан")}</h3>
+        <p>{t("Для периода недостаточно подтверждённых данных.")}</p>
+      </div>
+    );
   return (
     <div className="ratings-grid">
       <RatingTable
@@ -864,28 +880,18 @@ function Ratings({ report, privateView }: { report: AnalyticsReport; privateView
       />
       {!privateView && <RatingTable title={t("Бригады")} rows={brigade} ranked />}{" "}
       {report.ratings.limitations.length > 0 && (
-        <p className="muted rating-note">{report.ratings.limitations.join(" ")}</p>
+        <details className="ratings-notes">
+          <summary>{t("Что учитывать при сравнении")}</summary>
+          <ul>
+            {report.ratings.limitations.map((note, index) => (
+              <li key={index}>{note}</li>
+            ))}
+          </ul>
+        </details>
       )}
     </div>
   );
 }
-const componentLabels: Record<string, string> = {
-  get quality() {
-    return t("Качество");
-  },
-  get timeliness() {
-    return t("Срок");
-  },
-  get rework() {
-    return t("Доработки");
-  },
-  get volume() {
-    return t("Объём");
-  },
-  get refusal() {
-    return t("Отказы");
-  },
-};
 const anomalyLabels: Record<string, string> = {
   get recurring_fault() {
     return t("Повторяемость неисправности");
@@ -947,9 +953,6 @@ const evidenceLabels: Record<string, string> = {
     return t("Всего");
   },
 };
-function componentName(name: string) {
-  return componentLabels[name] ?? name;
-}
 function evidenceValue(value: unknown) {
   if (Array.isArray(value))
     return value.length > 3
@@ -957,198 +960,153 @@ function evidenceValue(value: unknown) {
       : value.join(", ");
   return typeof value === "object" ? t("Составное доказательство") : String(value);
 }
-function RatingTable({
-  title,
-  rows,
-  ranked,
-}: {
-  title: string;
-  rows: AnalyticsReport["ratings"]["employees"];
-  ranked: boolean;
-}) {
-  const max = Math.max(1, ...rows.map((r) => r.score ?? 0));
+function MaterialRows({ rows }: { rows: AnalyticsReport["materials"]["by_area"] }) {
   return (
-    <div className="rating-table">
-      <h3>{title}</h3>
-      {rows.map((row, index) => (
-        <div
-          className={`rating-row${ranked && index < 3 && row.score != null ? ` is-podium rank-${index + 1}` : ""}`}
-          key={row.subject_id}
-        >
-          <div className="rating-name">
-            <strong>
-              {ranked && (
-                <span className="rating-rank" aria-label={t("Место {0}", [index + 1])}>
-                  {index + 1}
-                </span>
-              )}
-              {row.subject_name}
-            </strong>
-            <small>
-              {t("Нарядов:")} {row.sample_size}
-              {row.unavailable_components.length
-                ? t(" · нет: {0}", [row.unavailable_components.map(componentName).join(", ")])
-                : ""}
-            </small>
-          </div>
-          <div className="score-bar">
-            <span style={{ width: `${Math.max(0, Math.min(100, ((row.score ?? 0) / max) * 100))}%` }} />
-          </div>
-          <b>{row.score == null ? "—" : Math.round(row.score)}</b>
-          <details>
-            <summary>{t("Состав оценки")}</summary>
-            <ul className="component-list">
-              {entries(row.components).map(([key, value]) => {
-                const item = value as {
-                  value?: number | null;
-                  numerator?: number | null;
-                  denominator?: number | null;
-                  detail?: string;
-                };
-                return (
-                  <li key={key}>
-                    <strong>
-                      {componentName(key)}:{" "}
-                      {item.value == null ? t("нет данных") : `${Math.round(item.value * 100)}%`}
-                    </strong>
-                    {item.numerator != null && item.denominator != null && (
-                      <span>
-                        {" "}
-                        · {item.numerator} {t("из")} {item.denominator}
-                      </span>
-                    )}
-                    {item.detail && <small>{item.detail}</small>}
-                  </li>
-                );
-              })}
-            </ul>
-          </details>
-        </div>
-      ))}
-    </div>
+    <table className="resource-table">
+      <thead>
+        <tr>
+          <th scope="col">{t("Материал")}</th>
+          <th scope="col">{t("Расход")}</th>
+          <th scope="col">{t("Нарядов")}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row, index) => (
+          <tr key={`${row.material_id}-${row.unit}-${row.dimension_id ?? index}`}>
+            <th scope="row">
+              <strong>{row.material_name}</strong>
+              {row.dimension_name && <small>{row.dimension_name}</small>}
+            </th>
+            <td data-label={t("Расход")}>
+              <span className="resource-quantity">
+                {row.quantity.toLocaleString(getLocale(), { maximumFractionDigits: 20 })}{" "}
+                <small>{row.unit}</small>
+              </span>
+            </td>
+            <td data-label={t("Нарядов")}>{row.order_count}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 function Materials({ report }: { report: AnalyticsReport }) {
-  const render = (
-    title: string,
-    rows: Array<{
-      material_id: string;
-      material_name: string;
-      unit: string;
-      quantity: number;
-      order_count: number;
-      dimension_name?: string | null;
-    }>,
-  ) =>
+  const render = (title: string, rows: AnalyticsReport["materials"]["by_area"]) =>
     rows.length ? (
-      <details className="material-breakdown">
+      <details className="resource-breakdown">
         <summary>
-          {title} ({rows.length})
+          <Icon name="chevronRight" />
+          <span>{title}</span>
+          <span className="resource-count">{rows.length}</span>
         </summary>
-        <div className="compact-table">
-          {rows.map((row, index) => (
-            <div className="table-row" key={row.material_id + row.unit + index}>
-              <strong>
-                {row.material_name}
-                {row.dimension_name ? ` · ${row.dimension_name}` : ""}
-              </strong>
-              <span>
-                {row.quantity} {row.unit}
-              </span>
-              <span>{row.order_count}</span>
-            </div>
-          ))}
-        </div>
+        <MaterialRows rows={rows} />
       </details>
     ) : null;
-  const usage = report.materials.usage;
   return (
-    <div>
+    <section className="report-resources report-materials" aria-label={t("Материалы")}>
       <Heading
         icon="package"
         eye={t("РЕСУРСЫ")}
         title={t("Материалы")}
         note={t("Расход разделён по материалу и единице.")}
       />
-      <div className="compact-table">
-        {usage.length ? (
-          <>
-            <div className="table-head">
-              <span>{t("Материал")}</span>
-              <span>{t("Расход")}</span>
-              <span>{t("Нарядов")}</span>
-            </div>
-            {usage.map((row, index) => (
-              <div className="table-row" key={row.material_id + row.unit + index}>
-                <strong>{row.material_name}</strong>
-                <span>
-                  {row.quantity} {row.unit}
-                </span>
-                <span>{row.order_count}</span>
-              </div>
-            ))}
-          </>
-        ) : (
-          <p className="muted">{t("Расхода материалов в выбранном периоде нет.")}</p>
-        )}
+      {report.materials.usage.length ? (
+        <MaterialRows rows={report.materials.usage} />
+      ) : (
+        <p className="resource-empty">{t("Расхода материалов в выбранном периоде нет.")}</p>
+      )}
+      <div className="resource-breakdowns">
+        {render(t("По участкам"), report.materials.by_area)}
+        {render(t("По оборудованию"), report.materials.by_equipment)}
+        {render(t("По исполнителям"), report.materials.by_executor)}
       </div>
-      {render(t("По участкам"), report.materials.by_area as [])}
-      {render(t("По оборудованию"), report.materials.by_equipment as [])}
-      {render(t("По исполнителям"), report.materials.by_executor as [])}
-    </div>
+    </section>
   );
 }
 function Downtime({ report }: { report: AnalyticsReport }) {
   const rows = report.downtime.by_equipment;
   const total = report.downtime.planned_seconds + report.downtime.unplanned_seconds;
   return (
-    <div>
+    <section className="report-resources report-downtime" aria-label={t("Зафиксированный простой")}>
       <Heading
         icon="pause"
         eye={t("ОБОРУДОВАНИЕ")}
         title={t("Зафиксированный простой")}
         note={t("Только явно внесённые интервалы, не выводится из статусов.")}
       />
-      <div className="downtime-total">
-        <span>
-          {t("Плановый:")} <strong>{duration(report.downtime.planned_seconds)}</strong>
-        </span>
-        <span>
-          {t("Неплановый:")} <strong>{duration(report.downtime.unplanned_seconds)}</strong>
-        </span>
-      </div>
+      <dl className="resource-time-summary">
+        <div>
+          <dt>
+            <span className="resource-dot is-planned" />
+            {t("Плановый:")}
+          </dt>
+          <dd>{duration(report.downtime.planned_seconds)}</dd>
+        </div>
+        <div>
+          <dt>
+            <span className="resource-dot is-unplanned" />
+            {t("Неплановый:")}
+          </dt>
+          <dd>{duration(report.downtime.unplanned_seconds)}</dd>
+        </div>
+      </dl>
       {total > 0 && (
         <div className="downtime-split" aria-hidden="true">
-          <span className="is-planned" style={{ flexGrow: report.downtime.planned_seconds }} />
-          <span className="is-unplanned" style={{ flexGrow: report.downtime.unplanned_seconds }} />
+          {report.downtime.planned_seconds > 0 && (
+            <span className="is-planned" style={{ flexGrow: report.downtime.planned_seconds }} />
+          )}
+          {report.downtime.unplanned_seconds > 0 && (
+            <span className="is-unplanned" style={{ flexGrow: report.downtime.unplanned_seconds }} />
+          )}
         </div>
       )}
-      <div className="compact-table">
-        {rows.length ? (
-          rows.map((row) => (
-            <div className="table-row" key={row.equipment_id}>
-              <strong>{row.equipment_name}</strong>
-              <span>{duration(row.known_seconds)}</span>
-              <span>
-                {row.unknown_order_count
-                  ? t("Нет записи: {0}", [row.unknown_order_count])
-                  : t("Интервал записан")}
-              </span>
-            </div>
-          ))
-        ) : (
-          <p className="muted">{t("Нет записанных интервалов простоя.")}</p>
-        )}
-      </div>
-      {Object.keys(report.downtime.by_fault).length > 0 && (
-        <p className="muted downtime-causes">
-          {t("По неисправностям:")}{" "}
-          {Object.entries(report.downtime.by_fault)
-            .map(([fault, value]) => `${fault} — ${duration(value)}`)
-            .join(" · ")}
+      {report.downtime.unknown_order_count > 0 && (
+        <p className="resource-missing">
+          <Icon name="alert" />
+          <span>
+            {t("Нарядов без записи простоя: {0}. Они не включены во время выше.", [
+              report.downtime.unknown_order_count,
+            ])}
+          </span>
         </p>
       )}
-    </div>
+      {rows.length ? (
+        <ul className="resource-equipment-list">
+          {rows.map((row) => (
+            <li key={row.equipment_id}>
+              <div>
+                <strong>{row.equipment_name}</strong>
+                <small className={row.unknown_order_count ? "resource-missing-label" : ""}>
+                  {row.unknown_order_count
+                    ? t("Нет записи: {0}", [row.unknown_order_count])
+                    : t("Интервал записан")}
+                </small>
+              </div>
+              <span className="resource-duration">
+                {row.known_seconds === 0 && row.unknown_order_count > 0
+                  ? t("Нет данных")
+                  : duration(row.known_seconds)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="resource-empty">{t("Нет записанных интервалов простоя.")}</p>
+      )}
+      {Object.keys(report.downtime.by_fault).length > 0 && (
+        <section className="resource-causes">
+          <h3>{t("По неисправностям:")}</h3>
+          <dl>
+            {Object.entries(report.downtime.by_fault).map(([fault, value]) => (
+              <div key={fault}>
+                <dt>{fault}</dt>
+                <dd>{duration(value)}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
+    </section>
   );
 }
 function preventionSource(

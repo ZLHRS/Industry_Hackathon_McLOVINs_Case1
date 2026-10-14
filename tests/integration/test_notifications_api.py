@@ -32,8 +32,10 @@ from naryadai.infrastructure.models import (
 pytestmark = pytest.mark.asyncio
 
 
-async def seed_notification(database, api, *, who="executor"):
-    order = await issue(api)
+async def seed_notification(database, api, *, who="executor", machine_index=0):
+    order = await issue(
+        api, create_body(api, equipment_id=str(api["machines"][machine_index].id))
+    )
     async with database.sessions.begin() as session:
         note = Notification(
             employee_id=api["users"][who],
@@ -51,10 +53,14 @@ async def seed_notification(database, api, *, who="executor"):
         return note.id, order["order_id"]
 
 
-async def seed_order_events(database, api, *, count, who="executor", start=None):
+async def seed_order_events(database, api, *, count, who="executor", start=None, machine_index=0):
     order = await issue(
         api,
-        create_body(api, executor_id=str(api["users"][who])),
+        create_body(
+            api,
+            executor_id=str(api["users"][who]),
+            equipment_id=str(api["machines"][machine_index].id),
+        ),
     )
     created_at = start or datetime.now(UTC)
     async with database.sessions.begin() as session:
@@ -146,7 +152,7 @@ async def test_inbox_scope_read_ack_and_lifecycle_unchanged(api, database):
 
 async def test_inbox_pagination_and_assignment_revocation(api, database):
     first, order_id = await seed_notification(database, api)
-    await seed_notification(database, api)
+    await seed_notification(database, api, machine_index=2)
     client, headers = api["client"], api["headers"]["executor"]
     page = (await client.get("/api/v1/notifications?limit=1", headers=headers)).json()
     next_page = (await client.get("/api/v1/notifications?limit=1&offset=1", headers=headers)).json()
@@ -166,7 +172,7 @@ async def test_grouped_inbox_paginates_subjects_and_filters_events(api, database
     start = datetime.now(UTC) - timedelta(minutes=10)
     first_order = await seed_order_events(database, api, count=51, start=start)
     second_order = await seed_order_events(
-        database, api, count=2, start=start + timedelta(minutes=20)
+        database, api, count=2, start=start + timedelta(minutes=20), machine_index=2
     )
     fault_report = await seed_fault_event(database, api, start=start + timedelta(minutes=30))
     client, headers = api["client"], api["headers"]

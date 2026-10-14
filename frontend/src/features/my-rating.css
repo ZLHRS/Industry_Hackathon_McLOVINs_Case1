@@ -1,0 +1,237 @@
+.personal-ratings,
+.personal-rating {
+  display: grid;
+  gap: 1.25rem;
+  min-width: 0;
+}
+.personal-rating-overview {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(0, 2fr);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.personal-rating-score {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.5rem;
+  background: var(--teal-soft);
+  color: var(--teal-deep);
+}
+.personal-rating-score > span {
+  font-weight: 650;
+  font-size: 0.85rem;
+}
+.personal-rating-score > div {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+.personal-rating-score strong {
+  font-size: clamp(2.5rem, 4vw, 3.5rem);
+  line-height: 1.1;
+  letter-spacing: -0.045em;
+}
+.personal-rating-score small {
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.personal-rating-context {
+  padding: 1.5rem;
+  display: grid;
+  gap: 1rem;
+  align-content: center;
+}
+.personal-rating-person {
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.personal-rating-context dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0;
+}
+.personal-rating-context dt {
+  color: var(--muted-ink);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.personal-rating-context dl > div {
+  display: grid;
+  grid-template-rows: 1fr auto;
+}
+.personal-rating-context dd {
+  margin: 0.3rem 0 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.personal-rating-context p {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: var(--muted-ink);
+}
+.personal-rating-context .personal-rating-caution {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  color: var(--amber);
+}
+.personal-rating-caution svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  margin-top: 0.15rem;
+}
+.personal-rating-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+.personal-rating-metric {
+  padding: 1.1rem 1.2rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  min-width: 0;
+}
+.personal-rating-metric:last-child {
+  grid-column: 1 / -1;
+}
+.personal-rating-metric-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+.personal-rating-icon {
+  display: grid;
+  place-items: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  flex: none;
+  border-radius: 0.5rem;
+  background: var(--surface-soft);
+  color: var(--teal-deep);
+}
+.personal-rating-icon svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+.analytics .personal-rating-metric h3 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 650;
+  line-height: 1.45;
+  flex: 1;
+  min-width: 0;
+}
+.personal-rating-metric-heading > strong {
+  color: var(--teal-deep);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.personal-rating-track {
+  margin: 0.85rem 0;
+  height: 0.35rem;
+  border-radius: 1rem;
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+.personal-rating-track span {
+  display: block;
+  height: 100%;
+  background: var(--teal);
+  border-radius: inherit;
+}
+.personal-rating-metric p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.personal-rating-evidence {
+  color: var(--ink);
+  font-weight: 600;
+}
+.personal-rating-metric .personal-rating-description {
+  margin-top: 0.3rem;
+  color: var(--muted-ink);
+}
+.personal-rating-metric.is-unavailable {
+  background: var(--surface-soft);
+}
+.personal-rating-metric.is-unavailable .personal-rating-metric-heading > strong {
+  color: var(--muted-ink);
+  font-size: 0.75rem;
+  white-space: normal;
+  text-align: right;
+}
+.personal-rating-method {
+  padding: 0 1.2rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  line-height: 1.65;
+}
+.personal-rating-method summary {
+  padding: 0.9rem 0;
+  cursor: pointer;
+  color: var(--teal-deep);
+  font-weight: 650;
+  min-height: 44px;
+}
+.personal-rating-method summary:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+.personal-rating-method dl {
+  display: grid;
+  gap: 0.8rem;
+}
+.personal-rating-method dl > div {
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid var(--line);
+}
+.personal-rating-method dt {
+  font-weight: 650;
+}
+.personal-rating-method dd {
+  margin: 0.25rem 0 0;
+  color: var(--muted-ink);
+}
+.personal-rating-method ul {
+  padding-left: 1.2rem;
+  color: var(--muted-ink);
+}
+.personal-rating-method li + li {
+  margin-top: 0.6rem;
+}
+@media (max-width: 600px) {
+  .personal-rating-overview {
+    grid-template-columns: 1fr;
+  }
+  .personal-rating-score {
+    padding: 1.2rem;
+  }
+  .personal-rating-context {
+    padding: 1.2rem;
+  }
+  .personal-rating-metrics {
+    grid-template-columns: 1fr;
+  }
+  .personal-rating-metric {
+    padding: 1rem;
+  }
+  .personal-rating-metric-heading {
+    gap: 0.5rem;
+  }
+  .personal-rating-method {
+    padding-inline: 1rem;
+  }
+}

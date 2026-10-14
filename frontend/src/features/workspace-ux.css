@@ -612,14 +612,14 @@
   body {
     background: white;
   }
-  :where(.app-shell:has(.equipment-qr-panel)) * {
+  :where(.app-shell:not(:has(.equipment-label-editor)):has(.equipment-qr-panel)) * {
     visibility: hidden;
   }
-  .equipment-qr-panel,
-  .equipment-qr-panel * {
+  .app-shell:not(:has(.equipment-label-editor)) .equipment-qr-panel,
+  .app-shell:not(:has(.equipment-label-editor)) .equipment-qr-panel * {
     visibility: visible;
   }
-  .equipment-qr-panel {
+  .app-shell:not(:has(.equipment-label-editor)) .equipment-qr-panel {
     position: fixed;
     inset: 0 auto auto 0;
     display: inline-grid;
@@ -633,21 +633,21 @@
     padding: 6mm;
     gap: 3mm;
   }
-  .equipment-qr-actions,
-  .equipment-qr-panel a,
-  .equipment-qr-panel .notice,
-  .equipment-qr-feedback {
+  .app-shell:not(:has(.equipment-label-editor)) .equipment-qr-actions,
+  .app-shell:not(:has(.equipment-label-editor)) .equipment-qr-panel a,
+  .app-shell:not(:has(.equipment-label-editor)) .equipment-qr-panel .notice,
+  .app-shell:not(:has(.equipment-label-editor)) .equipment-qr-feedback {
     display: none;
   }
-  .equipment-qr-panel img {
+  .app-shell:not(:has(.equipment-label-editor)) .equipment-qr-panel img {
     width: 52mm;
   }
-  .equipment-qr-preview {
+  .app-shell:not(:has(.equipment-label-editor)) .equipment-qr-preview {
     display: block;
     border: 0;
     padding: 0;
   }
-  .equipment-qr-preview-copy {
+  .app-shell:not(:has(.equipment-label-editor)) .equipment-qr-preview-copy {
     margin-top: 3mm;
   }
 }

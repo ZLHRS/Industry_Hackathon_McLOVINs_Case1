@@ -21,7 +21,9 @@
 }
 
 .notification-drawer .push-control {
-  display: flex;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: start;
   align-items: center;
   flex: 1 1 30rem;
   gap: 0.75rem;
@@ -523,4 +525,71 @@
 .notification-error .error {
   flex: 1 1 15rem;
   margin: 0;
+}
+
+/* Connection status is distinct from the red unread counter. */
+.notification-button.notification-button--connected {
+  border-color: #58bba4;
+  color: #8de3c9;
+}
+.notification-connection-dot {
+  position: absolute;
+  bottom: 5px;
+  left: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #71e1b6;
+  box-shadow: 0 0 0 2px #183f36;
+}
+.notification-drawer .push-control-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 42px;
+  height: 42px;
+  width: 42px;
+  border-radius: 12px;
+  background: #e6ecea;
+  color: #53675f;
+}
+.notification-drawer .push-control--enabled .push-control-icon {
+  background: #d3f0e4;
+  color: #16684a;
+}
+.notification-drawer .push-control-copy {
+  gap: 0.35rem;
+}
+.push-status-badge {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  background: #e8eeeb;
+  color: #465b52;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+.push-control--enabled .push-status-badge {
+  background: #d3f0e4;
+  color: #145c42;
+}
+.push-control--blocked .push-status-badge,
+.push-control--error .push-status-badge {
+  background: #fff0d5;
+  color: #795013;
+}
+.push-control--checking .push-status-badge {
+  background: #e4eef8;
+  color: #355b79;
+}
+@media (max-width: 520px) {
+  .notification-drawer .push-control > button {
+    width: 100%;
+  }
+}
+.notification-drawer .push-control > button {
+  grid-column: 2;
+  justify-self: start;
 }

@@ -154,14 +154,37 @@ function Report({ count }: { count: number }) {
             peopleReport ? "loading-skeleton-rating-grid" : "loading-skeleton-rating-grid is-private"
           }
         >
-          <div className="loading-skeleton-rating-table">
-            <Bone className="loading-skeleton-title" style={{ width: "44%" }} />
-            {table(4)}
-          </div>
+          {!peopleReport ? (
+            <div className="loading-skeleton-personal-rating">
+              <div className="loading-skeleton-personal-overview">
+                <Bone className="loading-skeleton-value" />
+                <Bone className="loading-skeleton-title" />
+              </div>
+              <div className="loading-skeleton-personal-metrics">
+                {Array.from({ length: 5 }, (_, index) => (
+                  <div key={index} className="loading-skeleton-card">
+                    <Bone className="loading-skeleton-title" />
+                    <Bone className="loading-skeleton-line" />
+                    <Bone className="loading-skeleton-short" />
+                  </div>
+                ))}
+              </div>
+              <Bone className="loading-skeleton-title" />
+            </div>
+          ) : (
+            <div className="loading-skeleton-rating-table">
+              <Bone className="loading-skeleton-title" style={{ width: "44%" }} />
+              {Array.from({ length: 3 }, (_, index) => (
+                <RatingPlaceholder key={index} />
+              ))}
+            </div>
+          )}
           {peopleReport && (
             <div className="loading-skeleton-rating-table">
               <Bone className="loading-skeleton-title" style={{ width: "38%" }} />
-              {table(4, 2)}
+              {Array.from({ length: 3 }, (_, index) => (
+                <RatingPlaceholder key={index} />
+              ))}
             </div>
           )}
         </div>
@@ -174,6 +197,14 @@ function Report({ count }: { count: number }) {
           </div>
           <div>
             {heading("54%")}
+            <div className="loading-skeleton-resource-times">
+              {[0, 1].map((index) => (
+                <div className="loading-skeleton-card" key={index}>
+                  <Bone className="loading-skeleton-short" />
+                  <Bone className="loading-skeleton-title" />
+                </div>
+              ))}
+            </div>
             <div className="loading-skeleton-table">{table(4, 3)}</div>
           </div>
         </div>
@@ -240,22 +271,17 @@ function Summary() {
         <Bone className="loading-skeleton-badge" />
         <Bone className="loading-skeleton-line" style={{ width: "28%" }} />
       </div>
-      <div className="loading-skeleton-summary-columns">
-        <div className="loading-skeleton-stack">
-          <Bone className="loading-skeleton-title" style={{ width: "46%" }} />
-          {Array.from({ length: 3 }, (_, index) => (
-            <Bone className="loading-skeleton-line" key={index} style={{ width: width(index, 1) }} />
-          ))}
-        </div>
-        <div className="loading-skeleton-summary-actions">
-          <Bone className="loading-skeleton-title" style={{ width: "65%" }} />
-          {Array.from({ length: 2 }, (_, index) => (
-            <div className="loading-skeleton-event" key={index}>
-              <Bone className="loading-skeleton-number" />
-              <Bone className="loading-skeleton-line" style={{ width: width(index, 4) }} />
-            </div>
-          ))}
-        </div>
+      <div className="loading-skeleton-summary-highlights">
+        {Array.from({ length: 4 }, (_, index) => (
+          <div className="loading-skeleton-summary-actions" key={index}>
+            <Bone className="loading-skeleton-kicker" />
+            <Bone className="loading-skeleton-title" style={{ width: "65%" }} />
+            <Bone className="loading-skeleton-line" />
+            <Bone className="loading-skeleton-short" />
+            <Bone className="loading-skeleton-line" />
+            <Bone className="loading-skeleton-line" style={{ width: "80%" }} />
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -428,6 +454,25 @@ export function Skeleton({ variant = "cards", label = t("Загрузка…"), 
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function RatingPlaceholder() {
+  return (
+    <div className="loading-skeleton-leader">
+      <div className="loading-skeleton-top">
+        <Bone className="loading-skeleton-icon" />
+        <Bone style={{ width: "50%" }} />
+        <Bone className="loading-skeleton-count" />
+      </div>
+      <Bone className="loading-skeleton-line" />
+      <div className="loading-skeleton-leader-metrics">
+        {[0, 1, 2].map((key) => (
+          <Bone key={key} className="loading-skeleton-block" />
+        ))}
+      </div>
+      <Bone className="loading-skeleton-short" />
     </div>
   );
 }

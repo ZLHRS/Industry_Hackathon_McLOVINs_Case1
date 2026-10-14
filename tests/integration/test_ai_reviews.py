@@ -575,7 +575,12 @@ async def test_current_attempt_evidence_excludes_old_photos_and_preserves_cross_
         ),
         "ai-evidence-complete",
     )
-    other = await create_order(database, data["master"], _create_body(data), "ai-evidence-other")
+    other = await create_order(
+        database,
+        data["master"],
+        _create_body(data).model_copy(update={"equipment_id": data["secondary_equipment"]}),
+        "ai-evidence-other",
+    )
     other_id, reused_hash = UUID(other["order_id"]), "a" * 64
     async with database.sessions.begin() as session:
         order = await session.get(WorkOrder, order_id)

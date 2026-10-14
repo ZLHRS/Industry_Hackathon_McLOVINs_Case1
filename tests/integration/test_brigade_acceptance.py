@@ -47,7 +47,14 @@ async def test_overlapping_crews_cannot_start_concurrently_and_never_appear_free
         issued = await create_order(
             database,
             data["master"],
-            _body(data).model_copy(update={"executor_id": responsible.employee_id}),
+            _body(data).model_copy(
+                update={
+                    "equipment_id": data["equipment"]
+                    if index == 0
+                    else data["secondary_equipment"],
+                    "executor_id": responsible.employee_id,
+                }
+            ),
             f"parallel-issue-{index}",
         )
         order_id = UUID(issued["order_id"])
@@ -122,7 +129,18 @@ async def test_participant_push_fanout_deduplicates_and_rechecks_assignment(data
         await session.flush()
         subscription_id = subscription.id
     orders = [
-        await create_order(database, data["master"], _body(data), f"push-crew-issue-{index}")
+        await create_order(
+            database,
+            data["master"],
+            _body(data).model_copy(
+                update={
+                    "equipment_id": data["equipment"]
+                    if index == 0
+                    else data["secondary_equipment"]
+                }
+            ),
+            f"push-crew-issue-{index}",
+        )
         for index in range(2)
     ]
     moment = datetime.now(UTC)

@@ -1,5 +1,142 @@
 /** Interface copy added with the visual refresh: executors board, reports and AI analysis tabs. */
 export const uiTranslations: Record<string, { kk: string; en: string }> = {
+  "Данные сотрудника": { kk: "Қызметкер деректері", en: "Employee details" },
+  "Пароль для входа": { kk: "Кіру құпиясөзі", en: "Sign-in password" },
+  "3–64 символа: a–z, 0–9, точка, дефис или подчёркивание.": {
+    kk: "3–64 таңба: a–z, 0–9, нүкте, дефис немесе астын сызу.",
+    en: "3–64 characters: a–z, 0–9, dot, hyphen or underscore.",
+  },
+  "От 8 до 128 символов. Пробелы в пароле сохраняются.": {
+    kk: "8–128 таңба. Құпиясөздегі бос орындар сақталады.",
+    en: "8–128 characters. Spaces in the password are preserved.",
+  },
+  "Пароли совпадают": { kk: "Құпиясөздер сәйкес келеді", en: "Passwords match" },
+  "Введите тот же пароль ещё раз, чтобы избежать опечатки.": {
+    kk: "Қате жібермеу үшін сол құпиясөзді қайта енгізіңіз.",
+    en: "Enter the same password again to avoid a typo.",
+  },
+  "Совпавшие слова": { kk: "Сәйкес сөздер", en: "Matching words" },
+  "Нарядов без записи простоя: {0}. Они не включены во время выше.": {
+    kk: "Тоқтап қалу жазбасы жоқ нарядтар: {0}. Олар жоғарыдағы уақытқа кірмейді.",
+    en: "Orders without a downtime record: {0}. They are not included in the time above.",
+  },
+  "Шкала 0–100": { kk: "0–100 шкаласы", en: "Scale 0–100" },
+  "Оценка: {0} из 100": { kk: "Баға: 100-ден {0}", en: "Score: {0} out of 100" },
+  "Что учитывать при сравнении": {
+    kk: "Салыстыру кезінде нені ескеру керек",
+    en: "What to consider when comparing",
+  },
+  "Малая выборка": { kk: "Шағын іріктеме", en: "Small sample" },
+  "На это оборудование уже выдан другой наряд. Переназначение недоступно, пока тот наряд не завершён или не отменён.":
+    {
+      kk: "Бұл жабдыққа басқа наряд берілген. Ол аяқталғанша немесе жойылғанша қайта тағайындау мүмкін емес.",
+      en: "Another order already reserves this equipment. Reassignment is unavailable until that order is finished or cancelled.",
+    },
+  "Оборудование уже занято: есть незавершённый наряд. Завершите текущий наряд или выберите другое оборудование. Введённые данные сохранены в форме.":
+    {
+      kk: "Жабдық бос емес: аяқталмаған наряд бар. Ағымдағы нарядты аяқтаңыз немесе басқа жабдықты таңдаңыз. Енгізілген деректер пішінде сақталды.",
+      en: "This equipment already has an unfinished order. Finish the current order or select different equipment. Your input remains in the form.",
+    },
+  "Проверяем подключение": { kk: "Қосылымды тексерудеміз", en: "Checking connection" },
+  Включены: { kk: "Қосылған", en: "Enabled" },
+  "Не подключены": { kk: "Қосылмаған", en: "Not connected" },
+  "Заблокированы браузером": { kk: "Браузер бұғаттаған", en: "Blocked by browser" },
+  Недоступны: { kk: "Қолжетімсіз", en: "Unavailable" },
+  "Не удалось подключить": { kk: "Қосу мүмкін болмады", en: "Connection failed" },
+  "Проверяем разрешение и связь этого устройства с сервером.": {
+    kk: "Осы құрылғының рұқсаты мен серверге қосылуын тексерудеміз.",
+    en: "Checking permission and this device’s server connection.",
+  },
+  "Это устройство подключено. Уведомления будут приходить и при свёрнутом приложении, пока действует вход.": {
+    kk: "Құрылғы қосылған. Кіру сеансы аяқталғанша, қолданба жабылғанда да хабарландырулар келеді.",
+    en: "This device is connected. Notifications can arrive in the background while your session is valid.",
+  },
+  "Фоновые уведомления недоступны. Проверьте поддержку браузера и настройку сервера.": {
+    kk: "Фондық хабарландырулар қолжетімсіз. Браузер қолдауын және сервер баптауларын тексеріңіз.",
+    en: "Background notifications are unavailable. Check browser support and server configuration.",
+  },
+  "Не удалось подтвердить подключение. Проверьте интернет и повторите попытку.": {
+    kk: "Қосылым расталмады. Интернетті тексеріп, әрекетті қайталаңыз.",
+    en: "Could not confirm the connection. Check your internet and try again.",
+  },
+  "В основе сводки: {0} нарядов": { kk: "Шолу негізінде: {0} наряд", en: "Based on {0} orders" },
+  "Срез данных: {0}": { kk: "Деректер кесімі: {0}", en: "Data as of: {0}" },
+  "Учебных нарядов: {0}. Сводка включает демонстрационные данные.": {
+    kk: "Оқу нарядтары: {0}. Қорытындылар демонстрациялық деректерге қатысты.",
+    en: "Demo orders: {0}. Insights include demonstration data.",
+  },
+  "Требует внимания": { kk: "Назар аудару қажет", en: "Needs attention" },
+  Проверить: { kk: "Тексеру", en: "Review" },
+  "Для наблюдения": { kk: "Бақылау үшін", en: "Monitor" },
+  "Следующий шаг": { kk: "Келесі қадам", en: "Next step" },
+
+  "Нарядов в оценке": { kk: "Бағалаудағы нарядтар", en: "Orders assessed" },
+  "Качество работ": { kk: "Жұмыс сапасы", en: "Work quality" },
+  "Итоговые оценки принятых работ. Оценка мастера имеет приоритет.": {
+    kk: "Қабылданған жұмыстардың қорытынды бағалары. Шебердің бағасы басым.",
+    en: "Final grades for accepted work. The supervisor’s grade takes priority.",
+  },
+  "Сдача в срок": { kk: "Уақытында тапсыру", en: "On-time submission" },
+  "Учитывается время сдачи работы, а не ожидание приёмки мастером.": {
+    kk: "Шебердің қабылдауын күту емес, жұмысты тапсыру уақыты есептеледі.",
+    en: "Based on submission time, excluding the wait for supervisor acceptance.",
+  },
+  "Без доработок и повторов": { kk: "Қайта өңдеусіз және қайталанусыз", en: "No rework or recurrence" },
+  "Учитываются ремонты с полным окном наблюдения в 7 дней.": {
+    kk: "Толық 7 күндік бақылау мерзімі бар жөндеулер есептеледі.",
+    en: "Includes repairs with a full seven-day observation window.",
+  },
+  "Объём выполненных работ": { kk: "Орындалған жұмыс көлемі", en: "Work completed" },
+  "Шкала до 20 нормочасов за выбранный период. Это не загрузка смены.": {
+    kk: "Таңдалған кезеңдегі шкала — 20 норма-сағатқа дейін. Бұл ауысым жүктемесі емес.",
+    en: "Scaled to 20 standard hours over the selected period. This is not shift utilisation.",
+  },
+  "Обоснованность отказов": { kk: "Бас тартулардың негізділігі", en: "Justified refusals" },
+  "Только рассмотренные отказы. Нерассмотренные не снижают оценку.": {
+    kk: "Тек қаралған бас тартулар. Қаралмағандары бағаны төмендетпейді.",
+    en: "Only reviewed refusals count. Pending reviews do not lower your score.",
+  },
+  "Средняя оценка: {0} из 5 · оценено работ: {1}": {
+    kk: "Орташа баға: 5-тен {0} · бағаланған жұмыс: {1}",
+    en: "Average grade: {0} out of 5 · jobs graded: {1}",
+  },
+  "В срок сдано: {0} из {1}": {
+    kk: "Уақытында тапсырылғаны: {1} ішінен {0}",
+    en: "Submitted on time: {0} of {1}",
+  },
+  "Без доработок и повторов: {0} из {1}": {
+    kk: "Қайта өңдеусіз және қайталанусыз: {1} ішінен {0}",
+    en: "Without rework or recurrence: {0} of {1}",
+  },
+  "Выполнено: {0} нормочасов из {1} по шкале": {
+    kk: "Орындалғаны: шкаладағы {1} норма-сағаттан {0}",
+    en: "Completed: {0} standard hours against a scale of {1}",
+  },
+  "Обоснованных отказов: {0} из {1} рассмотренных": {
+    kk: "Негізді бас тартулар: қаралған {1} ішінен {0}",
+    en: "Justified refusals: {0} of {1} reviewed",
+  },
+  "Итог за период": { kk: "Кезең қорытындысы", en: "Period score" },
+  "Взвешенная оценка показателей": { kk: "Көрсеткіштердің салмақталған бағасы", en: "Weighted metric score" },
+  "Показателей с данными": { kk: "Деректері бар көрсеткіштер", en: "Metrics with data" },
+  "Предварительный результат: в оценке меньше 5 нарядов.": {
+    kk: "Алдын ала нәтиже: бағалауда 5-тен аз наряд бар.",
+    en: "Preliminary result: fewer than five orders in the assessment.",
+  },
+  "Нет данных — нет штрафа: учитываются только доступные показатели.": {
+    kk: "Дерек жоқ болса, баға төмендемейді: тек қолжетімді көрсеткіштер есептеледі.",
+    en: "Missing data carries no penalty: only available metrics count.",
+  },
+  "Не влияет на итоговую оценку": {
+    kk: "Қорытынды бағаға әсер етпейді",
+    en: "Does not affect your overall score",
+  },
+  "Как рассчитывается оценка": { kk: "Баға қалай есептеледі", en: "How your score is calculated" },
+  "Чем выше показатель, тем больше его вклад в итог. Отсутствующие данные не считаются нулём.": {
+    kk: "Көрсеткіш жоғары болған сайын қорытындыға үлесі артады. Жоқ деректер нөл болып саналмайды.",
+    en: "A higher metric contributes more to the total. Missing data is not treated as zero.",
+  },
+
   "Недостаточно данных для вывода по сменам: нужно не меньше 20 поломок.": {
     kk: "Ауысымдар бойынша қорытынды жасауға дерек жеткіліксіз: кемінде 20 ақау қажет.",
     en: "Not enough data to draw conclusions by shift: at least 20 breakdowns are needed.",

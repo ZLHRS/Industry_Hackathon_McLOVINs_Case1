@@ -52,13 +52,19 @@ test("master scans a decodable QR, logs in and issues with equipment prefilled",
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await qr.evaluate((image) => image.scrollIntoView({ block: "center" }));
   await page.screenshot({ path: info.outputPath("qr-mobile.png") });
-  // Print CSS must show the equipment label without the surrounding private workspace.
+  await page.getByRole("button", { name: "Печать наклейки", exact: true }).click();
+  await expect(page.getByTestId("equipment-label-editor")).toBeVisible();
+  // Print CSS must show the label editor's physical sheet without private workspace or modal chrome.
   await page.emulateMedia({ media: "print" });
-  await expect(qr).toBeVisible();
+  await expect(page.locator(".equipment-label-print img")).toBeVisible();
+  await expect(qr).toBeHidden();
+  await expect(page.locator(".equipment-label-controls")).toBeHidden();
   await expect(page.locator(".side-nav")).toBeHidden();
   await expect(page.getByRole("button", { name: "Выдать наряд", exact: true })).toBeHidden();
   await page.screenshot({ path: info.outputPath("qr-print.png"), fullPage: true });
   await page.emulateMedia({ media: "screen" });
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("equipment-label-editor")).toHaveCount(0);
   await page.goto(equipmentPath);
   await page.getByRole("button", { name: "Выдать наряд", exact: true }).click();
   const dialog = page.getByRole("dialog");
@@ -239,4 +245,58 @@ test("leaving the QR page and returning does not reopen the previous issue form"
   await expect(page).toHaveURL(destination);
   await expect(page.getByRole("button", { name: "Выдать наряд", exact: true })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("label editor accepts decimal commas, computed positions and browser printing", async ({ page }) => {
+  await login(page, "master");
+  await page.getByRole("button", { name: "Печать наклейки", exact: true }).click();
+  const editor = page.getByTestId("equipment-label-editor");
+  const field = (name: string) => editor.getByLabel(name, { exact: true });
+  const valid = async () => {
+    await expect(editor.locator('input[aria-invalid="true"]')).toHaveCount(0);
+    expect(await editor.locator("form").evaluate((form) => (form as HTMLFormElement).checkValidity())).toBe(
+      true,
+    );
+  };
+  for (const [name, value] of [
+    ["Ширина, мм", "80,3"],
+    ["Высота, мм", "50.3"],
+    ["QR-код, мм", "27,2"],
+    ["Отступ, мм", "3,2"],
+    ["Слева, мм", "23.7"],
+    ["Сверху, мм", "128,3"],
+    ["Размер шрифта, пт", "9,2"],
+  ]) {
+    await field(name).fill(value);
+    await field(name).press("Tab");
+    await expect(field(name)).toHaveValue(value.replace(",", "."));
+    await valid();
+  }
+  await field("Ширина, мм").fill("80.5");
+  await field("Ширина, мм").press("Tab");
+  await expect(field("Высота, мм")).toBeFocused();
+  const center = editor.getByRole("button", { name: "По центру листа", exact: true });
+  await center.click();
+  await valid();
+  await field("Сверху, мм").fill("999");
+  await center.click();
+  await valid();
+
+  const top = field("Сверху, мм");
+  await top.fill("128,3");
+  await page.evaluate(() => window.dispatchEvent(new Event("beforeprint")));
+  await expect(top).toHaveValue("128.3");
+  await page.emulateMedia({ media: "print" });
+  const label = editor.locator(".equipment-label-print");
+  await expect(label).toBeVisible();
+  expect((await label.boundingBox())!.y).toBeCloseTo((128.3 * 96) / 25.4, 0);
+  await page.emulateMedia({ media: "screen" });
+  await top.fill("1,2,3");
+  await page.evaluate(() => window.dispatchEvent(new Event("beforeprint")));
+  await page.emulateMedia({ media: "print" });
+  await expect(editor.locator(".equipment-label-sheet")).toBeHidden();
+  await expect(editor.locator(".equipment-label-print-error")).toBeVisible();
+  await page.emulateMedia({ media: "screen" });
+  await editor.getByRole("button", { name: "Сбросить", exact: true }).click();
+  await valid();
 });

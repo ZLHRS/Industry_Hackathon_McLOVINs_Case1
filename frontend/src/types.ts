@@ -630,6 +630,16 @@ export interface AnalyticsRating {
   components: Record<string, AnalyticsRatingComponent>;
   unavailable_components: string[];
 }
+export type AnalyticsMaterialUsage = {
+  material_id: string;
+  material_name: string;
+  unit: string;
+  quantity: number;
+  order_count: number;
+  dimension_id?: string | null;
+  dimension_name?: string | null;
+};
+
 export interface AnalyticsReport {
   period: {
     kind: AnalyticsQuery["period"];
@@ -687,16 +697,10 @@ export interface AnalyticsReport {
   };
   ratings: { employees: AnalyticsRating[]; brigades: AnalyticsRating[]; limitations: string[] };
   materials: {
-    usage: Array<{
-      material_id: string;
-      material_name: string;
-      unit: string;
-      quantity: number;
-      order_count: number;
-    }>;
-    by_area: unknown[];
-    by_equipment: unknown[];
-    by_executor: unknown[];
+    usage: AnalyticsMaterialUsage[];
+    by_area: AnalyticsMaterialUsage[];
+    by_equipment: AnalyticsMaterialUsage[];
+    by_executor: AnalyticsMaterialUsage[];
   };
   leaders: {
     machines: Array<{
@@ -774,6 +778,18 @@ export interface AnalyticsSummary {
   text: string;
   limitations: string[];
   evidence_ids: string[];
+  highlights?: Array<{
+    evidence_id: string;
+    title: string;
+    priority: "attention" | "review" | "info";
+    fact: string;
+    context: string[];
+    next_step: string;
+  }>;
+  as_of?: string | null;
+  row_count?: number;
+  synthetic_count?: number;
+  timezone?: string;
 }
 export interface PreventionOutcomeRepeat {
   id: string;

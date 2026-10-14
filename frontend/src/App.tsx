@@ -6,6 +6,7 @@ import { ProfileMenu } from "./components/ProfileMenu";
 import { ShiftChip } from "./components/ShiftChip";
 import { Icon, type IconName } from "./components/Icon";
 import { OrderReference } from "./components/OrderReference";
+import { usePushStatus } from "./lib/usePushStatus";
 import { useDeviceInstallation } from "./lib/useDeviceInstallation";
 import { navigation, permittedView, canViewWorkload, type View } from "./lib/roleAccess";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -237,7 +238,7 @@ export default function App() {
   const [inboxOpen, setInboxOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [liveRevision, setLiveRevision] = useState(0);
-  const pushSubscriptionId = useRef<string | null>(null);
+  const push = usePushStatus(api, user && user.role !== "admin" ? user.id : null);
   const filters = useMemo(() => readOrderFilters(appLocation, user), [appLocation, user]);
   const authGeneration = useRef(0);
   const refreshGeneration = useRef(0);
@@ -485,20 +486,6 @@ export default function App() {
     return () => window.removeEventListener("online", retry);
   }, [refresh, sync, user]);
   useEffect(() => {
-    if (!user || user.role === "admin" || !("serviceWorker" in navigator)) return;
-    let active = true;
-    void navigator.serviceWorker.ready
-      .then((registration) => registration.pushManager.getSubscription())
-      .then((subscription) => subscription && api.subscribePush(subscription.toJSON()))
-      .then((result) => {
-        if (active && result) pushSubscriptionId.current = result.id;
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, [api, user]);
-  useEffect(() => {
     if (!user || user.role === "admin") return;
     let active = true;
     const updateCount = () =>
@@ -670,8 +657,7 @@ export default function App() {
   async function signOut() {
     const actor = user;
     if (!actor) return;
-    const subscriptionId = pushSubscriptionId.current;
-    pushSubscriptionId.current = null;
+    const subscriptionId = push.subscriptionId;
     // Leave this device immediately. The captured API instance retains this session's token,
     // so delayed best-effort revocation cannot affect a later sign-in.
     void (async () => {
@@ -847,7 +833,11 @@ export default function App() {
             <EquipmentScanner onOpen={(id) => navigate("/equipment/" + id)} />
             <AppPreferences installation={installation} />
             {user.role !== "admin" && (
-              <NotificationButton count={unreadCount} onOpen={() => setInboxOpen(true)} />
+              <NotificationButton
+                pushStatus={push.status}
+                count={unreadCount}
+                onOpen={() => setInboxOpen(true)}
+              />
             )}
             <ProfileMenu
               name={user.display_name}
@@ -1108,9 +1098,7 @@ export default function App() {
             setInboxOpen(false);
             setFaultReportDialog({ mode: "detail", reportId: id });
           }}
-          onPushBound={(id) => {
-            pushSubscriptionId.current = id;
-          }}
+          push={push}
           revision={liveRevision}
         />
       )}

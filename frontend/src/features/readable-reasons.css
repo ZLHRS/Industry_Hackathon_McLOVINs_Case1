@@ -1,0 +1,35 @@
+.readable-reasons {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  padding-inline-start: 1.1rem;
+}
+
+.suggestion-reasons {
+  display: grid;
+  gap: 0.16rem;
+}
+
+.suggestion-reason {
+  display: block;
+}
+
+.similar-repair-terms {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.28rem;
+  color: #48665f;
+  font-size: 0.82rem;
+}
+
+.similar-repair-terms-label {
+  font-weight: 700;
+}
+
+.similar-repair-term {
+  border: 1px solid #d8e1df;
+  border-radius: 999px;
+  background: #f8fbfa;
+  padding: 0.04rem 0.38rem;
+}

@@ -11,6 +11,7 @@ from naryadai.domain.lifecycle import (
     WorkOrderStatus,
     is_overdue,
     new_lifecycle,
+    occupies_equipment,
     transition,
 )
 
@@ -299,6 +300,28 @@ def test_overdue_is_derived_from_status_and_deadline(
         is expected
     )
     assert not is_overdue(LifecycleState(status), deadline=AT, at=AT)
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (WorkOrderStatus.ISSUED, True),
+        (WorkOrderStatus.ACCEPTED, True),
+        (WorkOrderStatus.QUEUED, True),
+        (WorkOrderStatus.IN_PROGRESS, True),
+        (WorkOrderStatus.PAUSED, True),
+        (WorkOrderStatus.COMPLETED, True),
+        (WorkOrderStatus.AI_REVIEW, True),
+        (WorkOrderStatus.REWORK, True),
+        (WorkOrderStatus.REJECTED, False),
+        (WorkOrderStatus.CLOSED, False),
+        (WorkOrderStatus.CANCELLED, False),
+    ],
+)
+def test_equipment_reservation_is_derived_from_status(
+    status: WorkOrderStatus, expected: bool
+) -> None:
+    assert occupies_equipment(status) is expected
 
 
 @pytest.mark.parametrize(

@@ -63,12 +63,18 @@ for (const width of [1440, 900, 390]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await page.screenshot({ path: info.outputPath(`admin-qr-${width}.png`), fullPage: true });
     if (width === 1440) {
+      await page.getByRole("button", { name: "Печать наклейки", exact: true }).click();
+      await expect(page.getByTestId("equipment-label-editor")).toBeVisible();
       await page.emulateMedia({ media: "print" });
-      await expect(page.getByRole("img", { name: "QR-код оборудования", exact: true })).toBeVisible();
+      await expect(page.locator(".equipment-label-print img")).toBeVisible();
+      await expect(page.getByRole("img", { name: "QR-код оборудования", exact: true })).toBeHidden();
+      await expect(page.locator(".equipment-label-controls")).toBeHidden();
       await expect(page.getByRole("button", { name: "Копировать ссылку", exact: true })).toBeHidden();
-      await expect(page.getByRole("button", { name: "Печать наклейки", exact: true })).toBeHidden();
+      await expect(page.getByRole("button", { name: "Печать", exact: true })).toBeHidden();
       await page.screenshot({ path: info.outputPath("admin-qr-print.png"), fullPage: true });
       await page.emulateMedia({ media: "screen" });
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("equipment-label-editor")).toHaveCount(0);
     }
     expect(errors).toEqual([]);
   });

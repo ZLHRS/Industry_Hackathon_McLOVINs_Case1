@@ -107,6 +107,18 @@ class LifecycleTransition:
 
 
 _TERMINAL = frozenset({WorkOrderStatus.CLOSED, WorkOrderStatus.CANCELLED})
+EQUIPMENT_OCCUPYING_STATUSES = frozenset(
+    {
+        WorkOrderStatus.ISSUED,
+        WorkOrderStatus.ACCEPTED,
+        WorkOrderStatus.QUEUED,
+        WorkOrderStatus.IN_PROGRESS,
+        WorkOrderStatus.PAUSED,
+        WorkOrderStatus.COMPLETED,
+        WorkOrderStatus.AI_REVIEW,
+        WorkOrderStatus.REWORK,
+    }
+)
 _OVERDUE_EXCLUDED = frozenset(
     {
         WorkOrderStatus.REJECTED,
@@ -134,6 +146,19 @@ def new_lifecycle() -> LifecycleState:
     """Create the initial state after the master issues an order."""
 
     return LifecycleState(WorkOrderStatus.ISSUED)
+
+
+def occupies_equipment(status: WorkOrderStatus) -> bool:
+    """Return whether an existing order reserves its equipment for new work.
+
+    Rejected, cancelled, and closed orders release the equipment.  Completion
+    and AI review intentionally keep it reserved until the master's decision
+    has closed the order or explicitly sent it back for rework.
+    """
+
+    if not isinstance(status, WorkOrderStatus):
+        raise TypeError("status must be a WorkOrderStatus")
+    return status in EQUIPMENT_OCCUPYING_STATUSES
 
 
 def is_overdue(state: LifecycleState, *, deadline: datetime, at: datetime) -> bool:

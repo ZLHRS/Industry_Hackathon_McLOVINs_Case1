@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Area, Equipment, Role } from "../types";
 import { equipmentLink, isLocalQrOrigin, qrSvgDataUrl } from "../lib/equipmentQr";
 import { t } from "../lib/i18n";
+import { EquipmentLabelEditor } from "./EquipmentLabelEditor";
 
 type Props = {
   equipment: Equipment | null;
@@ -25,6 +26,7 @@ export function EquipmentCard({
   onFaultReport,
 }: Props) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [labelEditorOpen, setLabelEditorOpen] = useState(false);
   if (!equipment)
     return (
       <section className="equipment-card workspace">
@@ -129,7 +131,7 @@ export function EquipmentCard({
             <button className="secondary" type="button" onClick={download}>
               {t("Скачать QR-код")}
             </button>
-            <button className="text-button" type="button" onClick={() => window.print()}>
+            <button className="text-button" type="button" onClick={() => setLabelEditorOpen(true)}>
               {t("Печать наклейки")}
             </button>
           </div>
@@ -154,6 +156,14 @@ export function EquipmentCard({
             </p>
           )}
         </section>
+      )}
+      {labelEditorOpen && (
+        <EquipmentLabelEditor
+          equipment={equipment}
+          area={area}
+          qr={qr}
+          onClose={() => setLabelEditorOpen(false)}
+        />
       )}
     </section>
   );

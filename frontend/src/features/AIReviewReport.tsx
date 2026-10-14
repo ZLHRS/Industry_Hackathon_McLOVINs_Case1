@@ -1,3 +1,4 @@
+import "./ratings.css";
 import { t, getLocale } from "../lib/i18n";
 import { readableLimitation } from "../lib/presentationText";
 import type { AiJob, ExecutorFeedback, Review, ReviewCheckStatus, ReviewReport } from "../types";
@@ -190,17 +191,8 @@ export function AIReviewReport({
       <p className="review-explanation">{review.explanation || t("Пояснение отсутствует.")}</p>
       <div className="review-meta">
         <span>{report.source ? sourceLabels[report.source] : t("Архивная проверка")}</span>
-        {typeof review.score === "number" && (
-          <span>
-            {t("Предварительная оценка ИИ:")} {review.score}/5
-          </span>
-        )}
-        {typeof review.master_score === "number" && (
-          <span>
-            {t("Оценка мастера:")} {review.master_score}/5
-          </span>
-        )}
       </div>
+      <ReviewScores ai={review.score} master={review.master_score} />
       {checks.length > 0 ? (
         <ul className="review-checks">
           {checks.map((check) => (
@@ -311,22 +303,12 @@ function ExecutorFeedbackEntry({
         </div>
         <span className={`review-badge ${decided || historical ? "pass" : "warning"}`}>{badge}</span>
       </div>
-      <div className="review-meta executor-review-score">
-        <span>
-          {t("Итоговая оценка:")}{" "}
-          {typeof feedback.effective_score === "number" ? `${feedback.effective_score}/5` : "—"}
-        </span>
-        {typeof feedback.score === "number" && (
-          <span>
-            {t("Предварительная оценка ИИ:")} {feedback.score}/5
-          </span>
-        )}
-        {typeof feedback.master_score === "number" && (
-          <span>
-            {t("Оценка мастера:")} {feedback.master_score}/5
-          </span>
-        )}
-      </div>
+      <ReviewScores
+        effective={feedback.effective_score}
+        ai={feedback.score}
+        master={feedback.master_score}
+        showEffective
+      />
       <dl className="review-timing">
         <div>
           <dt>{t("Активная работа")}</dt>
@@ -425,5 +407,39 @@ export function ExecutorFeedbackReport({
         </details>
       )}
     </>
+  );
+}
+
+function ReviewScores({
+  effective,
+  ai,
+  master,
+  showEffective = false,
+}: {
+  effective?: number | null;
+  ai?: number | null;
+  master?: number | null;
+  showEffective?: boolean;
+}) {
+  const scores = [
+    ...(showEffective ? [{ label: "Итоговая оценка:", value: effective, primary: true }] : []),
+    ...(typeof master === "number"
+      ? [{ label: "Оценка мастера:", value: master, primary: !showEffective }]
+      : []),
+    ...(typeof ai === "number" ? [{ label: "Предварительная оценка ИИ:", value: ai, primary: false }] : []),
+  ];
+  if (!scores.length) return null;
+  return (
+    <dl className="review-score-cards">
+      {scores.map(({ label, value, primary }) => (
+        <div className={primary ? "is-primary" : undefined} key={label}>
+          <dt>{t(label)}</dt>
+          <dd>
+            <strong>{typeof value === "number" ? value : "—"}</strong>
+            <span>/ 5</span>
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }

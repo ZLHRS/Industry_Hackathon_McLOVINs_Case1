@@ -1,5 +1,6 @@
 import { message, t } from "../lib/i18n";
 import { local, ruStatus } from "./OrderDetail";
+import "./readable-reasons.css";
 import { OrderReference } from "../components/OrderReference";
 import { useEffect, useRef, useState } from "react";
 import type { OrderDetail, SimilarRepair, SimilarRepairs, SimilarRepairsRequest } from "../types";
@@ -156,10 +157,21 @@ function SimilarRepairsResults({ input, onLoad, onViewEvidence }: Omit<Props, "r
               </span>
             </summary>
             <div className="similar-repair-detail">
-              <p className="similar-repair-reasons">
-                {item.match.reason_codes.map(reasonText).join(" · ")}
-                {item.match.matched_terms.length > 0 && ` · ${item.match.matched_terms.join(", ")}`}
-              </p>
+              <ul className="similar-repair-reasons readable-reasons">
+                {item.match.reason_codes.map((reason) => (
+                  <li key={reason}>{reasonText(reason)}</li>
+                ))}
+              </ul>
+              {item.match.matched_terms.length > 0 && (
+                <div className="similar-repair-terms">
+                  <span className="similar-repair-terms-label">{t("Совпавшие слова")}</span>
+                  {item.match.matched_terms.map((term, index) => (
+                    <span className="similar-repair-term" key={`${term}-${index}`}>
+                      {term}
+                    </span>
+                  ))}
+                </div>
+              )}
               <dl>
                 <div>
                   <dt>{t("Принят и закрыт мастером")}</dt>
@@ -218,9 +230,15 @@ function SimilarRepairsResults({ input, onLoad, onViewEvidence }: Omit<Props, "r
         </article>
       ))}
       {data && (data.notes?.length || data.truncated) ? (
-        <p className="muted similar-repairs-note">
-          {data.notes?.length ? data.notes.map(message).join(" ") : t("Показаны не все найденные ремонты.")}
-        </p>
+        data.notes?.length ? (
+          <ul className="muted similar-repairs-note readable-reasons">
+            {data.notes.map((note, index) => (
+              <li key={index}>{message(note)}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted similar-repairs-note">{t("Показаны не все найденные ремонты.")}</p>
+        )
       ) : null}
     </div>
   );

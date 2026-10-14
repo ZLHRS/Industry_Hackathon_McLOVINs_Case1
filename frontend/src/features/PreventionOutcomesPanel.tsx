@@ -2,6 +2,7 @@ import { Api } from "../api";
 import { OrderReference } from "../components/OrderReference";
 import { message, t } from "../lib/i18n";
 import { local, ruStatus } from "./OrderDetail";
+import "./readable-reasons.css";
 import { useEffect, useRef, useState } from "react";
 import type { AnalyticsQuery, PreventionOutcome, PreventionOutcomesPage } from "../types";
 
@@ -158,9 +159,15 @@ function PreventionOutcomesResults({ api, query }: Omit<Props, "revision">) {
         </nav>
       )}
       {page && (page.notes.length || page.truncated) ? (
-        <p className="muted prevention-outcomes-note">
-          {page.notes.length ? page.notes.map(message).join(" ") : t("Показаны не все найденные результаты.")}
-        </p>
+        page.notes.length ? (
+          <ul className="muted prevention-outcomes-note readable-reasons">
+            {page.notes.map((note, index) => (
+              <li key={index}>{message(note)}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted prevention-outcomes-note">{t("Показаны не все найденные результаты.")}</p>
+        )
       ) : null}
     </div>
   );

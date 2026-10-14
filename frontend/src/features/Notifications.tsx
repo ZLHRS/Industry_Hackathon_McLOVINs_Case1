@@ -6,43 +6,36 @@ import { Dialog } from "../components/Dialog";
 import { Icon } from "../components/Icon";
 import { NotificationGroupCard } from "./NotificationGroupCard";
 import type { NotificationGroupPage } from "../types";
+import type { PushStatus, usePushStatus } from "../lib/usePushStatus";
 import "./notifications.css";
 
-function decodePublicKey(value: string) {
-  const padded = `${value}${"=".repeat((4 - (value.length % 4)) % 4)}`.replace(/-/g, "+").replace(/_/g, "/");
-  const bytes = atob(padded);
-  return Uint8Array.from(bytes, (character) => character.charCodeAt(0));
-}
-
-function supportsPush() {
-  return (
-    "serviceWorker" in navigator &&
-    "PushManager" in window &&
-    "Notification" in window &&
-    window.isSecureContext
-  );
-}
-
-function initialPushState(supported: boolean, permission: NotificationPermission | "unsupported") {
-  if (!supported)
-    return t(
-      "Этот браузер не поддерживает фоновые уведомления или страница открыта не по защищённому адресу.",
-    );
-  if (permission === "denied") return t("Уведомления заблокированы в настройках браузера для этого сайта.");
-  if (permission === "granted") return t("Разрешение браузера выдано. Проверяем подписку этого устройства…");
-  return t("Получайте уведомления, когда приложение свёрнуто.");
-}
-
-export function NotificationButton({ count, onOpen }: { count: number; onOpen: () => void }) {
+export function NotificationButton({
+  count,
+  onOpen,
+  pushStatus,
+}: {
+  count: number;
+  onOpen: () => void;
+  pushStatus?: PushStatus;
+}) {
   return (
     <button
       type="button"
-      className="notification-button"
+      className={`notification-button${pushStatus === "enabled" ? " notification-button--connected" : ""}`}
       onClick={onOpen}
-      aria-label={t("Уведомления: непрочитанных {0}", [count])}
-      title={t("Уведомления")}
+      aria-label={
+        t("Уведомления: непрочитанных {0}", [count]) +
+        (pushStatus === "enabled" ? ". " + t("Уведомления на этом устройстве включены.") : "")
+      }
+      title={pushStatus === "enabled" ? t("Уведомления на этом устройстве включены.") : t("Уведомления")}
     >
       <Icon name="bell" />
+      {pushStatus === "enabled" && (
+        <span
+          className="notification-connection-dot"
+          aria-label={t("Уведомления на этом устройстве включены.")}
+        />
+      )}
       {count > 0 && <b aria-hidden="true">{count > 99 ? "99+" : count}</b>}
     </button>
   );
@@ -53,7 +46,7 @@ type NotificationsDialogProps = {
   onClose: () => void;
   onOrder: (orderId: string) => void;
   onFaultReport: (reportId: string) => void;
-  onPushBound?: (subscriptionId: string) => void;
+  push: ReturnType<typeof usePushStatus>;
   revision: number;
 };
 
@@ -62,7 +55,7 @@ export function NotificationsDialog({
   onClose,
   onOrder,
   onFaultReport,
-  onPushBound,
+  push,
   revision,
 }: NotificationsDialogProps) {
   const [result, setResult] = useState<{
@@ -70,11 +63,6 @@ export function NotificationsDialog({
     offset: number;
     unreadOnly: boolean;
   }>();
-  const [pushSupported] = useState(() => supportsPush());
-  const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">(() =>
-    supportsPush() ? Notification.permission : "unsupported",
-  );
-  const [pushState, setPushState] = useState(() => initialPushState(pushSupported, pushPermission));
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [error, setError] = useState("");
   const [offset, setOffset] = useState(0);
@@ -100,66 +88,26 @@ export function NotificationsDialog({
       active = false;
     };
   }, [api, revision, offset, unreadOnly, reload]);
-  useEffect(() => {
-    if (pushSupported && pushPermission === "granted") {
-      void navigator.serviceWorker.ready
-        .then((registration) => registration.pushManager.getSubscription())
-        .then((subscription) => {
-          if (subscription) setPushState(t("Уведомления на этом устройстве включены."));
-          else setPushState(t("Разрешение браузера выдано, но устройство ещё не подписано на уведомления."));
-        })
-        .catch(() => setPushState(t("Не удалось проверить подписку устройства.")));
-    }
-  }, [pushPermission, pushSupported]);
-  async function enablePush() {
-    if (!pushSupported) {
-      return;
-    }
-    if (Notification.permission === "denied") {
-      setPushState(t("Уведомления заблокированы в настройках браузера для этого сайта."));
-      return;
-    }
-    try {
-      const config = await api.pushConfig();
-      if (!config.enabled || !config.public_key) {
-        setPushState(t("Фоновые уведомления пока недоступны. Обратитесь к администратору."));
-        return;
-      }
-      const permission =
-        Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
-      setPushPermission(permission);
-      if (permission !== "granted") {
-        setPushState(t("Разрешение на уведомления не выдано."));
-        return;
-      }
-      const registration = await navigator.serviceWorker.ready;
-      const subscription =
-        (await registration.pushManager.getSubscription()) ??
-        (await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: decodePublicKey(config.public_key),
-        }));
-      const registered = await api.subscribePush(subscription.toJSON());
-      onPushBound?.(registered.id);
-      setPushState(t("Уведомления на этом устройстве включены."));
-    } catch {
-      setPushState(t("Не удалось включить уведомления. Повторите позже."));
-    }
-  }
 
   return (
     <Dialog title={t("Уведомления")} onClose={onClose} size="wide">
       <section className="notification-drawer">
         <header className="notification-drawer-tools">
-          <div className="push-control">
+          <div className={`push-control push-control--${push.status}`} aria-busy={push.status === "checking"}>
+            <span className="push-control-icon" aria-hidden="true">
+              <Icon name={push.status === "enabled" ? "check" : "bell"} />
+            </span>
             <div className="push-control-copy">
               <strong>{t("Уведомления на устройстве")}</strong>
-              <small>{message(pushState)}</small>
+              <span className="push-status-badge" role="status">
+                {t(pushLabels[push.status])}
+              </span>
+              <small>{t(pushDescriptions[push.status])}</small>
             </div>
-            {pushPermission !== "denied" && pushSupported && (
-              <button type="button" className="secondary" onClick={() => void enablePush()}>
+            {["off", "error"].includes(push.status) && (
+              <button type="button" className="secondary" onClick={() => void push.enable()}>
                 <Icon name="bell" />
-                {pushPermission === "granted" ? t("Подключить устройство") : t("Включить уведомления")}
+                {push.status === "error" ? t("Повторить") : t("Включить уведомления")}
               </button>
             )}
           </div>
@@ -248,3 +196,21 @@ export function NotificationsDialog({
     </Dialog>
   );
 }
+
+const pushLabels: Record<PushStatus, string> = {
+  checking: "Проверяем подключение",
+  enabled: "Включены",
+  off: "Не подключены",
+  blocked: "Заблокированы браузером",
+  unavailable: "Недоступны",
+  error: "Не удалось подключить",
+};
+const pushDescriptions: Record<PushStatus, string> = {
+  checking: "Проверяем разрешение и связь этого устройства с сервером.",
+  enabled:
+    "Это устройство подключено. Уведомления будут приходить и при свёрнутом приложении, пока действует вход.",
+  off: "Получайте уведомления, когда приложение свёрнуто.",
+  blocked: "Уведомления заблокированы в настройках браузера для этого сайта.",
+  unavailable: "Фоновые уведомления недоступны. Проверьте поддержку браузера и настройку сервера.",
+  error: "Не удалось подтвердить подключение. Проверьте интернет и повторите попытку.",
+};

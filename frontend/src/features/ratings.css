@@ -1,0 +1,306 @@
+.ratings-board {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+  align-self: start;
+}
+.ratings-board-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 1rem 1.15rem;
+  background: var(--surface-soft);
+  border-bottom: 1px solid var(--line);
+}
+.analytics .ratings-board-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.ratings-board-head > span {
+  font-size: 0.72rem;
+  color: var(--muted-ink);
+  white-space: nowrap;
+}
+.ratings-board-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ratings-entry {
+  padding: 1.15rem;
+  min-width: 0;
+}
+.ratings-entry + .ratings-entry {
+  border-top: 1px solid var(--line);
+}
+.ratings-entry-head {
+  display: grid;
+  grid-template-columns: 2.2rem minmax(0, 1fr) auto;
+  gap: 0.7rem;
+  align-items: center;
+}
+.ratings-place {
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 0.7rem;
+  background: var(--surface-sunken);
+  color: var(--muted-ink);
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+.ratings-place--1 {
+  background: #fcf0ca;
+  color: #77540b;
+}
+.ratings-place--2 {
+  background: #e7edf0;
+  color: #455b67;
+}
+.ratings-place--3 {
+  background: #f6e6d7;
+  color: #805a38;
+}
+.ratings-person {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.ratings-person > strong {
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+.ratings-person > span {
+  font-size: 0.72rem;
+  color: var(--muted-ink);
+}
+.ratings-total {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ratings-total strong {
+  font-size: 1.5rem;
+  letter-spacing: -0.04em;
+  color: var(--teal-deep);
+}
+.ratings-total small {
+  font-size: 0.7rem;
+  color: var(--muted-ink);
+}
+.ratings-progress {
+  margin: 0.9rem 0;
+  height: 5px;
+  background: var(--surface-sunken);
+  border-radius: 9px;
+  overflow: hidden;
+}
+.ratings-progress span {
+  display: block;
+  height: 100%;
+  background: var(--teal);
+  border-radius: inherit;
+}
+.ratings-quick-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin: 0;
+}
+.ratings-quick-metrics > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.6rem;
+  background: var(--surface-soft);
+  border-radius: 7px;
+}
+.ratings-quick-metrics dt {
+  font-size: 0.65rem;
+  line-height: 1.45;
+  color: var(--muted-ink);
+  overflow-wrap: anywhere;
+  flex: 1;
+}
+.ratings-quick-metrics dd {
+  margin: 0;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.ratings-data-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+  margin-top: 0.65rem;
+  font-size: 0.7rem;
+  color: var(--muted-ink);
+}
+.ratings-data-notes:empty {
+  display: none;
+}
+.ratings-small-sample {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+  color: #855d16;
+}
+.ratings-small-sample .icon {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+.ratings-breakdown {
+  margin-top: 0.7rem;
+}
+.ratings-breakdown > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  list-style: none;
+  cursor: pointer;
+  color: var(--teal-deep);
+  font-size: 0.78rem;
+  font-weight: 650;
+  min-height: 44px;
+  gap: 0.7rem;
+}
+.ratings-breakdown > summary::-webkit-details-marker {
+  display: none;
+}
+.ratings-breakdown > summary .icon {
+  width: 1rem;
+  height: 1rem;
+  transition: transform 0.15s;
+}
+.ratings-breakdown[open] > summary .icon {
+  transform: rotate(90deg);
+}
+.ratings-breakdown > summary:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+.ratings-breakdown .personal-rating-metrics {
+  grid-template-columns: 1fr;
+  gap: 0.55rem;
+}
+.ratings-breakdown .personal-rating-metric {
+  padding: 0.8rem;
+}
+.ratings-breakdown .personal-rating-method {
+  margin-top: 0.65rem;
+  padding-inline: 0.8rem;
+}
+.ratings-board-empty {
+  padding: 1.2rem;
+  color: var(--muted-ink);
+  line-height: 1.5;
+  font-size: 0.85rem;
+}
+.ratings-notes {
+  grid-column: 1 / -1;
+  padding: 0.2rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+.ratings-notes summary {
+  padding-block: 0.75rem;
+  min-height: 44px;
+  cursor: pointer;
+  color: var(--teal-deep);
+  font-weight: 650;
+}
+.ratings-notes ul {
+  margin: 0 0 0.8rem;
+  padding-left: 1.1rem;
+  color: var(--muted-ink);
+}
+.ratings-notes li + li {
+  margin-top: 0.5rem;
+}
+@media (max-width: 460px) {
+  .ratings-entry {
+    padding: 0.9rem 0.8rem;
+  }
+  .ratings-entry-head {
+    gap: 0.5rem;
+    grid-template-columns: 1.8rem minmax(0, 1fr) auto;
+  }
+  .ratings-place {
+    width: 1.8rem;
+    height: 1.8rem;
+    border-radius: 0.5rem;
+  }
+  .ratings-total {
+    flex-direction: column;
+    gap: 0;
+    align-items: flex-end;
+  }
+  .ratings-total strong {
+    font-size: 1.3rem;
+  }
+  .ratings-quick-metrics {
+    gap: 0.3rem;
+  }
+  .ratings-quick-metrics > div {
+    padding: 0.5rem 0.4rem;
+  }
+}
+@media print {
+  .ratings-entry {
+    break-inside: avoid;
+  }
+}
+.review-score-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: 0.65rem;
+  margin: 1rem 0;
+}
+.review-score-cards > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 0.9rem 1rem;
+  background: var(--surface-soft);
+}
+.review-score-cards > div.is-primary {
+  background: var(--teal-soft);
+  border-color: #b8d6ca;
+}
+.review-score-cards dt {
+  color: var(--muted-ink);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  flex: 1;
+}
+.review-score-cards dd {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-variant-numeric: tabular-nums;
+}
+.review-score-cards strong {
+  font-size: 1.8rem;
+  line-height: 1.2;
+  color: var(--teal-deep);
+}
+.review-score-cards dd > span {
+  color: var(--muted-ink);
+  font-size: 0.8rem;
+}

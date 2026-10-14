@@ -72,8 +72,15 @@ async def _team(database):
             equipment_type="pump",
             criticality=3,
         )
+        secondary_equipment = Equipment(
+            inventory_number="BR-PUMP-2",
+            name="Reserve pump",
+            area_id=area.id,
+            equipment_type="pump",
+            criticality=3,
+        )
         fault = FaultCode(code="BR-F", name="Wear", specialty="m")
-        session.add_all((equipment, fault))
+        session.add_all((equipment, secondary_equipment, fault))
         await session.flush()
 
         def principal(person):
@@ -90,6 +97,7 @@ async def _team(database):
             "area": area.id,
             "brigade": brigade.id,
             "equipment": equipment.id,
+            "secondary_equipment": secondary_equipment.id,
             "fault": fault.id,
             "master": principal(master),
             "first": principal(first),
@@ -216,7 +224,12 @@ async def test_brigade_stale_snapshot_and_explicit_reassign_revoke_access(databa
     other = await create_order(
         database,
         data["master"],
-        _body(data).model_copy(update={"executor_id": data["second"].employee_id}),
+        _body(data).model_copy(
+            update={
+                "equipment_id": data["secondary_equipment"],
+                "executor_id": data["second"].employee_id,
+            }
+        ),
         "brigade-new-003",
     )
     other_id = UUID(other["order_id"])

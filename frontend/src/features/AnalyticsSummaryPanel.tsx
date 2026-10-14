@@ -1,6 +1,6 @@
 import { Icon } from "../components/Icon";
 import { Skeleton } from "../components/Skeleton";
-import { t } from "../lib/i18n";
+import { getLocale, t } from "../lib/i18n";
 import { readableLimitation } from "../lib/presentationText";
 import { summarySections } from "../lib/summaryPresentation";
 import type { AnalyticsSummary } from "../types";
@@ -22,6 +22,8 @@ export function AnalyticsSummaryPanel({
   onGenerate: () => void;
 }) {
   const sections = summary ? summarySections(summary.text, period) : null;
+  const highlights = summary?.highlights ?? [];
+  const snapshotTime = summary?.as_of ? new Date(summary.as_of) : null;
   return (
     <section className="analytics-section ai-summary-panel" aria-label={t("ИИ-сводка мастера")}>
       <header className="ai-summary-head">
@@ -66,32 +68,87 @@ export function AnalyticsSummaryPanel({
                 : t("Обзор показателей без ИИ-интерпретации.")}
             </span>
           </div>
-          <div className={`ai-summary-columns ${sections.actions.length ? "has-actions" : ""}`}>
-            <section className="ai-summary-facts">
-              <h3>{t("Главное за период")}</h3>
-              {sections.facts.length ? (
-                <ul>
-                  {sections.facts.map((fact, index) => (
-                    <li key={index}>{fact}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p>{summary.text}</p>
+          {summary.row_count != null && (
+            <div className="ai-summary-snapshot">
+              <span>{t("В основе сводки: {0} нарядов", [summary.row_count])}</span>
+              {snapshotTime && !Number.isNaN(snapshotTime.getTime()) && (
+                <span>
+                  {t("Срез данных: {0}", [
+                    new Intl.DateTimeFormat(getLocale(), {
+                      dateStyle: "short",
+                      timeStyle: "short",
+                      timeZone: summary.timezone ?? "UTC",
+                    }).format(snapshotTime),
+                  ])}{" "}
+                  · {summary.timezone ?? "UTC"}
+                </span>
               )}
-            </section>
-            {sections.actions.length > 0 && (
-              <section className="ai-summary-actions">
-                <h3>{t("Рекомендуемые действия")}</h3>
-                <ol>
-                  {sections.actions.map((action, index) => (
-                    <li key={index}>
-                      <span>{action}</span>
-                    </li>
-                  ))}
-                </ol>
+              {!!summary.synthetic_count && (
+                <span className="ai-summary-demo">
+                  {t("Учебных нарядов: {0}. Сводка включает демонстрационные данные.", [
+                    summary.synthetic_count,
+                  ])}
+                </span>
+              )}
+            </div>
+          )}
+          {highlights.length > 0 ? (
+            <div className="ai-summary-highlights">
+              {highlights.map((item) => (
+                <section className={`ai-summary-highlight is-${item.priority}`} key={item.evidence_id}>
+                  <header>
+                    <span className="ai-summary-priority">
+                      {item.priority === "attention"
+                        ? t("Требует внимания")
+                        : item.priority === "review"
+                          ? t("Проверить")
+                          : t("Для наблюдения")}
+                    </span>
+                    <h3>{item.title}</h3>
+                  </header>
+                  <p className="ai-summary-fact">{item.fact}</p>
+                  {item.context.length > 0 && (
+                    <ul className="ai-summary-context">
+                      {item.context.map((context, index) => (
+                        <li key={index}>{context}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="ai-summary-next-step">
+                    <strong>{t("Следующий шаг")}</strong>
+                    <p>{item.next_step}</p>
+                  </div>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <div className={`ai-summary-columns ${sections.actions.length ? "has-actions" : ""}`}>
+              <section className="ai-summary-facts">
+                <h3>{t("Главное за период")}</h3>
+                {sections.facts.length ? (
+                  <ul>
+                    {sections.facts.map((fact, index) => (
+                      <li key={index}>{fact}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>{summary.text}</p>
+                )}
               </section>
-            )}
-          </div>
+              {sections.actions.length > 0 && (
+                <section className="ai-summary-actions">
+                  <h3>{t("Рекомендуемые действия")}</h3>
+                  <ol>
+                    {sections.actions.map((action, index) => (
+                      <li key={index}>
+                        <span>{action}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+              )}
+            </div>
+          )}
           {summary.limitations.length > 0 && (
             <details className="ai-summary-limitations">
               <summary>{t("О данных и ограничениях сводки")}</summary>

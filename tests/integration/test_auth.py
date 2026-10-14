@@ -488,3 +488,33 @@ async def test_default_login_budget_allows_corrections_but_still_blocks_abuse(da
         assert blocked.status_code == 429
         assert "retry-after" in blocked.headers
         await token(client, "master")
+
+
+async def test_independent_devices_keep_sessions_and_logout_only_current(database):
+    await people(database)
+    app = app_for(database)
+    async with (
+        app.router.lifespan_context(app),
+        AsyncClient(transport=ASGITransport(app), base_url="http://testserver") as first,
+        AsyncClient(transport=ASGITransport(app), base_url="http://testserver") as second,
+    ):
+        first_token = await token(first)
+        response = await second.post(
+            "/api/v1/auth/login", json={"login": "executor", "secret": SECRET}
+        )
+        assert response.status_code == 200
+        second_token = response.json()["access_token"]
+        assert first_token != second_token
+        remaining = datetime.fromisoformat(response.json()["expires_at"]) - datetime.now(UTC)
+        assert 28790 < remaining.total_seconds() <= 28800
+        for client, value in [(first, first_token), (second, second_token)]:
+            assert (await client.get("/api/v1/auth/me", headers=bearer(value))).status_code == 200
+        assert (
+            await first.post("/api/v1/auth/logout", headers=bearer(first_token))
+        ).status_code == 204
+        assert (
+            await first.get("/api/v1/auth/me", headers=bearer(first_token))
+        ).status_code == 401
+        assert (
+            await second.get("/api/v1/auth/me", headers=bearer(second_token))
+        ).status_code == 200

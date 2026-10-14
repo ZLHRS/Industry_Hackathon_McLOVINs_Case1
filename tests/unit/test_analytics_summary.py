@@ -102,6 +102,80 @@ async def test_grounded_model_selection_renders_only_server_facts(
     assert "Аномалий уровня «высокий»: 1." in result.text
     assert "Просроченных нарядов: 3." in result.text
     assert "PRIVATE" not in result.text
+    assert result.highlights[0].priority == "attention"
+    assert result.highlights[0].context == ["Повторные неисправности: 1."]
+    assert result.highlights[1].fact == "Просроченных нарядов: 3."
+    assert "препятствие" in result.highlights[1].next_step
+    assert result.row_count == 11
+    assert result.as_of == "2026-10-07T00:00:00Z"
+
+
+@pytest.mark.asyncio
+async def test_missing_data_is_prioritized_without_calling_it_zero_downtime() -> None:
+    report = _report(
+        downtime={"known_seconds": 0, "unknown_order_count": 8},
+        meta=MetaView(as_of=datetime(2026, 10, 7, tzinfo=UTC), row_count=11, synthetic_count=7),
+    )
+    result = await summary.summarize_analytics(report, _config(api_key=None))
+    assert "downtime_gaps" in result.evidence_ids
+    missing = next(row for row in result.highlights if row.evidence_id == "downtime_gaps")
+    assert "8" in missing.fact and "не подтверждён" in missing.fact
+    assert result.synthetic_count == 7
+    assert all("Ограничений интерпретации рейтингов" not in row.fact for row in result.highlights)
+
+
+def test_downtime_context_stays_local_and_duration_discloses_sample_size() -> None:
+    from uuid import UUID
+
+    report = _report(
+        downtime={
+            "known_seconds": 3600,
+            "planned_seconds": 600,
+            "unplanned_seconds": 3000,
+            "unknown_order_count": 0,
+            "by_equipment": [
+                {
+                    "equipment_id": UUID(int=1),
+                    "equipment_name": "PRIVATE PUMP",
+                    "known_seconds": 3600,
+                    "order_ids": [],
+                }
+            ],
+        },
+        durations=DurationView(work_seconds=5400, sample_sizes={"work": 2}),
+    )
+    data = report.model_dump(mode="json")
+    candidates = summary._candidates(data)
+    payload = summary._payload(candidates, _config())
+    assert "PRIVATE PUMP" not in json.dumps(payload)
+    result = summary._render(
+        data,
+        candidates,
+        summary._Selection(
+            evidence_ids=["downtime_known", "work_duration"], recommendation_codes=["review_time"]
+        ),
+        "rules",
+        None,
+    )
+    assert "PRIVATE PUMP: 1 ч 0 мин." in result.highlights[0].context
+    assert "Расчёт по 2 нарядам" in result.highlights[1].context[0]
+
+
+@pytest.mark.asyncio
+async def test_summary_preserves_report_timezone_and_response_means_first_answer() -> None:
+    report = _report(
+        period=PeriodView(
+            kind="day",
+            timezone="UTC",
+            from_=datetime(2026, 10, 6, tzinfo=UTC),
+            to=datetime(2026, 10, 7, tzinfo=UTC),
+            label="UTC day",
+        )
+    )
+    result = await summary.summarize_analytics(report, _config(api_key=None))
+    assert result.timezone == "UTC"
+    assert "первого ответа" in summary._GUIDANCE["response_duration"][2]
+    assert "начала" not in summary._GUIDANCE["response_duration"][2]
 
 
 @pytest.mark.asyncio

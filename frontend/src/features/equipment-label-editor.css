@@ -1,0 +1,410 @@
+.equipment-label-editor {
+  display: grid;
+  gap: 1rem;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 1rem;
+}
+.equipment-label-editor-body {
+  display: grid;
+  grid-template-columns: minmax(18rem, 0.88fr) minmax(20rem, 1.12fr);
+  gap: 1.1rem;
+  align-items: start;
+}
+.equipment-label-controls {
+  display: grid;
+  gap: 0.65rem;
+}
+.equipment-label-controls fieldset {
+  display: grid;
+  min-width: 0;
+  gap: 0.62rem;
+  margin: 0;
+  padding: 0.8rem;
+  border: 1px solid #d5e3df;
+  border-radius: 9px;
+  background: #fbfefd;
+}
+.equipment-label-controls legend {
+  padding: 0 0.25rem;
+  color: #254941;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+.equipment-label-controls label:not(.equipment-label-toggle),
+.equipment-label-preview-toolbar label {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+  color: #42544f;
+  font-size: 0.78rem;
+  font-weight: 720;
+}
+.equipment-label-controls input,
+.equipment-label-controls select,
+.equipment-label-preview-toolbar select {
+  min-width: 0;
+  min-height: 38px;
+  padding: 0.42rem 0.55rem;
+  border: 1px solid #bdd0ca;
+  border-radius: 7px;
+  background: #fff;
+  color: #1d302c;
+}
+.equipment-label-controls small {
+  color: #a0382d;
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+.equipment-label-controls .equipment-label-range {
+  color: #61716d;
+  font-weight: 550;
+}
+.equipment-label-number-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+.equipment-label-toggles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem 0.6rem;
+}
+.equipment-label-toggle {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.42rem;
+  color: #354843;
+  font-size: 0.8rem;
+}
+.equipment-label-toggle input {
+  inline-size: 1rem;
+  block-size: 1rem;
+  margin: 0;
+  accent-color: #0b7d70;
+}
+.equipment-label-position-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.equipment-label-position-actions button {
+  min-height: 34px;
+  font-size: 0.75rem;
+}
+.equipment-label-field-note,
+.equipment-label-print-hint {
+  margin: 0;
+  color: #61716d;
+  font-size: 0.76rem;
+  line-height: 1.42;
+}
+.equipment-label-preview-wrap {
+  display: grid;
+  min-width: 0;
+  gap: 0.65rem;
+}
+.equipment-label-preview-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.equipment-label-preview-title {
+  margin: 0;
+  color: #17675c;
+  font-size: 0.76rem;
+  font-weight: 850;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+.equipment-label-preview-toolbar label {
+  grid-template-columns: auto auto;
+  align-items: center;
+}
+.equipment-label-preview-toolbar select {
+  min-height: 34px;
+}
+.equipment-label-preview-surface {
+  display: grid;
+  min-height: 24rem;
+  place-items: start;
+  overflow: auto;
+  padding: 1.25rem;
+  border: 1px dashed #b4c8c1;
+  border-radius: 10px;
+  background-color: #edf3f0;
+  background-image: radial-gradient(#c9d6d2 0.7px, transparent 0.7px);
+  background-size: 7px 7px;
+}
+.equipment-label-preview-canvas {
+  position: relative;
+  flex: 0 0 auto;
+  margin: auto;
+}
+.equipment-label-preview-scale {
+  position: absolute;
+  inset: 0 auto auto 0;
+  transform-origin: top left;
+}
+.equipment-label-sheet {
+  position: relative;
+  inline-size: var(--paper-width);
+  block-size: var(--paper-height);
+  overflow: hidden;
+  border: 0.25mm solid #afbdb8;
+  background: #fff;
+  box-shadow: 0 9px 22px rgb(30 54 48 / 16%);
+}
+.equipment-label-sheet--label {
+  border: 0;
+}
+.equipment-label-print {
+  position: absolute;
+  inset: var(--label-y) auto auto var(--label-x);
+  display: grid;
+  inline-size: var(--label-width);
+  block-size: var(--label-height);
+  min-inline-size: 0;
+  overflow: hidden;
+  padding: var(--label-padding);
+  border: 0.25mm solid #17201e;
+  border-radius: 1.1mm;
+  background: #fff;
+  color: #101513;
+  font-size: var(--label-font-size);
+  line-height: 1.2;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.equipment-label-print:focus-visible {
+  outline: 2px solid #0b7d70;
+  outline-offset: 2px;
+}
+.equipment-label-print--left {
+  grid-template-columns: var(--label-qr-size) minmax(0, 1fr);
+  align-items: center;
+  gap: min(2.4mm, 0.55rem);
+}
+.equipment-label-print--right {
+  grid-template-columns: minmax(0, 1fr) var(--label-qr-size);
+  align-items: center;
+  gap: min(2.4mm, 0.55rem);
+}
+.equipment-label-print--right .equipment-label-qr {
+  grid-column: 2;
+  grid-row: 1;
+}
+.equipment-label-print--right .equipment-label-copy {
+  grid-column: 1;
+  grid-row: 1;
+}
+.equipment-label-print--top {
+  grid-template-areas: "copy" "qr";
+  grid-template-rows: minmax(0, 1fr) var(--label-qr-size);
+  justify-items: center;
+  gap: min(1.8mm, 0.45rem);
+}
+.equipment-label-print--top .equipment-label-qr {
+  grid-area: qr;
+}
+.equipment-label-print--top .equipment-label-copy {
+  grid-area: copy;
+  align-self: center;
+}
+.equipment-label-print--qr-only {
+  grid-template: 1fr / 1fr;
+  place-items: center;
+  gap: 0;
+}
+.equipment-label-print--qr-only .equipment-label-qr {
+  grid-area: 1 / 1;
+}
+.equipment-label-qr {
+  display: grid;
+  inline-size: var(--label-qr-size);
+  block-size: var(--label-qr-size);
+  place-items: center;
+  background: #fff;
+}
+.equipment-label-qr img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  image-rendering: pixelated;
+}
+.equipment-label-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.4em;
+  overflow: hidden;
+}
+.equipment-label-copy strong,
+.equipment-label-copy span,
+.equipment-label-copy small {
+  display: block;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.equipment-label-copy strong {
+  font-size: 1.15em;
+  font-weight: 850;
+  letter-spacing: -0.015em;
+}
+.equipment-label-copy span {
+  font-weight: 670;
+}
+.equipment-label-copy small {
+  color: #3c4845;
+  font-size: 0.83em;
+}
+.equipment-label-overflow-warning {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #d59b45;
+  border-radius: 8px;
+  background: #fff7e8;
+  color: #70440b;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+.equipment-label-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+@media (max-width: 760px) {
+  .equipment-label-editor {
+    padding: 0.8rem;
+  }
+  .equipment-label-editor-body {
+    grid-template-columns: 1fr;
+  }
+  .equipment-label-preview-surface {
+    min-height: 18rem;
+  }
+}
+@media (max-width: 460px) {
+  .equipment-label-number-pair,
+  .equipment-label-toggles {
+    grid-template-columns: 1fr;
+  }
+  .equipment-label-preview-toolbar {
+    align-items: start;
+    flex-direction: column;
+  }
+  .equipment-label-editor-actions > * {
+    flex: 1 1 0;
+  }
+}
+
+@page equipment-a4-portrait {
+  size: A4 portrait;
+  margin: 0;
+}
+@page equipment-a4-landscape {
+  size: A4 landscape;
+  margin: 0;
+}
+@page equipment-label {
+  size: auto;
+  margin: 0;
+}
+@media print {
+  html:has(.equipment-label-editor),
+  body:has(.equipment-label-editor) {
+    min-height: 0 !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  body:has(.equipment-label-sheet--a4-portrait) {
+    page: equipment-a4-portrait;
+  }
+  body:has(.equipment-label-sheet--a4-landscape) {
+    page: equipment-a4-landscape;
+  }
+  body:has(.equipment-label-sheet--label) {
+    page: equipment-label;
+  }
+  .app-shell:has(.equipment-label-editor) > :not(:has(.equipment-label-editor)),
+  .app-main:has(.equipment-label-editor) > :not(:has(.equipment-label-editor)),
+  .equipment-card:has(.equipment-label-editor) > :not(:has(.equipment-label-editor)),
+  .dialog:has(.equipment-label-editor) > :not(.equipment-label-editor),
+  .equipment-label-editor > :not(.equipment-label-editor-body),
+  .equipment-label-editor-body > :not(.equipment-label-preview-wrap),
+  .equipment-label-preview-wrap > :not(.equipment-label-preview-surface),
+  .equipment-label-preview-surface > :not(.equipment-label-preview-canvas),
+  .equipment-label-preview-canvas > :not(.equipment-label-preview-scale),
+  .equipment-label-preview-scale > :not(.equipment-label-sheet) {
+    display: none !important;
+  }
+  .app-shell:has(.equipment-label-editor),
+  .app-main:has(.equipment-label-editor),
+  .equipment-card:has(.equipment-label-editor),
+  .dialog:has(.equipment-label-editor) {
+    display: block !important;
+    position: static !important;
+    max-width: none !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    border: 0 !important;
+    background: transparent !important;
+  }
+  :where(.app-shell:has(.equipment-label-editor)) * {
+    visibility: hidden !important;
+  }
+  .equipment-label-sheet,
+  .equipment-label-sheet * {
+    visibility: visible !important;
+  }
+  .equipment-label-editor,
+  .equipment-label-editor-body,
+  .equipment-label-preview-wrap,
+  .equipment-label-preview-surface,
+  .equipment-label-preview-canvas,
+  .equipment-label-preview-scale {
+    display: contents !important;
+    transform: none !important;
+  }
+  .equipment-label-sheet {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    inline-size: var(--paper-width) !important;
+    block-size: var(--paper-height) !important;
+    width: var(--paper-width) !important;
+    height: var(--paper-height) !important;
+    margin: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+}
+
+/* Browser-menu printing also rejects invalid drafts and clipped content. */
+.equipment-label-print-error {
+  display: none;
+}
+@media print {
+  .equipment-label-editor:is(:has(input[aria-invalid="true"]), :has(.equipment-label-overflow-warning))
+    .equipment-label-sheet {
+    display: none !important;
+  }
+  .equipment-label-editor:is(:has(input[aria-invalid="true"]), :has(.equipment-label-overflow-warning))
+    > .equipment-label-print-error {
+    display: block !important;
+    visibility: visible !important;
+    position: absolute;
+    top: 12mm;
+    left: 12mm;
+    right: 12mm;
+    margin: 0;
+    color: #000;
+    font-size: 12pt;
+  }
+}

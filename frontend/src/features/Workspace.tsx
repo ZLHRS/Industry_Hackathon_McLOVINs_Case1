@@ -12,6 +12,7 @@ import { roleLabels } from "../lib/roleAccess";
 import type { DirectoryFilters, DirectorySection } from "../lib/navigation";
 import "./workspace-ux.css";
 import "./reference-ux.css";
+import "./readable-reasons.css";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "../components/Dialog";
 import { Icon, type IconName } from "../components/Icon";
@@ -1127,6 +1128,14 @@ export function CreateOrderDialog({
         beforePhotos.length ? { files: beforePhotos, aiShareAllowed: beforePhotosShared } : undefined,
       );
     } catch (caught) {
+      if (caught instanceof ApiError && caught.detail === "equipment_has_active_order") {
+        setError(
+          t(
+            "Оборудование уже занято: есть незавершённый наряд. Завершите текущий наряд или выберите другое оборудование. Введённые данные сохранены в форме.",
+          ),
+        );
+        return;
+      }
       if (caught instanceof ApiError && caught.detail === "brigade_membership_changed") {
         brigadeRequestId.current += 1;
         setInput((current) => ({ ...current, brigade_id: "", participant_ids: [], executor_id: "" }));
@@ -1440,12 +1449,29 @@ export function CreateOrderDialog({
                       <details className="brigade-rationale" data-testid={`brigade-why-${option.brigade.id}`}>
                         <summary>{t("Почему этот состав")}</summary>
                         <div data-testid={`brigade-reasons-${option.brigade.id}`}>
-                          <p>{option.reasons.map(message).join(" · ") || t("Причины не указаны.")}</p>
-                          <p>
-                            {responsibleChosenManually
-                              ? t("Ответственный выбран мастером.")
-                              : `${t("Ответственный:")} ${option.responsible_reasons.map(message).join(" · ") || "—"}`}
-                          </p>
+                          {option.reasons.length > 0 ? (
+                            <ul className="readable-reasons">
+                              {option.reasons.map((reason, index) => (
+                                <li key={index}>{message(reason)}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p>{t("Причины не указаны.")}</p>
+                          )}
+                          {responsibleChosenManually ? (
+                            <p>{t("Ответственный выбран мастером.")}</p>
+                          ) : option.responsible_reasons.length > 0 ? (
+                            <>
+                              <p>{t("Ответственный:")}</p>
+                              <ul className="readable-reasons">
+                                {option.responsible_reasons.map((reason, index) => (
+                                  <li key={index}>{message(reason)}</li>
+                                ))}
+                              </ul>
+                            </>
+                          ) : (
+                            <p>{t("Ответственный:")} —</p>
+                          )}
                           {result.notes.map((note, index) => (
                             <p className="muted" key={index}>
                               {message(note)}
@@ -1459,20 +1485,26 @@ export function CreateOrderDialog({
               {brigadeOptions &&
                 brigadeOptions.items.length > 0 &&
                 (brigadeOptions.context.specialty_source !== "confirmed" ||
-                  !brigadeOptions.items.some((item) => item.recommended)) && (
+                  !brigadeOptions.items.some((item) => item.recommended)) &&
+                (brigadeOptions.notes.length > 0 ? (
+                  <ul className="muted suggestion-note readable-reasons" data-testid="brigade-context-note">
+                    {brigadeOptions.notes.map((note, index) => (
+                      <li key={index}>{message(note)}</li>
+                    ))}
+                  </ul>
+                ) : (
                   <p className="muted suggestion-note" data-testid="brigade-context-note">
-                    {brigadeOptions.notes.map(message).join(" · ") ||
-                      (brigadeOptions.context.specialty_source === "inferred"
-                        ? t("Специальность определена по описанию: {0}", [
-                            brigadeOptions.context.specialty ?? "—",
-                          ])
-                        : brigadeOptions.context.specialty_source === "unknown"
-                          ? t("Специальность не определена")
-                          : brigadeOptions.context.specialty
-                            ? t("Нет подтверждённого специалиста по {0}", [brigadeOptions.context.specialty])
-                            : t("Подтверждённой рекомендации по бригаде нет."))}
+                    {brigadeOptions.context.specialty_source === "inferred"
+                      ? t("Специальность определена по описанию: {0}", [
+                          brigadeOptions.context.specialty ?? "—",
+                        ])
+                      : brigadeOptions.context.specialty_source === "unknown"
+                        ? t("Специальность не определена")
+                        : brigadeOptions.context.specialty
+                          ? t("Нет подтверждённого специалиста по {0}", [brigadeOptions.context.specialty])
+                          : t("Подтверждённой рекомендации по бригаде нет.")}
                   </p>
-                )}
+                ))}
               {activeSuggestions && activeSuggestions.executors.length > 0 && (
                 <section>
                   <h4>{t("Исполнители")}</h4>
@@ -1499,7 +1531,13 @@ export function CreateOrderDialog({
                             {person.display_name} · {person.specialty} · {person.grade} {t("разряд")}
                           </strong>
                           {person.reasons.length > 0 && (
-                            <small>{person.reasons.map(suggestionText).join(" · ")}</small>
+                            <small className="suggestion-reasons">
+                              {person.reasons.map((reason, index) => (
+                                <span className="suggestion-reason" key={index}>
+                                  {suggestionText(reason)}
+                                </span>
+                              ))}
+                            </small>
                           )}
                           <small>
                             {person.availability === "free"
@@ -1703,7 +1741,13 @@ export function CreateOrderDialog({
                     {fault.code} · {fault.name}
                     {fault.norm_minutes !== null ? ` · ${fault.norm_minutes} ${t("мин")}` : ""}
                     {fault.reasons.length > 0 && (
-                      <small>{fault.reasons.map(suggestionText).join(" · ")}</small>
+                      <small className="suggestion-reasons">
+                        {fault.reasons.map((reason, index) => (
+                          <span className="suggestion-reason" key={index}>
+                            {suggestionText(reason)}
+                          </span>
+                        ))}
+                      </small>
                     )}
                   </button>
                 ))}
