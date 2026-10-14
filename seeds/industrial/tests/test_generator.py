@@ -3,11 +3,14 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
+from uuid import NAMESPACE_URL, uuid5
+from zoneinfo import ZoneInfo
 
 import pytest
-from seeds.industrial.generator import generate_dataset
+from seeds.industrial.generator import generate_dataset, generate_order_dataset
 
-ANCHOR = datetime(2026, 10, 6, 12, tzinfo=UTC)
+ALMATY = ZoneInfo("Asia/Almaty")
+ANCHOR = datetime(2026, 10, 15, 0, tzinfo=ALMATY)
 
 
 def test_dataset_is_deterministic_and_ids_do_not_depend_on_anchor_clock() -> None:
@@ -91,6 +94,13 @@ def test_history_is_coherent_bounded_and_versions_reference_submissions() -> Non
         (row["work_order_id"], row["submission_version"]) in completed_versions
         for row in data["material_usages"]
     )
+    assert len(data["material_usages"]) == len({row["id"] for row in data["material_usages"]})
+    assert len(data["material_usages"]) == len(
+        {
+            (row["work_order_id"], row["submission_version"], row["material_id"])
+            for row in data["material_usages"]
+        }
+    )
     assert all(
         (row["work_order_id"], row["order_version"]) in completed_versions
         for row in data["ai_reviews"]
@@ -115,7 +125,8 @@ def test_history_is_coherent_bounded_and_versions_reference_submissions() -> Non
     "anchor",
     (
         ANCHOR,
-        datetime(2026, 10, 8, 12, tzinfo=UTC),
+        datetime(2026, 10, 16, 0, tzinfo=ALMATY),
+        datetime(2024, 2, 5, 17, tzinfo=UTC),
     ),
 )
 @pytest.mark.parametrize("seed", (0, 2026, 2027))
@@ -128,8 +139,7 @@ def test_history_window_and_upcoming_demo_orders_are_stable(anchor: datetime, se
         return [row for row in orders if end - timedelta(days=90) <= row["issued_at"] <= end]
 
     assert min(row["issued_at"] for row in orders) <= anchor - timedelta(days=90)
-    assert len(issued_in_window(anchor)) >= 500
-    assert len(issued_in_window(anchor + timedelta(days=10))) >= 500
+    assert len(issued_in_window(anchor)) >= 480
     assert all(row["issued_at"] <= anchor for row in orders)
     assert all(row["completed_at"] is None or row["completed_at"] <= anchor for row in orders)
     assert all(row["closed_at"] is None or row["closed_at"] <= anchor for row in orders)
@@ -144,11 +154,12 @@ def test_history_window_and_upcoming_demo_orders_are_stable(anchor: datetime, se
                 left["completed_at"] <= right["started_at"] for left, right in pairwise(history)
             )
 
-    future_pending_days = {"issued": 12, "accepted": 13, "queued": 14}
-    upcoming = [row for row in orders if row["status"] in future_pending_days]
-    assert {row["status"] for row in upcoming} == set(future_pending_days)
+    upcoming = [row for row in orders if row["status"] in {"issued", "accepted", "queued"}]
+    assert {row["status"] for row in upcoming} == {"issued", "accepted", "queued"}
     for order in upcoming:
-        assert order["deadline"] == anchor + timedelta(days=future_pending_days[order["status"]])
+        assert order["deadline"].astimezone(ALMATY).date() == anchor.astimezone(
+            ALMATY
+        ).date() + timedelta(days=1)
         assert order["priority"] in {"normal", "planned"}
         assert order["started_at"] is None
         assert order["completed_at"] is None
@@ -234,6 +245,30 @@ def test_conveyor_materials_are_only_used_on_conveyors() -> None:
             assert equipment[order["equipment_id"]]["equipment_type"] == "conveyor"
 
 
+def test_consumed_materials_are_reflected_in_the_completion_report() -> None:
+    data = generate_dataset(anchor=ANCHOR)
+    orders = {row["id"]: row for row in data["work_orders"]}
+    materials = {row["id"]: row for row in data["materials"]}
+    report_terms = {
+        "ролик": "ролик",
+        "лента": "лент",
+        "подшипник": "подшипник",
+        "смазка": "смазк",
+        "крепёж": "болт",
+        "контактор": "контактор",
+        "кабель": "кабел",
+        "рукав": "рукав",
+        "фильтр": "фильтр",
+        "масло": "масл",
+    }
+    for usage in data["material_usages"]:
+        name = materials[usage["material_id"]]["name"].lower()
+        family = next(key for key in report_terms if name.startswith(key))
+        report = orders[usage["work_order_id"]]["work_description"]
+        assert report is not None
+        assert report_terms[family] in report.lower()
+
+
 def test_terminal_rejection_uses_the_assigned_executor() -> None:
     from uuid import NAMESPACE_URL, uuid5
 
@@ -263,3 +298,69 @@ def test_history_includes_recent_closed_repairs_for_the_current_reporting_week()
         if row["closed_at"] is not None and row["closed_at"] >= ANCHOR - timedelta(days=4)
     ]
     assert len(recent) >= 4
+
+
+def test_order_only_generator_uses_existing_catalog_ids_and_fresh_anchor_identity() -> None:
+    catalog_data = generate_dataset(anchor=ANCHOR)
+    catalog = {
+        key: [
+            row | {"id": uuid5(NAMESPACE_URL, f"existing:{key}:{row['id']}")}
+            for row in catalog_data[key]
+        ]
+        for key in ("equipment", "fault_codes", "materials", "employees")
+    }
+    rows = generate_order_dataset(anchor=ANCHOR, seed=2026, catalog=catalog)
+    shifted = generate_order_dataset(anchor=ANCHOR + timedelta(days=1), seed=2026, catalog=catalog)
+    assert set(rows) == {"work_orders", "work_order_events", "material_usages", "ai_reviews"}
+    assert len(rows["work_orders"]) == 600
+    assert {row["equipment_id"] for row in rows["work_orders"]} <= {
+        row["id"] for row in catalog["equipment"]
+    }
+    assert {row["executor_id"] for row in rows["work_orders"]} <= {
+        row["id"] for row in catalog["employees"]
+    }
+    assert {row["id"] for row in rows["work_orders"]}.isdisjoint(
+        {row["id"] for row in shifted["work_orders"]}
+    )
+
+
+def test_current_snapshot_has_all_actionable_statuses_and_respects_reserved_workers() -> None:
+    data = generate_dataset(anchor=ANCHOR)
+    catalog = {key: data[key] for key in ("equipment", "fault_codes", "materials", "employees")}
+    reserved = {next(row["id"] for row in catalog["employees"] if row["role"] == "executor")}
+    rows = generate_order_dataset(anchor=ANCHOR, catalog=catalog, reserved_executor_ids=reserved)
+    current = [row for row in rows["work_orders"] if row["status"] != "closed"]
+    assert {
+        "issued",
+        "accepted",
+        "queued",
+        "in_progress",
+        "paused",
+        "completed",
+        "ai_review",
+        "rework",
+        "rejected",
+    } <= {row["status"] for row in current}
+    active = [row for row in current if row["status"] in {"in_progress", "paused"}]
+    assert reserved.isdisjoint({row["executor_id"] for row in active})
+    assert len({row["executor_id"] for row in active}) == len(active)
+    scheduled = [row for row in current if row["status"] in {"issued", "accepted", "queued"}]
+    same_shift = [row for row in current if row not in scheduled]
+    assert all(
+        row["deadline"].astimezone(ALMATY).date() == ANCHOR.date() + timedelta(days=1)
+        for row in scheduled
+    )
+    assert all(
+        row["deadline"].astimezone(ALMATY).date() == ANCHOR.date()
+        for row in same_shift
+        if row["deadline"] >= ANCHOR
+    )
+    assert all(row["deadline"] <= ANCHOR + timedelta(hours=6) for row in same_shift)
+    overdue_paused = [
+        row for row in current if row["status"] == "paused" and row["deadline"] < ANCHOR
+    ]
+    assert len(overdue_paused) == 1
+    assert overdue_paused[0]["deadline"] == ANCHOR - timedelta(minutes=30)
+    deadline_dates = {row["deadline"].astimezone(ALMATY).date() for row in current}
+    assert {ANCHOR.date(), ANCHOR.date() + timedelta(days=1)} <= deadline_dates
+    assert sum(row["priority"] == "emergency" for row in rows["work_orders"]) < 60

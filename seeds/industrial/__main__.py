@@ -42,6 +42,30 @@ async def run(args: argparse.Namespace) -> None:
                 json.dumps(await status(database, environment=settings.environment.value), indent=2)
             )
             return
+        if args.action in {"preview-orders", "replace-orders", "restore-orders"}:
+            from .orders import refresh_orders
+
+            required_orders = {
+                "replace-orders": "REPLACE-ORDERS",
+                "restore-orders": "RESTORE-ORDERS",
+            }
+            if args.action in required_orders and args.confirm != required_orders[args.action]:
+                raise SeedError("This action requires --confirm " + required_orders[args.action])
+            backup = getattr(args, "backup", None)
+            if args.action == "restore-orders" and backup is None:
+                raise SeedError("restore-orders requires --backup /path/to/orders.json")
+            if args.action != "restore-orders" and backup is not None:
+                raise SeedError("--backup is only accepted with restore-orders")
+            result_orders = await refresh_orders(
+                database,
+                environment=settings.environment.value,
+                anchor=args.anchor,
+                seed=args.seed,
+                preview=args.action == "preview-orders",
+                restore=backup,
+            )
+            print(json.dumps({"action": args.action, **result_orders}, indent=2))
+            return
         required = {"replace": "REPLACE-LOCAL-DATA", "clear": "CLEAR-INDUSTRIAL"}
         if args.action in required and args.confirm != required[args.action]:
             raise SeedError("This action requires --confirm " + required[args.action])
@@ -94,12 +118,26 @@ async def run(args: argparse.Namespace) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["status", "apply", "replace", "clear"])
+    parser.add_argument(
+        "action",
+        choices=[
+            "status",
+            "apply",
+            "replace",
+            "clear",
+            "preview-orders",
+            "replace-orders",
+            "restore-orders",
+        ],
+    )
     parser.add_argument(
         "--anchor", type=parse_anchor, default=datetime.now(UTC).replace(microsecond=0)
     )
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--confirm")
+    parser.add_argument(
+        "--backup", type=Path, help="Private orders.json snapshot for restore-orders"
+    )
     args = parser.parse_args()
     try:
         asyncio.run(run(args))
@@ -111,6 +149,9 @@ def main() -> int:
             "Database operation failed and was rolled back; check the local database.",
             file=sys.stderr,
         )
+        return 2
+    except OSError:
+        print("File or backup operation failed; check disk space and permissions.", file=sys.stderr)
         return 2
     return 0
 
