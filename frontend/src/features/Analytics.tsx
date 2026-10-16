@@ -45,7 +45,6 @@ const duration = (value: number | null | undefined) => {
   const m = Math.round(value / 60);
   return m < 60 ? t("{0} мин", [m]) : t("{0} ч {1} мин", [Math.floor(m / 60), m % 60]);
 };
-const entries = (value: Record<string, unknown>) => Object.entries(value).filter(([, v]) => v != null);
 const shortDate = (value?: string) => value?.slice(0, 10) ?? date();
 const percent = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
 const queryString = (query: Partial<AnalyticsQuery>): AnalyticsQuery => ({
@@ -921,45 +920,6 @@ const anomalyIcons: Record<string, IconName> = {
   material_outlier: "package",
   rework_concentration: "user",
 };
-const evidenceLabels: Record<string, string> = {
-  get order_ids() {
-    return t("Наряды");
-  },
-  get count() {
-    return t("Количество");
-  },
-  get denominator() {
-    return t("Основание");
-  },
-  get numerator() {
-    return t("Числитель");
-  },
-  get equipment_id() {
-    return t("Оборудование");
-  },
-  get material_id() {
-    return t("Материал");
-  },
-  get rate() {
-    return t("Доля");
-  },
-  get baseline_rate() {
-    return t("Средняя доля");
-  },
-  get baseline_median() {
-    return t("Обычный расход (медиана)");
-  },
-  get total() {
-    return t("Всего");
-  },
-};
-function evidenceValue(value: unknown) {
-  if (Array.isArray(value))
-    return value.length > 3
-      ? t("{0} и ещё {1}", [value.slice(0, 3).join(", "), value.length - 3])
-      : value.join(", ");
-  return typeof value === "object" ? t("Составное доказательство") : String(value);
-}
 function MaterialRows({ rows }: { rows: AnalyticsReport["materials"]["by_area"] }) {
   return (
     <table className="resource-table">
@@ -1157,7 +1117,7 @@ function Anomalies({
       (first, second) =>
         order[first.item.severity] - order[second.item.severity] || first.index - second.index,
     );
-  // One group per signal type: the rule is explained once, each finding is a short row.
+  // Group signals by type; show severity and a readable finding without raw metrics.
   const groups: Array<{ family: string; items: typeof anomalies }> = [];
   for (const entry of anomalies) {
     const group = groups.find((value) => value.family === entry.item.family);
@@ -1167,9 +1127,6 @@ function Anomalies({
   return anomalies.length ? (
     <div className="anomaly-groups">
       {groups.map((group) => {
-        const sharedFormula = group.items.every(({ item }) => item.formula === group.items[0].item.formula)
-          ? group.items[0].item.formula
-          : null;
         return (
           <section className="anomaly-group" key={group.family}>
             <header className="anomaly-group-head">
@@ -1177,38 +1134,16 @@ function Anomalies({
                 <Icon name={anomalyIcons[group.family] ?? "sparkles"} />
                 {anomalyLabels[group.family] ?? group.family}
               </span>
-              <b className="anomaly-group-count">{group.items.length}</b>
-              {sharedFormula && (
-                <p className="anomaly-formula">
-                  <strong>{t("Правило:")}</strong> {sharedFormula}
-                </p>
-              )}
             </header>
             <div className="anomaly-list">
               {group.items.map(({ item, index }) => {
                 const source = preventionSource(report, item);
-                const facts = entries(item.evidence).filter(([key]) => !/(?:^|_)ids?$/.test(key));
                 return (
                   <article className={"anomaly severity-" + item.severity} key={item.title + index}>
                     <div className="anomaly-summary">
                       <span className="status">{anomalyLabels[item.severity] ?? item.severity}</span>
                       <h3>{item.title}</h3>
-                      {!sharedFormula && (
-                        <p className="anomaly-formula">
-                          <strong>{t("Правило:")}</strong> {item.formula}
-                        </p>
-                      )}
                     </div>
-                    {facts.length > 0 && (
-                      <dl className="anomaly-facts">
-                        {facts.map(([key, value]) => (
-                          <div key={key}>
-                            <dt>{evidenceLabels[key] ?? key.replaceAll("_", " ")}</dt>
-                            <dd>{evidenceValue(value)}</dd>
-                          </div>
-                        ))}
-                      </dl>
-                    )}
                     {canPrepare && source && (
                       <button
                         className="secondary with-icon prevention-action"

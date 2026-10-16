@@ -65,7 +65,9 @@ test("direct section links survive login and cannot bypass role navigation", asy
 
 test("logout clears this device before a delayed server revocation completes", async ({ page }) => {
   await login(page, state.master_login);
-  const masterToken = await page.evaluate(() => sessionStorage.getItem("naryadai.session.token"));
+  const masterToken = await page.evaluate(
+    () => JSON.parse(localStorage.getItem("naryadai.session.v1") ?? "null")?.token ?? null,
+  );
   let releaseLogout!: () => void;
   let logoutStarted!: () => void;
   let logoutFinished!: () => void;

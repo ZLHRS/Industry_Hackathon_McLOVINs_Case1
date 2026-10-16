@@ -894,7 +894,7 @@
 }
 .anomaly-group-head {
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: 0.35rem 0.55rem;
   padding: 0.7rem 1rem;
@@ -906,32 +906,13 @@
   font-size: 0.92rem;
   font-weight: 800;
 }
-.anomaly-group-count {
-  display: inline-grid;
-  place-items: center;
-  min-width: 1.5rem;
-  height: 1.5rem;
-  padding: 0 0.4rem;
-  border-radius: 999px;
-  background: var(--surface-sunken);
-  color: #3b4f4b;
-  font-size: 0.76rem;
-  font-weight: 800;
-}
-.analytics .anomaly-group-head .anomaly-formula {
-  grid-column: 1 / -1;
-  margin: 0;
-  color: var(--muted-ink);
-  font-size: 0.8rem;
-  line-height: 1.45;
-}
 .analytics .anomaly-group .anomaly-list {
   display: grid;
   gap: 0;
 }
 .analytics .anomaly-group .anomaly {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.6rem 1rem;
   padding: 0.7rem 1rem;
@@ -962,30 +943,6 @@
   margin: 0;
   font-size: 0.92rem;
   font-weight: 700;
-}
-.analytics .anomaly-facts {
-  display: flex;
-  gap: 0.4rem;
-  margin: 0;
-}
-.analytics .anomaly-facts > div {
-  min-width: 4.6rem;
-  padding: 0.3rem 0.55rem;
-  border-radius: 8px;
-  background: var(--surface-soft);
-  text-align: center;
-}
-.analytics .anomaly-facts dt {
-  color: #5d6d69;
-  font-size: 0.62rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.analytics .anomaly-facts dd {
-  margin: 0.1rem 0 0;
-  color: var(--ink);
-  font-weight: 800;
 }
 .analytics .anomaly-group .prevention-action {
   margin: 0;

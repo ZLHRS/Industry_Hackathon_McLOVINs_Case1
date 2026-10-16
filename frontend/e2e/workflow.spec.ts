@@ -448,8 +448,8 @@ test("revoked session clears the visible workspace and private local snapshots",
   await login(page, state.executor_login);
   await expect(page.getByRole("button", { name: /Открыть наряд/ }).first()).toBeVisible();
   const session = await page.evaluate(() => ({
-    token: sessionStorage.getItem("naryadai.session.token"),
-    actor: JSON.parse(sessionStorage.getItem("naryadai.session.user") ?? "null")?.id as string | undefined,
+    token: JSON.parse(localStorage.getItem("naryadai.session.v1") ?? "null")?.token ?? null,
+    actor: JSON.parse(localStorage.getItem("naryadai.session.v1") ?? "null")?.user?.id as string | undefined,
   }));
   expect(session.actor).toBeTruthy();
   const logout = await request.post("/api/v1/auth/logout", {
@@ -458,8 +458,16 @@ test("revoked session clears the visible workspace and private local snapshots",
   expect(logout.status()).toBe(204);
   // The active WebSocket detects revocation without another user action.
   await expect(page.getByRole("heading", { name: "Вход в смену" })).toBeVisible();
-  expect(await page.evaluate(() => sessionStorage.getItem("naryadai.session.token"))).toBeNull();
-  expect(await page.evaluate(() => sessionStorage.getItem("naryadai.session.user"))).toBeNull();
+  expect(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem("naryadai.session.v1") ?? "null")?.token ?? null,
+    ),
+  ).toBeNull();
+  expect(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem("naryadai.session.v1") ?? "null")?.user ?? null,
+    ),
+  ).toBeNull();
   await expect
     .poll(() =>
       page.evaluate(async (actor) => {

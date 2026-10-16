@@ -182,14 +182,20 @@ test("session expiry keeps equipment link for re-login while clearing private se
   await expect(page.getByRole("button", { name: "Выдать наряд", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Выдать наряд", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
-  const token = await page.evaluate(() => sessionStorage.getItem("naryadai.session.token"));
+  const token = await page.evaluate(
+    () => JSON.parse(localStorage.getItem("naryadai.session.v1") ?? "null")?.token ?? null,
+  );
   const revoked = await request.post("/api/v1/auth/logout", {
     headers: { Authorization: `Bearer ${token}` },
   });
   expect(revoked.status()).toBe(204);
   await expect(page.getByRole("heading", { name: "Вход в смену", exact: true })).toBeVisible();
   await expect(page).toHaveURL(new RegExp(equipmentPath + "$"));
-  expect(await page.evaluate(() => sessionStorage.getItem("naryadai.session.token"))).toBeNull();
+  expect(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem("naryadai.session.v1") ?? "null")?.token ?? null,
+    ),
+  ).toBeNull();
   await page.getByLabel("Логин", { exact: true }).fill(state.master_login);
   await page.getByLabel("Пароль", { exact: true }).fill(state.secret);
   await page.getByRole("button", { name: "Войти", exact: true }).click();

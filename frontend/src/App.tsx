@@ -9,7 +9,16 @@ import { OrderReference } from "./components/OrderReference";
 import { usePushStatus } from "./lib/usePushStatus";
 import { useDeviceInstallation } from "./lib/useDeviceInstallation";
 import { navigation, permittedView, canViewWorkload, type View } from "./lib/roleAccess";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  clearSession,
+  readSession,
+  saveSession,
+  saveSessionUser,
+  subscribeSession,
+  watchSessionExpiry,
+  type Session,
+} from "./lib/authSession";
 import { Api, ApiError, clearMutationKeys } from "./api";
 import { Login } from "./features/Login";
 import { OrderDetailDialog, type ActionOutcome } from "./features/OrderDetail";
@@ -82,9 +91,6 @@ type Dashboard = {
   employees: Employee[];
   masters: MasterOption[];
 };
-const tokenKey = "naryadai.session.token";
-const expiryKey = "naryadai.session.expires";
-const userKey = "naryadai.session.user";
 const actionLabels: Record<string, string> = {
   get accept() {
     return t("Принятие");
@@ -133,24 +139,29 @@ function initials(name: string) {
     .join("");
 }
 function storedUser(): User | null {
-  try {
-    const raw = sessionStorage.getItem(userKey);
-    return raw ? (JSON.parse(raw) as User) : null;
-  } catch {
-    return null;
-  }
-}
-function storedToken() {
-  const token = sessionStorage.getItem(tokenKey);
-  const expiry = sessionStorage.getItem(expiryKey);
-  return token && expiry && Date.parse(expiry) > Date.now() ? token : null;
+  return readSession()?.user ?? null;
 }
 
 export default function App() {
+  const session = useSyncExternalStore(subscribeSession, readSession);
+  const previousActor = useRef(session?.user?.id ?? null);
+  useEffect(() => {
+    // A newly signed-in token may not have /me yet. Wait for its actor before
+    // purging another actor's offline data; refreshing the same login keeps its queue.
+    if (session && !session.user) return;
+    const actor = session?.user?.id ?? null;
+    const previous = previousActor.current;
+    previousActor.current = actor;
+    if (previous && previous !== actor) void clearActor(previous).catch(() => undefined);
+  }, [session]);
+  // Switching accounts or logging out in another tab discards every private view/dialog.
+  return <SessionApp key={session?.token ?? "signed-out"} session={session} />;
+}
+
+function SessionApp({ session }: { session: Session | null }) {
   const language = useLanguage();
   const installation = useDeviceInstallation();
-  const initialToken = storedToken();
-  const expiredActor = useRef<string | null>(initialToken ? null : (storedUser()?.id ?? null));
+  const initialToken = session && Date.parse(session.expiresAt) > Date.now() ? session.token : null;
   const [token, setToken] = useState<string | null>(initialToken);
   const actorIdRef = useRef<string | null>(initialToken ? (storedUser()?.id ?? null) : null);
   const invalidateRef = useRef<(() => Promise<void>) | null>(null);
@@ -159,7 +170,7 @@ export default function App() {
       new Api(
         () => token,
         (invalidToken) => {
-          if (sessionStorage.getItem(tokenKey) === invalidToken) return invalidateRef.current?.();
+          if (readSession()?.token === invalidToken) return invalidateRef.current?.();
         },
       ),
     [token],
@@ -242,6 +253,14 @@ export default function App() {
   const filters = useMemo(() => readOrderFilters(appLocation, user), [appLocation, user]);
   const authGeneration = useRef(0);
   const refreshGeneration = useRef(0);
+  useEffect(
+    () => () => {
+      // Ignore late data requests from a session replaced in this or another tab.
+      authGeneration.current += 1;
+      clearMutationKeys();
+    },
+    [],
+  );
   const loadOrderDetail = useCallback(
     async (id: string) => {
       const detail = await api.order(id);
@@ -263,13 +282,12 @@ export default function App() {
     [api],
   );
   const invalidate = useCallback(
-    async (actorId?: string, preserveEquipmentRoute = true) => {
+    async (_actorId?: string, preserveEquipmentRoute = true) => {
+      // A late 401/logout from an older account must not clear a newer sign-in.
+      if ((readSession()?.token ?? null) !== token) return;
       authGeneration.current += 1;
-      const actor = actorId ?? actorIdRef.current ?? user?.id ?? storedUser()?.id;
       const equipmentRoute = readRoute(appLocation).equipmentId ? appLocation : null;
-      sessionStorage.removeItem(tokenKey);
-      sessionStorage.removeItem(expiryKey);
-      sessionStorage.removeItem(userKey);
+      if (!(await clearSession(token))) return;
       clearMutationKeys();
       setToken(null);
       actorIdRef.current = null;
@@ -282,33 +300,21 @@ export default function App() {
       setFaultReportDraft(null);
       setPending([]);
       setSavedAt(null);
-      navigate(preserveEquipmentRoute && equipmentRoute ? equipmentRoute : "/", true);
-      if (actor) await clearActor(actor).catch(() => undefined);
+      if (!readSession()) navigate(preserveEquipmentRoute && equipmentRoute ? equipmentRoute : "/", true);
     },
-    [appLocation, user?.id],
+    [appLocation, token],
   );
   useEffect(() => {
-    if (!token && expiredActor.current) {
-      const actor = expiredActor.current;
-      expiredActor.current = null;
-      sessionStorage.removeItem(tokenKey);
-      sessionStorage.removeItem(expiryKey);
-      sessionStorage.removeItem(userKey);
+    if (!token && session) {
+      void clearSession(session.token);
       clearMutationKeys();
-      void clearActor(actor);
     }
-  }, [token]);
+  }, [session, token]);
   invalidateRef.current = () => invalidate();
   useEffect(() => {
     if (!token) return;
-    const delay = Date.parse(sessionStorage.getItem(expiryKey) ?? "") - Date.now();
-    if (!Number.isFinite(delay) || delay <= 0) {
-      void invalidate();
-      return;
-    }
-    const timeout = window.setTimeout(() => void invalidate(), delay);
-    return () => window.clearTimeout(timeout);
-  }, [token, invalidate]);
+    return watchSessionExpiry(session?.expiresAt ?? "", () => void invalidate());
+  }, [token, invalidate, session?.expiresAt]);
   const sync = useCallback(
     async (actorId: string) => {
       const report = await syncPending(actorId, sender);
@@ -450,14 +456,13 @@ export default function App() {
     const run = async () => {
       try {
         const next = await api.me();
-        if (!live) return;
+        if (!live || !(await saveSessionUser(token, next)) || !live) return;
         actorIdRef.current = next.id;
-        sessionStorage.setItem(userKey, JSON.stringify(next));
         setUser(next);
         await refreshRef.current(next);
-        if (!live || sessionStorage.getItem(tokenKey) !== token) return;
+        if (!live || readSession()?.token !== token) return;
         const report = await syncRef.current(next.id);
-        if (live && report.sent && sessionStorage.getItem(tokenKey) === token) {
+        if (live && report.sent && readSession()?.token === token) {
           await refreshRef.current(next);
         }
       } catch (caught) {
@@ -607,8 +612,7 @@ export default function App() {
   async function login(login: string, secret: string) {
     const response = await api.login(login, secret);
     authGeneration.current += 1;
-    sessionStorage.setItem(tokenKey, response.access_token);
-    sessionStorage.setItem(expiryKey, response.expires_at);
+    await saveSession(response);
     setToken(response.access_token);
   }
   /** Issue an order, then attach the fault photos picked in the form (case §5.1, demo step 2). */

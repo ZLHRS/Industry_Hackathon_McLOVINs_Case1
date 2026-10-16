@@ -97,7 +97,9 @@ test.describe("before photos while issuing an order", () => {
       expect(request.headers()["content-type"]).toContain("image/png");
     }
 
-    const token = await page.evaluate(() => sessionStorage.getItem("naryadai.session.token"));
+    const token = await page.evaluate(
+      () => JSON.parse(localStorage.getItem("naryadai.session.v1") ?? "null")?.token ?? null,
+    );
     const stored = await page.request.get(`/api/v1/work-orders/${orderId}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -156,7 +158,9 @@ test.describe("before photos while issuing an order", () => {
     ).toBeVisible();
     expect(creates).toBe(1);
 
-    const token = await page.evaluate(() => sessionStorage.getItem("naryadai.session.token"));
+    const token = await page.evaluate(
+      () => JSON.parse(localStorage.getItem("naryadai.session.v1") ?? "null")?.token ?? null,
+    );
     const stored = await page.request.get(`/api/v1/work-orders/${orderId}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
